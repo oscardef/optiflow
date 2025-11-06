@@ -1,193 +1,28 @@
-# ESP32 → macOS MQTT Test Bridge
+# OptiFlow: ESP32-Powered Shelf Inventory Simulation (v1.0)
 
-This project establishes a real-time communication bridge between an **ESP32-S3** microcontroller and a **MacBook** running an MQTT broker.
-The ESP32 sends test data over Wi-Fi to the broker, which can then be consumed by Python applications for analysis, storage, or visualization.
+This project simulates a real-time RFID shelf inventory system using an ESP32-S3 microcontroller communicating over MQTT with a Python visualization and logging tool on macOS.
 
----
-
-## Project Overview
-
-**Current Stage (v0.1):**
-
-* ESP32-S3 connects to Wi-Fi (mobile hotspot).
-* Sends periodic test messages to a local MQTT broker (Mosquitto) running on macOS.
-* MacBook receives these messages either via:
-
-  * Terminal (`mosquitto_sub`)
-  * Python subscriber (`mqtt_receiver.py`)
-
-**Next stages:**
-
-* Store incoming data in a local/remote database.
-* Implement anomaly detection and rule-based logic.
-* Add staff notification (Apprise / Firebase).
-* Develop a real-time dashboard (Dash / Streamlit).
+The ESP32 moves along a virtual aisle, scanning nearby items on two shelves. Python receives MQTT messages, logs data to a CSV, and visualizes detected and missing items in real time.
 
 ---
 
-## Prerequisites
+## Overview
 
-* **Hardware:**
+**Components**
 
-  * Waveshare N8R8 ESP32-S3 board
-  * USB-C cable
-  * Smartphone hotspot (for shared Wi-Fi network)
+* ESP32-S3: Simulated moving RFID scanner publishing detections via MQTT
+* Mosquitto: Local MQTT broker on macOS (port 1883)
+* Python (`live_inventory_logger.py`): Receives, logs, and visualizes shelf data
+* CSV Log (`rfid_data_log.csv`): Stores all scans with timestamps and detections
 
-* **Software:**
+**Features**
 
-  * [Arduino IDE](https://www.arduino.cc/en/software)
-  * [Mosquitto MQTT](https://mosquitto.org/)
-  * Python 3.9+ with `paho-mqtt` and `sqlite3` (installed by default on macOS)
-
----
-
-## Part 1 — Running the ESP32 Code
-
-### 1. Plug in the board
-
-Connect the **ESP32-S3** to your Mac via **USB-C**.
-
-### 2. Configure Arduino IDE
-
-* Go to **Tools → Board → ESP32 → ESP32S3 Dev Module**
-    * Specifically select:
-
-  ```
-  /dev/cu.usbmodem5AB0184...
-  ```
-* Paste the ESP32 code (from `esp32_mqtt_test.ino`) into a new Arduino sketch.
-
-### 3. Update Wi-Fi credentials
-
-In the sketch:
-
-```cpp
-const char* ssid = "YOUR_HOTSPOT_NAME";
-const char* password = "YOUR_HOTSPOT_PASSWORD";
-const char* mqtt_server = "172.20.10.1"; // Your Mac’s IP on the hotspot network
-```
-
-### 4. Upload and open Serial Monitor
-
-* Click **Upload**
-* Open **Tools → Serial Monitor**
-* Set **baud rate** to `115200`
-
-You should see:
-
-```
-Connecting to WiFi...
-Connected! IP: 172.20.10.2
-Connecting to MQTT...connected!
-Sent: Test message #0
-Sent: Test message #1
-...
-```
-
----
-
-## Part 2 — MQTT Broker (Mosquitto on macOS)
-
-### Installation
-
-```bash
-brew install mosquitto
-```
-
-### Configuration (one-time)
-
-Open the config file:
-
-```bash
-sudo nano /opt/homebrew/etc/mosquitto/mosquitto.conf
-```
-
-Append the following lines at the bottom:
-
-```
-# Allow ESP32 to connect externally
-listener 1883 0.0.0.0
-allow_anonymous true
-```
-
-Save and restart the service:
-
-```bash
-brew services restart mosquitto
-```
-
-### Verify broker is running
-
-```bash
-netstat -an | grep 1883
-```
-
-Expected output:
-
-```
-tcp4       0      0  *.1883                 *.*                    LISTEN
-```
-
-### Test MQTT manually
-
-In one terminal:
-
-```bash
-mosquitto_sub -h localhost -t esp32/test
-```
-
-In another:
-
-```bash
-mosquitto_pub -h localhost -t esp32/test -m "Hello from Mac!"
-```
-
-You should see the message echoed in the subscriber terminal.
-
-### Stop / Restart / Remove
-
-* Stop:
-
-  ```bash
-  brew services stop mosquitto
-  ```
-* Restart:
-
-  ```bash
-  brew services restart mosquitto
-  ```
-* Uninstall (if ever needed):
-
-  ```bash
-  brew uninstall mosquitto
-  ```
-
----
-
-## Part 3 — Python MQTT Receiver
-
-### Install dependencies
-
-```bash
-pip install paho-mqtt
-```
-
-### Run the receiver
-
-```bash
-python3 mqtt_receiver.py
-```
-
-Expected output:
-
-```
-Listening for ESP32 messages...
-[2025-11-06 15:14:32] esp32/test: Test message #0
-[2025-11-06 15:14:34] esp32/test: Test message #1
-...
-```
-
-All incoming messages are automatically logged into `esp32_data.db` (SQLite database).
+* Real-time data stream from ESP32 via MQTT
+* Live matplotlib visualization of scanner and items
+* Items fade to gray if not detected recently
+* Missing items shown in red
+* Auto logging to CSV per session
+* Two shelves at y = 3.75 and y = 3.85; scanner path at y = 3.8
 
 ---
 
@@ -195,50 +30,134 @@ All incoming messages are automatically logged into `esp32_data.db` (SQLite data
 
 ```
 .
-├── esp32_mqtt_test.ino        # Arduino sketch for ESP32-S3
-├── mqtt_receiver.py           # Python MQTT subscriber and logger
-├── esp32_data.db              # Auto-created local database
-├── README.md                  # Project documentation
-└── (future)
-    ├── anomaly_engine.py
-    ├── notifier.py
-    ├── dashboard/
-    │   ├── app.py
-    │   └── components/
-    └── requirements.txt
+├── live_inventory_logger.py   # Main Python visualization and logger
+├── mqtt_receiver.py           # Basic MQTT receiver
+├── esp32_data.db              # Optional SQLite database (future use)
+├── rfid_data_log.csv          # CSV log file
+├── dashboard.py               # Planned dashboard interface
+├── README.md                  # Documentation
+└── esp32_inventory.ino        # ESP32 firmware
 ```
 
 ---
 
-## Future Extensions
+## Setup
 
-| Stage             | Module                 | Description                  |
-| ----------------- | ---------------------- | ---------------------------- |
-| Data Ingestion    | ESP32 + MQTT           | Real-time streaming complete |
-| Data Storage      | SQLite / Supabase      | Store messages persistently  |
-| Anomaly Detection | PyOD / River           | Detect stock irregularities  |
-| Notifications     | Apprise / Firebase FCM | Staff alerts                 |
-| Visualization     | Streamlit / Dash       | Interactive dashboard        |
+### MQTT Broker (macOS)
+
+Install Mosquitto:
+
+```bash
+brew install mosquitto
+```
+
+Configure:
+
+```bash
+sudo nano /opt/homebrew/etc/mosquitto/mosquitto.conf
+```
+
+Add at the end:
+
+```
+listener 1883 0.0.0.0
+allow_anonymous true
+```
+
+Restart service:
+
+```bash
+brew services restart mosquitto
+```
+
+---
+
+### ESP32 Firmware
+
+1. Open `esp32_inventory.ino` in Arduino IDE.
+2. Select **ESP32S3 Dev Module**.
+3. Update credentials:
+
+```cpp
+const char* ssid = "Oscar";
+const char* password = "password";
+const char* mqtt_server = "172.20.10.3";
+```
+
+4. Upload and open Serial Monitor at 115200 baud.
+
+Expected output:
+
+```
+Connecting to WiFi...
+Connected to WiFi!
+ESP32 IP: 172.20.10.2
+Connecting to MQTT...connected!
+Received START signal from server!
+{"timestamp":12345,"location":{"x":2.15,"y":3.8},"detections":[...]}
+```
+
+---
+
+### Python Visualization
+
+Install dependencies:
+
+```bash
+pip install paho-mqtt matplotlib
+```
+
+Run:
+
+```bash
+python3 live_inventory_logger.py
+```
+
+Behavior:
+
+* Waits for ESP32 readiness.
+* Sends START message.
+* Displays moving scanner and shelf items.
+
+Legend:
+
+* Green circle: Scanner
+* Blue square: Recently seen item
+* Gray square: Stale item
+* Red cross: Missing item
+
+---
+
+## Technical Details
+
+**Movement:** ESP32 moves from x = 2.1 → 2.6 at y = 3.8.
+
+**Shelves:** Items alternate between y = 3.75 and y = 3.85 with ±0.005m noise.
+
+**Detection:** Items within 0.05m of scanner are detected (2D Euclidean distance).
+
+**Logging:** Each detection is written to `rfid_data_log.csv` with timestamp, position, and item data.
+
+**Visualization:** Updated every 0.4s, items fade to gray if unseen for 8s.
+
+---
+
+## Parameters
+
+| Parameter     | Location     | Default | Description              |
+| ------------- | ------------ | ------- | ------------------------ |
+| `step_size`   | ESP32 sketch | 0.025   | Movement step size       |
+| `dist < 0.05` | ESP32 sketch | 0.05    | Detection range          |
+| `FADE_TIME`   | Python       | 8       | Fade duration in seconds |
+| `delay(300)`  | ESP32 sketch | 300 ms  | Delay per step           |
 
 ---
 
 ## Troubleshooting
 
-| Issue                         | Possible Fix                                                             |
-| ----------------------------- | ------------------------------------------------------------------------ |
-| `rc=-2` in Serial Monitor     | Check Mosquitto config (`listener 1883 0.0.0.0`), ensure firewall is off |
-| ESP32 not connecting to Wi-Fi | Verify hotspot name/password and 2.4GHz band                             |
-| No messages in Python         | Confirm same topic (`esp32/test`) and port `1883`                        |
-| Mosquitto won’t start         | Check path: `/opt/homebrew/etc/mosquitto/mosquitto.conf`                 |
-
----
-
-## Notes
-
-* Ensure both **ESP32** and **Mac** are connected to the same **mobile hotspot** network.
-* Mac’s IP (for `mqtt_server`) can be found using:
-
-  ```bash
-  ifconfig | grep inet
-  ```
-* When adding new modules (like AI or dashboards), follow the structure above to keep the project modular.
+| Issue                               | Fix                                   |
+| ----------------------------------- | ------------------------------------- |
+| No data in Python                   | Check MQTT broker config and IP       |
+| Python stuck on "Waiting for ESP32" | Reboot ESP32 or check MQTT topics     |
+| Items not visible                   | Increase detection radius slightly    |
+| Mosquitto connection refused        | Add `listener 1883 0.0.0.0` to config |
