@@ -46,8 +46,16 @@ screen /dev/cu.usbmodemXXXXXXXXXXXX 115200
 ### Configure Anchor 1
 
 ```bash
+# Configure the ranging parameters
 RESPF -MULTI -ADDR=1 -PADDR=0 -CHAN=9 -BLOCK=200 -RRU=DSTWR -ID=42
+
+# Set auto-start on boot
+SETAPP RESPF
+
+# Save all settings
 SAVE
+
+# Start ranging
 START
 ```
 
@@ -78,6 +86,7 @@ OK
 
 ```bash
 RESPF -MULTI -ADDR=2 -PADDR=0 -CHAN=9 -BLOCK=200 -RRU=DSTWR -ID=42
+SETAPP RESPF
 SAVE
 START
 ```
@@ -86,6 +95,7 @@ START
 
 ```bash
 RESPF -MULTI -ADDR=3 -PADDR=0 -CHAN=9 -BLOCK=200 -RRU=DSTWR -ID=42
+SETAPP RESPF
 SAVE
 START
 ```
@@ -94,11 +104,14 @@ START
 
 ```bash
 RESPF -MULTI -ADDR=4 -PADDR=0 -CHAN=9 -BLOCK=200 -RRU=DSTWR -ID=42
+SETAPP RESPF
 SAVE
 START
 ```
 
 **Exit screen:** Press `Ctrl+A` then `K`, confirm with `Y`
+
+**⚠️ IMPORTANT:** After configuring all anchors, **disconnect and power cycle** each one to ensure settings are saved and auto-start works on boot.
 
 ---
 
@@ -117,10 +130,23 @@ screen /dev/cu.usbmodemXXXXXXXXXXXX 115200
 ### Configure Tag for 4 Anchors
 
 ```bash
+# Configure the ranging parameters
 INITF -MULTI -ADDR=0 -PADDR=[1,2,3,4] -CHAN=9 -BLOCK=200 -RRU=DSTWR -ID=42
+
+# Set auto-start on boot
+SETAPP INITF
+
+# Enable UART on hardware pins (P0.06 TX, P0.08 RX) for ESP32 integration
+UART 1
+
+# Save all settings
 SAVE
+
+# Start ranging
 START
 ```
+
+**⚠️ CRITICAL:** After configuration, **disconnect the tag and power cycle it**. This ensures all settings (including auto-start and UART redirection) are properly saved and activated on boot.
 
 **Expected output:**
 ```
@@ -182,6 +208,37 @@ SESSION_INFO_NTF: {session_handle=1, sequence_number=2, block_index=2, n_measure
 | `-BLOCK=200` | ≥1 ms | Block duration - time for one ranging cycle (200ms = 5Hz) |
 | `-RRU=DSTWR` | SSTWR/DSTWR/etc | Ranging Round Usage (DS-TWR = Double-Sided TWR) |
 | `-ID=42` | ≠0 | Session ID - **must match** between controller and controllees |
+
+### Special Commands
+
+| Command | Description |
+|---------|-------------|
+| `SETAPP INITF` | Set tag to auto-start as initiator on boot |
+| `SETAPP RESPF` | Set anchor to auto-start as responder on boot |
+| `SETAPP NONE` | Disable auto-start (manual control) |
+| `UART 1` | **Redirect CLI to hardware UART pins** (P0.06 TX, P0.08 RX) for ESP32 integration |
+| `UART 0` | Switch CLI back to USB-CDC (default) |
+| `SAVE` | Save all settings to flash (auto-start, UART mode, session config) |
+| `GETAPP` | Check current auto-start application |
+
+---
+
+## 🔌 ESP32 Integration via UART
+
+The `UART 1` command redirects the CLI output from USB to the **hardware UART pins**, allowing an ESP32 to read ranging data directly.
+
+### Hardware Connections
+
+**DWM3001CDK → ESP32-S3:**
+- **P0.06 (TX)** → GPIO18 (RX)
+- **P0.08 (RX)** → GPIO17 (TX)
+- **GND** → GND
+
+### Why UART 1 is needed
+
+By default, CLI firmware uses **USB-CDC** (virtual serial over USB). The `UART 1` command switches output to physical UART pins so an external microcontroller can read the ranging data without a computer.
+
+**⚠️ Only configure UART on the TAG**, not the anchors (anchors don't need external monitoring).
 
 ---
 
