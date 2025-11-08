@@ -4,8 +4,8 @@
  * Ready for WiFi transmission
  * 
  * Wiring:
- * - ESP32 GPIO17 (TX) -> DWM3001CDK P0.15 (RX)
- * - ESP32 GPIO18 (RX) -> DWM3001CDK P0.19 (TX)
+ *   - ESP32 GPIO17 (TX) -> DWM P0.15 (RX)
+ *   - ESP32 GPIO18 (RX) -> DWM P0.19 (TX)
  * - GND -> GND
  */
 
