@@ -308,8 +308,8 @@ SESSION_INFO_NTF: {session_handle=1, sequence_number=148, block_index=148, n_mea
 ```
 ESP32-S3          DWM3001CDK (Tag)
 ---------         ----------------
-GPIO43 (TX)  -->  RX (P0.08/UART_RX)
-GPIO44 (RX)  <--  TX (P0.06/UART_TX)
+GPIO43 (TX)  -->  RX (P0.19/UART_RX)
+GPIO44 (RX)  <--  TX (P0.15/UART_TX)
 GND          ---  GND
 ```
 

@@ -136,7 +136,7 @@ INITF -MULTI -ADDR=0 -PADDR=[1,2,3,4] -CHAN=9 -BLOCK=200 -RRU=DSTWR -ID=42
 # Set auto-start on boot
 SETAPP INITF
 
-# Enable UART on hardware pins (P0.06 TX, P0.08 RX) for ESP32 integration
+# Enable UART on hardware pins (P0.15 TX, P0.19 RX) for ESP32 integration
 UART 1
 
 # Save all settings
@@ -216,7 +216,7 @@ SESSION_INFO_NTF: {session_handle=1, sequence_number=2, block_index=2, n_measure
 | `SETAPP INITF` | Set tag to auto-start as initiator on boot |
 | `SETAPP RESPF` | Set anchor to auto-start as responder on boot |
 | `SETAPP NONE` | Disable auto-start (manual control) |
-| `UART 1` | **Redirect CLI to hardware UART pins** (P0.06 TX, P0.08 RX) for ESP32 integration |
+| `UART 1` | **Redirect CLI to hardware UART pins** (P0.15 TX, P0.19 RX) for ESP32 integration |
 | `UART 0` | Switch CLI back to USB-CDC (default) |
 | `SAVE` | Save all settings to flash (auto-start, UART mode, session config) |
 | `GETAPP` | Check current auto-start application |
@@ -230,8 +230,8 @@ The `UART 1` command redirects the CLI output from USB to the **hardware UART pi
 ### Hardware Connections
 
 **DWM3001CDK → ESP32-S3:**
-- **P0.06 (TX)** → GPIO18 (RX)
-- **P0.08 (RX)** → GPIO17 (TX)
+- **P0.15 (TX)** → GPIO18 (RX)
+- **P0.19 (RX)** → GPIO17 (TX)
 - **GND** → GND
 
 ### Why UART 1 is needed

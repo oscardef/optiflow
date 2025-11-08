@@ -3,8 +3,8 @@
  * Reads UWB distance measurements and forwards to server via MQTT
  * 
  * Hardware Connections:
- * - ESP32 GPIO17 (TX) -> DWM3001CDK P0.08 (RX)
- * - ESP32 GPIO18 (RX) -> DWM3001CDK P0.06 (TX)
+ * - ESP32 GPIO17 (TX) -> DWM3001CDK P0.19 (RX)
+ * - ESP32 GPIO18 (RX) -> DWM3001CDK P0.15 (TX)
  * - GND -> GND
  * 
  * MQTT Topics:
