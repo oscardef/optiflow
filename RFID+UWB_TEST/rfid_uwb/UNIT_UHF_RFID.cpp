@@ -389,3 +389,198 @@ bool Unit_UHF_RFID::setTxPower(uint16_t db) {
         return false;
     }
 }
+
+/*! @brief Initialize the RFID module and wait for it to respond.*/
+void Unit_UHF_RFID::initializeModule(uint8_t rx_pin, uint8_t tx_pin) {
+    Serial.println("Initializing RFID module...");
+    begin(&Serial2, 115200, rx_pin, tx_pin, false);
+    
+    String info = "";
+    while (1) {
+        info = getVersion();
+        if (info != "ERROR") {
+            Serial.println(info);
+            break;
+        }
+        delay(100);
+    }
+}
+
+/*! @brief Set the working region/frequency band.
+    @param regionCode Region code (0x01=CHINA, 0x02=USA, 0x03=EUROPE, 0x04=KOREA)
+    @return True if command sent successfully.*/
+bool Unit_UHF_RFID::setRegion(uint8_t regionCode) {
+    Serial.printf("Setting region to %s...\n", getRegionName(regionCode).c_str());
+    
+    uint8_t setRegionCmd[] = {0xBB, 0x00, 0x07, 0x00, 0x01, regionCode, 0x00, 0x7E};
+    
+    // Calculate checksum (sum of bytes 1 to n-2)
+    uint8_t checksum = 0;
+    for (int i = 1; i < sizeof(setRegionCmd) - 2; i++) {
+        checksum += setRegionCmd[i];
+    }
+    setRegionCmd[sizeof(setRegionCmd) - 2] = checksum;
+    
+    sendCMD(setRegionCmd, sizeof(setRegionCmd));
+    delay(200);
+    
+    // Clear response buffer
+    while (_serial->available()) {
+        _serial->read();
+    }
+    
+    return true;
+}
+
+/*! @brief Verify the current region setting.
+    @return True if verification successful.*/
+bool Unit_UHF_RFID::verifyRegion() {
+    Serial.println("Verifying region setting...");
+    
+    uint8_t getRegionCmd[] = {0xBB, 0x00, 0x08, 0x00, 0x00, 0x08, 0x7E};
+    sendCMD(getRegionCmd, sizeof(getRegionCmd));
+    
+    delay(300);
+    
+    uint8_t response[40];
+    int idx = 0;
+    unsigned long start = millis();
+    
+    while (millis() - start < 1000 && idx < 40) {
+        if (_serial->available()) {
+            response[idx++] = _serial->read();
+        }
+    }
+    
+    // Parse response
+    for (int i = 0; i < idx - 6; i++) {
+        if (response[i] == 0xBB && response[i + 1] == 0x01 && response[i + 2] == 0x08) {
+            uint8_t region = response[i + 5];
+            Serial.printf("✓ Current region: %s (0x%02X)\n", getRegionName(region).c_str(), region);
+            return true;
+        }
+    }
+    
+    Serial.println("⚠️  Could not verify region");
+    return false;
+}
+
+/*! @brief Get human-readable region name.
+    @param regionCode Region code
+    @return Region name with frequency range.*/
+String Unit_UHF_RFID::getRegionName(uint8_t regionCode) {
+    switch (regionCode) {
+        case 0x01:  return "CHINA (920–925 MHz)";
+        case 0x02:  return "USA (902–928 MHz)";
+        case 0x03:  return "EUROPE (865–868 MHz)";
+        case 0x04:  return "KOREA (917–923.5 MHz)";
+        default:    return "UNKNOWN";
+    }
+}
+
+/*! @brief Set receiver demodulator parameters (Mixer Gain, IF AMP Gain, Threshold).
+    @param mixer_g Mixer gain code (0x00-0x06)
+    @param if_g IF AMP gain code (0x00-0x07)
+    @param thrd Signal demodulation threshold
+    @return True if parameters set successfully.*/
+bool Unit_UHF_RFID::setReceiverParams(uint8_t mixer_g, uint8_t if_g, uint16_t thrd) {
+    Serial.println("Setting receiver parameters for maximum sensitivity...");
+    
+    uint8_t setParamsCmd[] = {
+        0xBB, 0x00, 0xF0, 0x00, 0x04, 
+        mixer_g, 
+        if_g, 
+        (uint8_t)(thrd >> 8), 
+        (uint8_t)(thrd & 0xFF), 
+        0x00, 0x7E
+    };
+    
+    // Calculate checksum
+    uint8_t checksum = 0;
+    for (int i = 1; i < sizeof(setParamsCmd) - 2; i++) {
+        checksum += setParamsCmd[i];
+    }
+    setParamsCmd[sizeof(setParamsCmd) - 2] = checksum;
+    
+    // Clear any old data from the serial buffer
+    while (_serial->available()) {
+        _serial->read();
+    }
+
+    sendCMD(setParamsCmd, sizeof(setParamsCmd));
+    
+    // Wait for and verify the response
+    unsigned long startTime = millis();
+    uint8_t response[10];
+    int responseIdx = 0;
+
+    while (millis() - startTime < 500 && responseIdx < sizeof(response)) {
+        if (_serial->available()) {
+            response[responseIdx++] = _serial->read();
+        }
+    }
+
+    // Check for success response: BB 01 F0 00 01 00 F2 7E
+    if (responseIdx >= 7 && response[0] == 0xBB && response[1] == 0x01 && response[2] == 0xF0 && response[5] == 0x00) {
+        Serial.printf("✓ Receiver params set successfully: MixerGain=0x%02X, IFGain=0x%02X, Threshold=0x%04X\n", mixer_g, if_g, thrd);
+        return true;
+    } else {
+        Serial.println("⚠️  Failed to set receiver parameters. No valid response from module.");
+        return false;
+    }
+}
+
+/*! @brief Display information for a specific tag.
+    @param tagIndex Index of the tag in the cards array.*/
+void Unit_UHF_RFID::displayTagInfo(uint8_t tagIndex) {
+    Serial.printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    Serial.printf("Tag #%d:\n", tagIndex + 1);
+    Serial.printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    
+    // EPC - Electronic Product Code (main tag ID)
+    Serial.println("📱 EPC (Tag ID): " + cards[tagIndex].epc_str);
+    
+    // RSSI - Received Signal Strength Indicator
+    int rssi_dbm = (int8_t)cards[tagIndex].rssi;
+    Serial.printf("📶 Signal Strength: %d dBm %s\n", 
+                  rssi_dbm, getSignalQuality(rssi_dbm).c_str());
+    
+    // PC - Protocol Control
+    Serial.println("🔧 Protocol Control: " + cards[tagIndex].pc_str);
+    
+    Serial.println();
+}
+
+/*! @brief Read and display TID (Tag Identifier) for a specific tag.
+    @param tagIndex Index of the tag in the cards array.
+    @return True if TID read successfully.*/
+bool Unit_UHF_RFID::readTID(uint8_t tagIndex) {
+    if (select(cards[tagIndex].epc)) {
+        uint8_t tid_buffer[12] = {0};
+        
+        if (readCard(tid_buffer, 8, 0x02, 0, 0x00000000)) {
+            Serial.print("🔖 TID (Chip Serial): ");
+            for (uint8_t j = 0; j < 8; j++) {
+                Serial.printf("%02X", tid_buffer[j]);
+            }
+            Serial.println("\n");
+            return true;
+        } else {
+            Serial.println("🔖 TID: Read failed\n");
+            return false;
+        }
+    } else {
+        Serial.println("⚠️  Could not select tag for TID read\n");
+        return false;
+    }
+}
+
+/*! @brief Get signal quality description based on RSSI value.
+    @param rssi RSSI value in dBm.
+    @return Signal quality description.*/
+String Unit_UHF_RFID::getSignalQuality(int rssi) {
+    if (rssi > -50)      return "(Excellent)";
+    else if (rssi > -65) return "(Good)";
+    else if (rssi > -75) return "(Fair)";
+    else                 return "(Weak)";
+}

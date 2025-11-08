@@ -52,6 +52,18 @@ class Unit_UHF_RFID {
     void sendCMD(uint8_t *data, size_t size);
     bool writeCard(uint8_t *data, size_t size, uint8_t membank, uint16_t sa, uint32_t access_password = 0);
     bool readCard(uint8_t *data, size_t size, uint8_t membank, uint16_t sa, uint32_t access_password = 0);
+    
+    // Initialization and configuration functions
+    void initializeModule(uint8_t rx_pin, uint8_t tx_pin);
+    bool setRegion(uint8_t regionCode);
+    bool verifyRegion();
+    String getRegionName(uint8_t regionCode);
+    bool setReceiverParams(uint8_t mixer_g, uint8_t if_g, uint16_t thrd);
+    
+    // Display and utility functions
+    void displayTagInfo(uint8_t tagIndex);
+    bool readTID(uint8_t tagIndex);
+    String getSignalQuality(int rssi);
 };
 
 #endif
