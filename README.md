@@ -1,774 +1,438 @@
-# OptiFlow - Real-time Inventory Tracking System
+# OptiFlow - Real-time Store Tracking System
 
-A wearable RFID + UWB positioning system for Decathlon employees to passively scan products and track their locations in real-time.
+A UWB (Ultra-Wideband) positioning system for tracking items and employees in retail stores. Features an interactive map interface with real-time triangulation, aisle navigation simulation, and missing item detection.
 
-## � What It Does
+## 🎯 What It Does
 
-OptiFlow tracks product locations in retail stores using:
-- **UWB (Ultra-Wideband)** positioning for precise location tracking
-- **RFID** for product identification (coming soon)
-- **Real-time dashboard** showing live inventory positions and distances
-
-## �🏗️ System Architecture
-
-```
-ESP32-S3 + DWM3001CDK (UWB Tag)
-         ↓ WiFi/MQTT
-    MacBook Mosquitto Broker
-         ↓ MQTT Bridge
-    FastAPI Backend
-         ↓
-    PostgreSQL Database
-         ↑ REST API
-    Next.js Dashboard
-```
-
-## 🚀 Quick Start (Simulator Mode - No Hardware Needed!)
-
-### Simple 3-Step Setup
-
-```bash
-# 1. Start the system
-./start_system.sh
-
-# 2. In a new terminal, start the simulator
-./start_simulator.sh
-
-# 3. In another terminal, send the START command
-mosquitto_pub -h localhost -t 'store/control' -m 'START'
-
-# 4. Open your browser
-# Frontend: http://localhost:3000
-```
-
-**What you'll see:**
-- 📍 Click "Setup Mode" to place 3-4 anchors on the map
-- 🏃 Watch the simulated tag walk through store aisles
-- 📦 See items appear on the map (orange squares)
-- ⚠️ Missing items turn red with alerts in sidebar
-- 📊 Live position tracking with triangulation
-
-**Common Issues:**
-
-If `pip install paho` gives Python 2 error:
-```bash
-pip3 install paho-mqtt  # Use pip3 for Python 3
-```
-
-If Docker commands fail in new terminals:
-```bash
-# Add Docker to your PATH permanently
-echo 'export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
+- **Real-time Position Tracking**: Uses UWB triangulation to calculate precise 2D positions
+- **Interactive Store Map**: Canvas-based visualization with drag-and-drop anchor configuration
+- **Item Tracking**: Persistent item display with status monitoring (present/missing)
+- **Realistic Simulation**: Walk patterns through store aisles with proximity-based detection
+- **Missing Item Alerts**: Automatic detection and notification when items disappear
 
 ---
 
-## 🔧 Full Setup Guide (With Real Hardware)
+## 🚀 Quick Start (5 Minutes - No Hardware!)
 
-### Prerequisites
-
-- **macOS** with Homebrew installed
-- **Docker Desktop** installed and running
-- **Arduino IDE** with ESP32 support (for hardware mode)
-- **Hardware** (optional): ESP32-S3, DWM3001CDK UWB modules (1 tag + 1-4 anchors)
-
----
-
-## 📦 Step 1: Install Mosquitto MQTT Broker
+### Automated Setup
 
 ```bash
-# Install Mosquitto
+# One command to install and start everything!
+./start.sh
+```
+
+This script will:
+- ✅ Check prerequisites (Docker, Python, Homebrew)
+- ✅ Install & start Mosquitto MQTT broker
+- ✅ Install Python dependencies
+- ✅ Start all Docker containers
+- ✅ Verify services are running
+
+### Manual Setup (if you prefer)
+
+<details>
+<summary>Click to expand manual setup steps</summary>
+
+```bash
+# 1. Install Mosquitto MQTT broker
 brew install mosquitto
-
-# Configure Mosquitto
-sudo nano /opt/homebrew/etc/mosquitto/mosquitto.conf
-```
-
-Add these lines at the end:
-```
-listener 1883 0.0.0.0
-allow_anonymous true
-```
-
-Start Mosquitto:
-```bash
 brew services start mosquitto
 
-# Verify it's running
-brew services info mosquitto
-# Should show: Running: ✔
+# 2. Install Python dependencies
+pip3 install paho-mqtt
+
+# 3. Start Docker services
+docker compose up -d
+```
+
+</details>
+
+### Configure Anchors
+
+1. Open http://localhost:3000 in your browser
+2. Click **"Setup Mode"** button
+3. Click on the map to place 3-4 anchors (corners of the store work best)
+4. Click **"Finish Setup"** when done
+
+### Run Simulator
+
+```bash
+# Terminal 1: Start simulator
+python3 esp32_simulator.py
+
+# Terminal 2: Send START command
+mosquitto_pub -h localhost -t 'store/control' -m 'START'
+```
+
+### Step 4: Watch Magic Happen ✨
+
+You should now see:
+- 🔵 Blue dot (tag) moving through aisles
+- 🟠 Orange squares (items detected and present)
+- 🔴 Red squares (missing items) with alerts in sidebar
+- 📊 Live position updates with confidence scores
+
+---
+
+## 🏗️ System Architecture
+
+```
+┌─────────────────┐
+│  ESP32 / Sim    │  Simulates/reads UWB distances
+└────────┬────────┘
+         │ MQTT
+         ▼
+┌─────────────────┐
+│ Mosquitto MQTT  │  Message broker
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  MQTT Bridge    │  Forwards MQTT → HTTP
+└────────┬────────┘
+         │ HTTP POST
+         ▼
+┌─────────────────┐
+│  FastAPI        │  • Triangulation algorithm
+│  Backend        │  • Anchor management
+└────────┬────────┘  • Position calculation
+         │
+         ▼
+┌─────────────────┐
+│  PostgreSQL     │  Stores measurements,
+│  Database       │  anchors, positions, items
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Next.js        │  Interactive map dashboard
+│  Frontend       │  with real-time updates
+└─────────────────┘
 ```
 
 ---
 
-## 🐳 Step 2: Start Backend Services
+## 📊 How It Works
+
+### 1. UWB Triangulation
+
+The system uses **trilateration** to calculate 2D positions from distance measurements:
+
+- **2 anchors**: Weighted midpoint (~50% confidence)
+- **3+ anchors**: Least-squares algorithm (70-90% confidence)
+
+**Algorithm:**
+```
+For each anchor i: (x - x_i)² + (y - y_i)² = r_i²
+
+Linearize and solve: position = (A^T A)^-1 (A^T b)
+
+Confidence = exp(-avg_error / 50)
+```
+
+### 2. Store Simulation
+
+The simulator creates a realistic store environment:
+
+- **4 vertical aisles** (x = 200, 400, 600, 800 cm)
+- **1 cross aisle** (y = 400 cm)
+- **15+ items** distributed throughout aisles
+- **Tag navigation** follows aisle patterns (up/down movement)
+- **Boundary constraints** keep tag within 50-950cm x 50-750cm
+
+### 3. Item Detection
+
+- **RFID range**: 100cm detection radius
+- **Status tracking**: present/missing/unknown
+- **Missing probability**: 2% chance when detected
+- **Persistent display**: All items stay on map regardless of detection
+
+---
+
+## 🎮 Using the System
+
+### Anchor Setup Mode
+
+1. Click **"Setup Mode"**
+2. **Click** on map to place new anchors
+3. **Drag** existing anchors to reposition
+4. **Delete** anchors via sidebar
+5. Click **"Finish Setup"**
+
+**Tip:** Place anchors at store corners for best triangulation accuracy.
+
+### Simulator Configuration
+
+Edit `esp32_simulator.py` to customize:
+
+```python
+STORE_WIDTH = 1000   # Store width in cm
+STORE_HEIGHT = 800   # Store height in cm
+RFID_RANGE = 100     # Detection range in cm
+UPDATE_INTERVAL = 0.5  # Seconds between updates
+```
+
+### Manual Testing
 
 ```bash
-cd optiflow
-
-# Copy environment template
-cp .env.example .env
-
-# Start all services (PostgreSQL, FastAPI, Frontend, MQTT Bridge)
-docker compose up -d
-
-# Check all services are running
-docker compose ps
-```
-
-Expected output:
-```
-NAME                     STATUS      PORTS
-optiflow-backend         Up          0.0.0.0:8000->8000/tcp
-optiflow-db              Up          0.0.0.0:5432->5432/tcp
-optiflow-frontend        Up          0.0.0.0:3000->3000/tcp
-optiflow-mqtt-bridge     Up
-```
-
-**Verify services:**
-```bash
-# Test backend
+# Check backend health
 curl http://localhost:8000
-# Should return: {"status":"online","service":"OptiFlow Backend"}
 
-# Check MQTT bridge logs
-docker logs optiflow-mqtt-bridge --tail 10
-# Should show: ✅ Connected to MQTT broker
+# List configured anchors
+curl http://localhost:8000/anchors | jq
 
-# Open dashboard in browser
-open http://localhost:3000
+# Get latest positions
+curl http://localhost:8000/positions/latest | jq
+
+# Get all detections (items)
+curl http://localhost:8000/data/latest?limit=100 | jq
 ```
 
 ---
 
-## 🔧 Step 3: Configure DWM3001CDK Anchors
+## 🔧 API Endpoints
 
-You need at least **1 anchor** (up to 4 for triangulation).
+### Anchors
+- `GET /anchors` - List all anchors
+- `POST /anchors` - Create anchor (auto-called from UI)
+- `PUT /anchors/{id}` - Update anchor position
+- `DELETE /anchors/{id}` - Remove anchor
 
-### For Each Anchor Board:
+### Positions
+- `GET /positions/latest` - Recent calculated positions
+- `POST /calculate-position` - Manually trigger triangulation
 
-1. **Connect via USB** to your computer
-2. **Open Serial Monitor** (115200 baud)
-3. **Run these commands** (press Enter after each):
-
-```bash
-STAT           # Check current mode
-INITR          # Initialize as Responder (anchor)
-RESPF          # Start as anchor in active mode
-SAVE           # Save configuration
-RESET          # Restart the anchor
-```
-
-Expected output:
-```
-OK
-UCI>RESPF
-OK
-```
-
-4. **Disconnect USB** - anchor will run autonomously
-5. **Power anchor** via USB or battery
-6. **Repeat for all anchors** (you'll configure them with different MAC addresses automatically)
+### Data
+- `POST /data` - Receive UWB measurements (MQTT bridge uses this)
+- `GET /data/latest?limit=N` - Recent detections with locations
 
 ---
 
-## 📱 Step 4: Upload ESP32 Firmware
-
-### Hardware Setup
-
-**Wiring (ESP32-S3 to DWM3001CDK Tag):**
-```
-ESP32 GPIO17 (TX)  →  DWM3001CDK P0.08 (RX)
-ESP32 GPIO18 (RX)  →  DWM3001CDK P0.06 (TX)
-ESP32 GND          →  DWM3001CDK GND
-```
-
-### Arduino IDE Configuration
-
-1. **Open File:**
-   ```
-   UART_UWB_TEST/esp32_dwm3001_cli/esp32_uwb_simple_mqtt.ino
-   ```
-
-2. **Configure Board:**
-   - **Board**: "ESP32S3 Dev Module"
-   - **Upload Speed**: 921600
-   - **USB CDC On Boot**: Enabled
-   - **Port**: Select your ESP32's port
-
-3. **Verify WiFi Settings** (lines 32-34):
-   ```cpp
-   const char* ssid = "Oscar";          // Your WiFi hotspot name
-   const char* password = "password";    // Your WiFi password
-   const char* mqtt_server = "172.20.10.3";  // Your MacBook IP
-   ```
-   
-   💡 **Find your MacBook IP:**
-   ```bash
-   # If using hotspot:
-   ipconfig getifaddr en0
-   # or
-   ipconfig getifaddr en1
-   ```
-
-4. **Upload Sketch** (Click Upload button)
-
-5. **Open Serial Monitor** (115200 baud)
-
----
-
-## ▶️ Step 5: Start Data Collection
-
-### Watch ESP32 Serial Monitor
-
-You should see:
-```
-=== ESP32-S3 + DWM3001CDK + MQTT ===
-[UART] DWM3001CDK Ready
-[WiFi] Connecting...
-[WiFi] Connected!
-[WiFi] IP: 172.20.10.4
-[MQTT] Connecting...connected!
-[MQTT] Published ESP32_READY
-[READY] Waiting for START signal...
-```
-
-### Configure DWM3001CDK Tag
-
-In Serial Monitor, type:
-```bash
-STAT           # Check status
-INITF          # Initialize as tag (if not already)
-```
-
-### Send START Signal
-
-```bash
-# From your terminal:
-mosquitto_pub -h 172.20.10.3 -t store/control -m 'START'
-```
-
-**ESP32 Serial Monitor will show:**
-```
-[CONTROL] START received!
-[SYSTEM] Now publishing UWB data
-
-[UWB] >>> SESSION START <<<
-[UWB] >>> SESSION END <<<
-
-=== UWB Session #1 ===
-Timestamp: 2024-11-12T00:00:02
-Measurements: 1
-  - 0x0001 @ 62.0cm (SUCCESS)
-
-[MQTT] ✓ Published to store/aisle1 - Session #1 (1 measurements)
-```
-
----
-
-## 📊 Step 6: View Live Data
-
-### 1. Dashboard (Best Option)
-Open browser: **http://localhost:3000**
-
-You'll see:
-- **System Stats**: Total measurements collected
-- **Recent UWB Measurements**: Live distance readings
-- **Auto-refresh**: Updates every 2 seconds
-
-### 2. Backend API
-```bash
-# Get latest data
-curl -s 'http://localhost:8000/data/latest?limit=10' | python3 -m json.tool
-
-# Get statistics
-curl http://localhost:8000/stats
-```
-
-### 3. Database Query
-```bash
-docker compose exec -T postgres psql -U optiflow -d optiflow -c \
-  "SELECT timestamp, mac_address, distance_cm FROM uwb_measurements ORDER BY timestamp DESC LIMIT 10;"
-```
-
-### 4. Live Logs
-```bash
-# Watch MQTT bridge
-docker logs -f optiflow-mqtt-bridge
-
-# Watch backend
-docker logs -f optiflow-backend
-
-# Watch all services
-docker compose logs -f
-```
-
----
-
-## � Stopping the System
-
-```bash
-# Stop all Docker services
-docker compose down
-
-# Stop Mosquitto
-brew services stop mosquitto
-
-# Stop ESP32 (unplug or press reset)
-```
-
----
-
-## 🔄 Restarting the System
-
-```bash
-# 1. Start Mosquitto (if not running)
-brew services start mosquitto
-
-# 2. Start Docker services
-docker compose up -d
-
-# 3. Power on ESP32 (will auto-connect)
-
-# 4. Send START signal
-mosquitto_pub -h 172.20.10.3 -t store/control -m 'START'
-```
-
----
-
-## 📡 System Endpoints & Topics
-
-### MQTT Topics
-
-| Topic | Publisher | Purpose | Format |
-|-------|-----------|---------|--------|
-| `store/aisle1` | ESP32 | UWB measurement data | JSON |
-| `store/control` | You/Backend | Control signals | `"START"` |
-| `store/status` | ESP32 | Device status | `"ESP32_READY"` |
-
-### HTTP Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `http://localhost:8000/` | GET | Backend health check |
-| `http://localhost:8000/data` | POST | Receive data (MQTT bridge uses this) |
-| `http://localhost:8000/data/latest?limit=N` | GET | Get recent measurements |
-| `http://localhost:8000/stats` | GET | System statistics |
-| `http://localhost:3000` | GET | Dashboard UI |
-
-### Data Format
-
-ESP32 publishes to `store/aisle1`:
-```json
-{
-  "timestamp": "2024-11-12T15:30:00",
-  "detections": [],
-  "uwb_measurements": [
-    {
-      "mac_address": "0x0001",
-      "distance_cm": 62.5,
-      "status": "SUCCESS"
-    }
-  ]
-}
-```
-
-## 📊 Project Structure
+## 📁 Project Structure
 
 ```
 optiflow/
-├── backend/                    # FastAPI backend
+├── backend/                     # FastAPI backend
 │   ├── app/
-│   │   ├── main.py            # API routes
-│   │   ├── models.py          # SQLAlchemy models
-│   │   ├── schemas.py         # Pydantic schemas
-│   │   └── database.py        # DB connection
-│   ├── requirements.txt
+│   │   ├── main.py             # API endpoints
+│   │   ├── models.py           # Database models
+│   │   ├── schemas.py          # Pydantic schemas
+│   │   ├── triangulation.py   # Position calculation algorithm
+│   │   └── database.py         # DB connection
 │   └── Dockerfile
-├── frontend/                   # Next.js dashboard
+├── frontend/                    # Next.js dashboard
 │   ├── app/
-│   │   ├── page.tsx           # Main page
-│   │   ├── layout.tsx         # Root layout
+│   │   ├── page.tsx           # Main dashboard page
 │   │   └── components/
-│   │       └── Dashboard.tsx  # Dashboard component
-│   ├── package.json
+│   │       └── StoreMap.tsx   # Interactive canvas map
 │   └── Dockerfile
-├── mqtt_bridge/               # MQTT-to-API bridge
+├── mqtt_bridge/                # MQTT → HTTP bridge
 │   ├── mqtt_to_api.py
-│   ├── requirements.txt
 │   └── Dockerfile
-├── MQTT_TEST/                 # ESP32 firmware
-├── UART_UWB_TEST/             # UWB testing code
-├── docker-compose.yml
-├── .env.example
-└── README.md
+├── firmware/                    # ESP32 hardware code (optional)
+│   ├── UWB_TEST/              # UWB setup guides
+│   └── RFID_TEST/             # RFID integration docs
+├── scripts/                     # Optional helper scripts
+│   ├── setup.sh               # Manual dependency installation
+│   └── test_system.sh         # System validation tests
+├── esp32_simulator.py          # Hardware simulator (no ESP32 needed!)
+├── start.sh                    # One-command startup script
+├── docker-compose.yml          # Service orchestration
+└── README.md                   # This file
 ```
-
-## 🛠️ Development
-
-### Run Backend Only
-
-```bash
-cd backend
-pip install -r requirements.txt
-export DATABASE_URL="postgresql://optiflow:optiflow_dev@localhost:5432/optiflow"
-uvicorn app.main:app --reload
-```
-
-### Run Frontend Only
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Run MQTT Bridge Only
-
-```bash
-cd mqtt_bridge
-pip install -r requirements.txt
-export MQTT_BROKER_HOST="localhost"
-export API_URL="http://localhost:8000"
-python mqtt_to_api.py
-```
-
-## 📊 Database Schema
-
-### `detections` table
-- `id` (Primary Key)
-- `timestamp` (DateTime)
-- `product_id` (String)
-- `product_name` (String)
-
-### `uwb_measurements` table
-- `id` (Primary Key)
-- `timestamp` (DateTime)
-- `mac_address` (String)
-- `distance_cm` (Float)
-- `status` (String, nullable)
-
-## 🔮 Future Enhancements
-
-- [ ] WebSocket support for real-time dashboard updates
-- [ ] Server-side triangulation from UWB measurements
-- [ ] Analytics dashboard (heatmaps, restock predictions)
-- [ ] Authentication & multi-user support
-- [ ] Mobile app for employees
-- [ ] Alert system for missing inventory
-- [ ] Integration with Decathlon inventory systems
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Issue: MQTT Bridge Shows "Network Unreachable"
+### Docker Command Not Found
 
-**Symptoms:**
-```
-❌ Fatal error: [Errno 101] Network is unreachable
-```
-
-**Fix:**
 ```bash
-# 1. Check Mosquitto is running
-ps aux | grep mosquitto | grep -v grep
+# Add Docker to PATH permanently
+echo 'export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
 
-# 2. If not running, start it
-brew services start mosquitto
+### Python Module Not Found
 
-# 3. Verify your MacBook IP matches .env
-cat .env | grep MQTT_BROKER_HOST
-# Should be your actual IP (e.g., 172.20.10.3), not localhost
+```bash
+# Use pip3 for Python 3 (not pip which may use Python 2)
+pip3 install paho-mqtt
+```
 
-# 4. Restart MQTT bridge
-docker compose restart mqtt_bridge
+### No Positions Calculated
+
+**Check:**
+1. At least 2 anchors configured: `curl http://localhost:8000/anchors`
+2. UWB measurements arriving: `curl http://localhost:8000/data/latest?limit=5`
+3. Simulator is running and received START command
+
+### Frontend Shows "Disconnected"
+
+```bash
+# Restart backend
+docker compose restart backend
+
+# Check logs
+docker logs optiflow-backend --tail 50
+```
+
+### Items Not Appearing on Map
+
+```bash
+# Rebuild frontend with updated code
+docker compose build frontend --no-cache
+docker compose up -d frontend
+```
+
+### Simulator Connection Failed
+
+```bash
+# Check Mosquitto is running
+brew services list | grep mosquitto
+
+# Restart if needed
+brew services restart mosquitto
+
+# Verify your Mac's IP (if using hotspot)
+ipconfig getifaddr en0
 ```
 
 ---
 
-### Issue: ESP32 Not Connecting to WiFi
+## 🛑 Stopping the System
 
-**Symptoms:**
-```
-[WiFi] Connecting...
-...................
-[WiFi] Failed!
-```
+```bash
+# Stop all Docker containers
+docker compose down
 
-**Fix:**
-1. Check WiFi credentials in firmware (lines 32-34)
-2. Verify hotspot "Oscar" is active
-3. Make sure ESP32 is in range
-4. Check password is correct
+# Stop simulator (Ctrl+C in simulator terminal)
+
+# Stop Mosquitto (optional)
+brew services stop mosquitto
+```
 
 ---
 
-### Issue: No UWB Measurements (0 measurements)
+## 🎓 Real Hardware Setup (Optional)
 
-**Symptoms:**
+### Hardware Requirements
+
+- **ESP32-S3** development board
+- **DWM3001CDK** UWB modules (1 tag + 2-4 anchors)
+- USB cables for programming
+
+### Anchor Configuration
+
+For each DWM3001CDK anchor:
+
 ```
-=== UWB Session #1 ===
-Measurements: 0
+1. Connect USB, open Serial Monitor (115200 baud)
+2. Type: INITR [Enter]
+3. Type: RESPF [Enter]
+4. Type: SAVE [Enter]
+5. Disconnect, power via USB/battery
 ```
 
-**Fix:**
-1. **Power on anchor boards** - they must be running
-2. **Configure anchors** as RESPF mode:
-   ```bash
-   INITR
-   RESPF
-   SAVE
+### ESP32 Firmware
+
+1. Open `UART_UWB_TEST/esp32_dwm3001_cli/esp32_uwb_simple_mqtt.ino` in Arduino IDE
+2. Configure WiFi settings (lines 32-34):
+   ```cpp
+   const char* ssid = "YourWiFi";
+   const char* password = "YourPassword";
+   const char* mqtt_server = "192.168.1.X";  // Your Mac IP
    ```
-3. **Check anchor LEDs** are blinking
-4. **Verify same session parameters** on tag and anchors
-5. **Move tag closer** to anchors (within 10 meters)
+3. Select Board: "ESP32S3 Dev Module"
+4. Upload sketch
+5. Send START command: `mosquitto_pub -h localhost -t store/control -m 'START'`
 
 ---
 
-### Issue: Dashboard Shows "Disconnected"
+## 🔮 What's Next
 
-**Fix:**
+### Current Features ✅
+- Interactive map with triangulation
+- Anchor configuration UI
+- ESP32 simulator with realistic movement
+- Item tracking with missing item detection
+- Aisle-following navigation pattern
+
+### Future Enhancements 🚧
+- WebSocket for real-time updates (no polling)
+- RFID reader integration with ESP32
+- Heatmap visualization of movement patterns
+- Multi-store support
+- Mobile app for employees
+- Machine learning for anomaly detection
+- Integration with inventory management systems
+
+---
+
+## �️ Helper Scripts
+
+### Main Script
+
+- **`./start.sh`** - One-command system startup
+  - Checks prerequisites
+  - Installs dependencies
+  - Starts all services
+  - Verifies everything is running
+
+### Optional Scripts (in `scripts/` folder)
+
+- **`scripts/setup.sh`** - Manual dependency installation only
+- **`scripts/test_system.sh`** - Comprehensive system validation
+  - Tests all endpoints
+  - Creates/deletes test anchors
+  - Verifies MQTT broker
+  - Checks frontend accessibility
+
+**Usage:**
 ```bash
-# 1. Check backend is running
-curl http://localhost:8000
-# Should return: {"status":"online"...}
+# Test your system
+./scripts/test_system.sh
 
-# 2. Check Docker containers
-docker compose ps
-# All should show "Up"
-
-# 3. Restart if needed
-docker compose restart backend frontend
-
-# 4. Clear browser cache and refresh
+# Manual setup (if you don't want automated script)
+./scripts/setup.sh
 ```
 
 ---
 
-### Issue: Data Not Appearing on Dashboard
+## �📞 Support & Commands
 
-**Fix:**
+**Quick Links:**
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
+
+**Common Commands:**
 ```bash
-# 1. Verify ESP32 received START signal
-# In Serial Monitor, you should see:
-# [CONTROL] START received!
+# Start system
+./start.sh
 
-# 2. Send START signal again
-mosquitto_pub -h 172.20.10.3 -t store/control -m 'START'
+# Stop system
+docker compose down
 
-# 3. Check MQTT bridge is receiving data
-docker logs optiflow-mqtt-bridge --tail 20
-# Should show: 📥 Received message...
+# Restart a service
+docker compose restart backend
 
-# 4. Check database has data
-docker compose exec -T postgres psql -U optiflow -d optiflow -c \
-  "SELECT COUNT(*) FROM uwb_measurements;"
+# View logs
+docker compose logs -f
 
-# 5. Wait for frontend auto-refresh (2 seconds)
+# Test system health
+./scripts/test_system.sh
+
+# Access database
+docker compose exec postgres psql -U optiflow optiflow
 ```
-
----
-
-### Issue: "Cannot find DWM3001CDK serial port"
-
-**Fix:**
-1. Check USB cable supports data (not just power)
-2. Install CH340/CP2102 drivers if needed
-3. Check port permissions on macOS:
-   ```bash
-   ls -l /dev/cu.*
-   ```
-4. Try different USB port
-
----
-
-### Issue: Docker Services Won't Start
-
-**Fix:**
-```bash
-# 1. Check Docker Desktop is running
-docker ps
-# If error, start Docker Desktop
-
-# 2. Check for port conflicts
-lsof -i :8000  # Backend
-lsof -i :3000  # Frontend
-lsof -i :5432  # PostgreSQL
-
-# 3. Kill conflicting processes or change ports in docker-compose.yml
-
-# 4. Clean start
-docker compose down -v  # Warning: deletes database!
-docker compose up --build
-```
-
----
-
-### Issue: High CPU Usage
-
-**Cause:** UWB sessions every 200ms can generate lots of data.
-
-**Fix:**
-```bash
-# 1. Increase session interval on DWM3001CDK
-# Connect to tag and run:
-SETAPP block_duration 500  # 500ms = 2Hz instead of 5Hz
-SAVE
-
-# 2. Limit frontend refresh rate
-# Edit frontend/app/components/Dashboard.tsx
-# Change: setInterval(fetchData, 5000)  // 5 seconds instead of 2
-```
-
----
-
-### Getting Help
-
-**Check logs:**
-```bash
-# ESP32 logs
-# → Serial Monitor at 115200 baud
-
-# Backend logs
-docker logs optiflow-backend
-
-# MQTT bridge logs
-docker logs optiflow-mqtt-bridge
-
-# All logs
-docker compose logs
-```
-
-**Common Log Messages:**
-
-✅ **Good:**
-- `✅ Connected to MQTT broker`
-- `✅ Data forwarded successfully`
-- `[MQTT] ✓ Published to store/aisle1`
-
-❌ **Bad:**
-- `❌ Fatal error: Network is unreachable` → Mosquitto not running
-- `failed, rc=-2` → MQTT connection refused
-- `Measurements: 0` → Anchors not configured/powered
-
----
-
-## 📂 Project Structure
-
-```
-optiflow/
-├── backend/                           # FastAPI backend
-│   ├── app/
-│   │   ├── main.py                   # API routes & startup
-│   │   ├── models.py                 # Database models
-│   │   ├── schemas.py                # Pydantic schemas
-│   │   └── database.py               # DB connection
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/                          # Next.js dashboard
-│   ├── app/
-│   │   ├── page.tsx                  # Main dashboard page
-│   │   └── components/
-│   │       └── Dashboard.tsx         # Dashboard component
-│   ├── package.json
-│   └── Dockerfile
-├── mqtt_bridge/                       # MQTT → API bridge
-│   ├── mqtt_to_api.py               # Bridge script
-│   ├── requirements.txt
-│   └── Dockerfile
-├── UART_UWB_TEST/                    # ESP32 firmware
-│   └── esp32_dwm3001_cli/
-│       └── esp32_uwb_simple_mqtt.ino # ⭐ Main ESP32 code
-├── docker-compose.yml                 # Orchestration
-├── .env                              # Configuration
-├── README.md                         # This file
-├── TESTING.md                        # Testing guide
-└── ARCHITECTURE.md                   # System architecture
-```
-
----
-
-## � What's Next?
-
-### Current Status ✅
-- [x] UWB distance measurements working
-- [x] Real-time MQTT data pipeline
-- [x] PostgreSQL database storage
-- [x] REST API backend
-- [x] Live dashboard
-
-### Coming Soon 🚧
-- [ ] **RFID Integration** - Connect RFID reader to ESP32
-- [ ] **Triangulation** - Calculate 2D/3D position from multiple anchors
-- [ ] **WebSocket Support** - Push updates instead of polling
-- [ ] **Analytics Dashboard** - Heatmaps, movement patterns
-- [ ] **Alert System** - Notify when items go missing
-- [ ] **Mobile App** - Employee interface
-
-### Future Enhancements 🌟
-- [ ] Authentication & multi-user support
-- [ ] Integration with Decathlon inventory systems
-- [ ] ML-based anomaly detection
-- [ ] Predictive restocking
-- [ ] Multi-store deployment
-
----
-
-## 📚 Additional Documentation
-
-- **[TESTING.md](TESTING.md)** - Comprehensive testing guide
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture deep-dive
-- **[backend/app/](backend/app/)** - Backend API documentation
-- **[frontend/app/](frontend/app/)** - Frontend component documentation
-
----
-
-## 🤝 Contributing
-
-This is a prototype for Decathlon's smart retail innovation. For questions or contributions, please open an issue.
 
 ---
 
 ## 📝 License
 
-MIT License - See LICENSE file for details
+MIT License - Built for retail innovation and warehouse optimization.
 
 ---
 
-## 👥 Team
-
-Built for Decathlon's warehouse and retail innovation initiatives.
-
-**Hardware Stack:**
-- ESP32-S3 microcontroller
-- DWM3001CDK UWB modules (Qorvo)
-- RFID reader (planned)
-
-**Software Stack:**
-- FastAPI (Python)
-- PostgreSQL
-- Next.js (React/TypeScript)
-- Docker
-- Mosquitto MQTT
-
----
-
-## 📞 Support
-
-**Quick Reference:**
-
-| Service | URL/Command | Purpose |
-|---------|-------------|---------|
-| Dashboard | http://localhost:3000 | Live monitoring |
-| Backend API | http://localhost:8000 | REST API |
-| API Docs | http://localhost:8000/docs | Interactive API docs |
-| Logs | `docker compose logs -f` | View all logs |
-| Database | `docker compose exec postgres psql -U optiflow optiflow` | Direct DB access |
-
-**Need Help?**
-1. Check the [Troubleshooting](#-troubleshooting) section
-2. Review logs: `docker compose logs`
-3. Check ESP32 Serial Monitor
-4. Verify all services are running: `docker compose ps`
+**Need help?** Check the troubleshooting section above or review the logs with `docker compose logs`.
