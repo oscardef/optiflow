@@ -1,11 +1,26 @@
 /*
  * ESP32-S3 + DWM3001CDK (CLI Firmware) + MQTT
- * Simple version based on working code
  * 
- * Wiring:
+ * Publishes UWB ranging data to OptiFlow backend via MQTT
+ * 
+ * Hardware:
  * - ESP32 GPIO17 (TX) -> DWM3001CDK P0.08 (RX)
  * - ESP32 GPIO18 (RX) -> DWM3001CDK P0.06 (TX)
  * - GND -> GND
+ * 
+ * MQTT Topics:
+ * - Publishes to: store/aisle1 (UWB data)
+ * - Subscribes to: store/control (START signal)
+ * - Publishes to: store/status (ESP32_READY on boot)
+ * 
+ * JSON Format (matches backend schema):
+ * {
+ *   "timestamp": "2024-11-12T15:30:45",
+ *   "detections": [],
+ *   "uwb_measurements": [
+ *     {"mac_address": "0x1234", "distance_cm": 150.5, "status": "SUCCESS"}
+ *   ]
+ * }
  */
 
 #include <WiFi.h>
@@ -19,9 +34,9 @@ const char* password = "password";
 const char* mqtt_server = "172.20.10.3";
 
 // MQTT Topics
-const char* TOPIC_UWB_RAW = "store/uwb_raw";
-const char* TOPIC_CONTROL = "store/control";
-const char* TOPIC_STATUS = "store/status";
+const char* TOPIC_DATA = "store/aisle1";       // Main data topic (matches backend)
+const char* TOPIC_CONTROL = "store/control";   // Control signals
+const char* TOPIC_STATUS = "store/status";     // Status updates
 
 // MQTT Clients
 WiFiClient espClient;
@@ -177,31 +192,24 @@ void processLine(String line) {
 void printSessionJSON() {
   sessionCount++;
   
-  // Get timestamp
+  // Get timestamp in ISO format
   unsigned long timestamp = millis();
   
-  // Build JSON document
+  // Build JSON document matching backend schema
   StaticJsonDocument<2048> doc;
-  doc["timestamp"] = timestamp;
-  doc["session_count"] = sessionCount;
   
-  // Extract session_handle
-  int handleIdx = sessionBuffer.indexOf("session_handle=");
-  if (handleIdx != -1) {
-    int handleEnd = sessionBuffer.indexOf(",", handleIdx);
-    String handle = sessionBuffer.substring(handleIdx + 15, handleEnd);
-    doc["session_handle"] = handle.toInt();
-  }
+  // Create ISO timestamp (simplified - using millis for now)
+  char timeStr[32];
+  sprintf(timeStr, "2024-11-12T%02lu:%02lu:%02lu", 
+          (timestamp / 3600000) % 24,
+          (timestamp / 60000) % 60, 
+          (timestamp / 1000) % 60);
+  doc["timestamp"] = timeStr;
   
-  // Extract sequence_number
-  int seqIdx = sessionBuffer.indexOf("sequence_number=");
-  if (seqIdx != -1) {
-    int seqEnd = sessionBuffer.indexOf(",", seqIdx);
-    String seq = sessionBuffer.substring(seqIdx + 16, seqEnd);
-    doc["sequence_number"] = seq.toInt();
-  }
+  // Empty detections array (no RFID yet)
+  JsonArray detections = doc.createNestedArray("detections");
   
-  // Parse measurements array
+  // Parse UWB measurements array
   JsonArray measurements = doc.createNestedArray("uwb_measurements");
   
   int searchStart = 0;
@@ -226,7 +234,7 @@ void printSessionJSON() {
     String status = measurement.substring(statusIdx + 8, statusEnd);
     
     // Extract distance if SUCCESS
-    int distance = -1;
+    float distance = 0.0;
     if (status == "SUCCESS") {
       int distIdx = measurement.indexOf("distance[cm]=");
       if (distIdx != -1) {
@@ -236,60 +244,57 @@ void printSessionJSON() {
           distEnd++;
         }
         String distStr = measurement.substring(distIdx, distEnd);
-        distance = distStr.toInt();
+        distance = distStr.toFloat();
       }
     }
     
-    // Add to JSON array
-    JsonObject meas = measurements.createNestedObject();
-    meas["mac_address"] = mac;
-    meas["status"] = status;
-    meas["distance_cm"] = distance;
+    // Add to JSON array (only include if we have a valid distance)
+    if (distance > 0) {
+      JsonObject meas = measurements.createNestedObject();
+      meas["mac_address"] = mac;
+      meas["distance_cm"] = distance;
+      meas["status"] = status;
+    }
     
     searchStart = measEnd + 1;
   }
   
-  // Print to Serial (like original code)
-  Serial.println("\n{");
-  Serial.print("  \"timestamp\": ");
-  Serial.print(timestamp);
-  Serial.println(",");
-  Serial.print("  \"session_count\": ");
-  Serial.print(sessionCount);
-  Serial.println(",");
-  Serial.print("  \"measurements\": ");
-  Serial.print(measurements.size());
-  Serial.println();
+  // Print to Serial Monitor
+  Serial.println("\n=== UWB Session #" + String(sessionCount) + " ===");
+  Serial.print("Timestamp: ");
+  Serial.println(doc["timestamp"].as<String>());
+  Serial.print("Measurements: ");
+  Serial.println(measurements.size());
   
   for (JsonObject m : measurements) {
-    Serial.print("    ");
+    Serial.print("  - ");
     Serial.print(m["mac_address"].as<String>());
-    Serial.print(": ");
+    Serial.print(" @ ");
+    Serial.print(m["distance_cm"].as<float>(), 1);
+    Serial.print("cm (");
     Serial.print(m["status"].as<String>());
-    if (m["distance_cm"].as<int>() > 0) {
-      Serial.print(" @ ");
-      Serial.print(m["distance_cm"].as<int>());
-      Serial.println("cm");
-    } else {
-      Serial.println();
-    }
+    Serial.println(")");
   }
-  Serial.println("}\n");
+  Serial.println();
   
-  // Publish to MQTT if START received
+  // Publish to MQTT if START received and we have measurements
   if (start_signal && measurements.size() > 0) {
     String payload;
     serializeJson(doc, payload);
     
-    bool success = client.publish(TOPIC_UWB_RAW, payload.c_str());
+    bool success = client.publish(TOPIC_DATA, payload.c_str());
     if (success) {
-      Serial.print("[MQTT] ✓ Published session ");
+      Serial.print("[MQTT] ✓ Published to ");
+      Serial.print(TOPIC_DATA);
+      Serial.print(" - Session #");
       Serial.print(sessionCount);
       Serial.print(" (");
       Serial.print(measurements.size());
       Serial.println(" measurements)");
     } else {
-      Serial.println("[MQTT] ✗ Publish failed!");
+      Serial.println("[MQTT] ✗ Publish failed! Check buffer size.");
     }
+  } else if (start_signal && measurements.size() == 0) {
+    Serial.println("[MQTT] ⊘ No valid measurements to publish");
   }
 }

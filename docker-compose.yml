@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: optiflow-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-optiflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-optiflow_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-optiflow}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U optiflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: optiflow-backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-optiflow}:${POSTGRES_PASSWORD:-optiflow_dev}@postgres:5432/${POSTGRES_DB:-optiflow}
+      MQTT_BROKER_HOST: ${MQTT_BROKER_HOST:-host.docker.internal}
+      MQTT_BROKER_PORT: ${MQTT_BROKER_PORT:-1883}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: optiflow-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+
+  mqtt_bridge:
+    build:
+      context: ./mqtt_bridge
+      dockerfile: Dockerfile
+    container_name: optiflow-mqtt-bridge
+    environment:
+      MQTT_BROKER_HOST: ${MQTT_BROKER_HOST:-host.docker.internal}
+      MQTT_BROKER_PORT: ${MQTT_BROKER_PORT:-1883}
+      MQTT_TOPIC: ${MQTT_TOPIC:-store/aisle1}
+      API_URL: http://backend:8000
+    depends_on:
+      - backend
+    volumes:
+      - ./mqtt_bridge:/app
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
