@@ -23,14 +23,55 @@ ESP32-S3 + DWM3001CDK (UWB Tag)
     Next.js Dashboard
 ```
 
-## 🚀 Quick Start Guide
+## 🚀 Quick Start (Simulator Mode - No Hardware Needed!)
+
+### Simple 3-Step Setup
+
+```bash
+# 1. Start the system
+./start_system.sh
+
+# 2. In a new terminal, start the simulator
+./start_simulator.sh
+
+# 3. In another terminal, send the START command
+mosquitto_pub -h localhost -t 'store/control' -m 'START'
+
+# 4. Open your browser
+# Frontend: http://localhost:3000
+```
+
+**What you'll see:**
+- 📍 Click "Setup Mode" to place 3-4 anchors on the map
+- 🏃 Watch the simulated tag walk through store aisles
+- 📦 See items appear on the map (orange squares)
+- ⚠️ Missing items turn red with alerts in sidebar
+- 📊 Live position tracking with triangulation
+
+**Common Issues:**
+
+If `pip install paho` gives Python 2 error:
+```bash
+pip3 install paho-mqtt  # Use pip3 for Python 3
+```
+
+If Docker commands fail in new terminals:
+```bash
+# Add Docker to your PATH permanently
+echo 'export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+---
+
+## 🔧 Full Setup Guide (With Real Hardware)
 
 ### Prerequisites
 
 - **macOS** with Homebrew installed
 - **Docker Desktop** installed and running
-- **Arduino IDE** with ESP32 support
-- **Hardware**: ESP32-S3, DWM3001CDK UWB modules (1 tag + 1-4 anchors)
+- **Arduino IDE** with ESP32 support (for hardware mode)
+- **Hardware** (optional): ESP32-S3, DWM3001CDK UWB modules (1 tag + 1-4 anchors)
 
 ---
 
