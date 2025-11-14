@@ -54,7 +54,6 @@ export default function StoreMap({
   const [hoveredAnchor, setHoveredAnchor] = useState<number | null>(null);
   const [nextAnchorIndex, setNextAnchorIndex] = useState(0);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 640 });
-  const [legendCollapsed, setLegendCollapsed] = useState(false);
 
   // Convert store coordinates (cm) to canvas coordinates (pixels)
   const toCanvasCoords = (x: number, y: number, canvas: HTMLCanvasElement) => {
@@ -362,7 +361,7 @@ export default function StoreMap({
   useEffect(() => {
     drawMap();
     // Removed drawMissingItemsAlert - now shown in sidebar instead
-  }, [anchors, positions, items, setupMode, hoveredAnchor, draggedAnchor, canvasSize, legendCollapsed]);
+  }, [anchors, positions, items, setupMode, hoveredAnchor, draggedAnchor, canvasSize]);
 
   // Removed auto-pulsing animation for missing items alert (now shown in sidebar)
 
