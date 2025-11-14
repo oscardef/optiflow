@@ -1,0 +1,2 @@
+/Users/oscar/Documents/GitHub/optiflow/esp32_simulator.py:489: DeprecationWarning: Callback API version 1 is deprecated, update to latest version
+  client = mqtt.Client(userdata=userdata)

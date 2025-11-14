@@ -1,0 +1,187 @@
+/Users/oscar/Documents/GitHub/optiflow/esp32_simulator.py:464: DeprecationWarning: Callback API version 1 is deprecated, update to latest version
+  client = mqtt.Client(userdata=userdata)
+/Users/oscar/Documents/GitHub/optiflow/esp32_simulator.py:388: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  item.last_seen = datetime.utcnow()
+/Users/oscar/Documents/GitHub/optiflow/esp32_simulator.py:492: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  "timestamp": datetime.utcnow().isoformat() + "Z",
+🚀 ESP32 UWB Simulator
+==================================================
+MQTT Broker: 172.20.10.3:1883
+Publishing to: store/aisle1
+Update interval: 0.5s
+Anchors: ['0x0001', '0x0002', '0x0003', '0x0004']
+Store size: 1000x800 cm
+==================================================
+📦 Generated 604 items in store
+⚠️  Simulated 15 missing items (~2.5%)
+
+✅ Simulator started automatically (auto-start enabled)
+   Send 'STOP' to pause: mosquitto_pub -h 172.20.10.3 -t store/control -m 'STOP'
+
+✅ Connected to MQTT broker at 172.20.10.3
+📤 [1] Aisle 1 ↓ Down - Position: (200, 150)
+   🏷️  Detected: 40 items
+📤 Published status to store/status
+📤 [2] Aisle 1 ↓ Down - Position: (200, 190)
+   🏷️  Detected: 8 items
+📤 [3] Aisle 1 ↓ Down - Position: (200, 231)
+   🏷️  Detected: 10 items
+📤 [4] Aisle 1 ↓ Down - Position: (200, 271)
+   🏷️  Detected: 17 items
+📤 [5] Aisle 1 ↓ Down - Position: (200, 311)
+   🏷️  Detected: 10 items
+📤 [6] Aisle 1 ↓ Down - Position: (200, 351)
+   🏷️  Detected: 9 items
+📤 [7] Aisle 1 ↓ Down - Position: (200, 392)
+   🏷️  Detected: 16 items
+📤 [8] Aisle 1 ↓ Down - Position: (200, 432)
+   🏷️  Detected: 8 items
+📤 [9] Aisle 1 ↓ Down - Position: (200, 472)
+   🏷️  Detected: 8 items
+📤 [10] Aisle 1 ↓ Down - Position: (200, 513)
+   🏷️  Detected: 16 items
+📤 [11] Aisle 1 ↓ Down - Position: (200, 553)
+   🏷️  Detected: 8 items
+📤 [12] Aisle 1 ↓ Down - Position: (200, 593)
+📤 [13] Aisle 1 ↓ Down - Position: (200, 634)
+📤 [14] Aisle 1 ↓ Down - Position: (200, 674)
+📤 [15] Aisle 1 ↓ Down - Position: (200, 700)
+📤 [16] Aisle 1 ↑ Up - Position: (200, 700)
+📤 [17] Aisle 1 ↑ Up - Position: (200, 660)
+📤 [18] Aisle 1 ↑ Up - Position: (200, 619)
+📤 [19] Aisle 1 ↑ Up - Position: (200, 579)
+📤 [20] Aisle 1 ↑ Up - Position: (200, 539)
+📤 [21] Aisle 1 ↑ Up - Position: (200, 498)
+📤 [22] Aisle 1 ↑ Up - Position: (200, 458)
+📤 [23] Aisle 1 ↑ Up - Position: (200, 417)
+📤 [24] Aisle 1 ↑ Up - Position: (200, 400)
+📤 [25] Aisle 2 ↓ Down - Position: (400, 400)
+   🏷️  Detected: 88 items
+📤 [26] Aisle 2 ↓ Down - Position: (400, 440)
+   🏷️  Detected: 8 items
+📤 [27] Aisle 2 ↓ Down - Position: (400, 481)
+   🏷️  Detected: 16 items
+📤 [28] Aisle 2 ↓ Down - Position: (400, 521)
+   🏷️  Detected: 8 items
+📤 [29] Aisle 2 ↓ Down - Position: (400, 561)
+   🏷️  Detected: 8 items
+📤 [30] Aisle 2 ↓ Down - Position: (400, 601)
+📤 [31] Aisle 2 ↓ Down - Position: (400, 642)
+📤 [32] Aisle 2 ↓ Down - Position: (400, 682)
+📤 [33] Aisle 2 ↓ Down - Position: (400, 700)
+📤 [34] Aisle 2 ↑ Up - Position: (400, 700)
+📤 [35] Aisle 2 ↑ Up - Position: (400, 660)
+📤 [36] Aisle 2 ↑ Up - Position: (400, 619)
+📤 [37] Aisle 2 ↑ Up - Position: (400, 579)
+📤 [38] Aisle 2 ↑ Up - Position: (400, 539)
+📤 [39] Aisle 2 ↑ Up - Position: (400, 499)
+📤 [40] Aisle 2 ↑ Up - Position: (400, 458)
+📤 [41] Aisle 2 ↑ Up - Position: (400, 418)
+📤 [42] Aisle 2 ↑ Up - Position: (400, 400)
+📤 [43] Aisle 3 ↓ Down - Position: (600, 400)
+   🏷️  Detected: 88 items
+📤 [44] Aisle 3 ↓ Down - Position: (600, 440)
+   🏷️  Detected: 8 items
+📤 [45] Aisle 3 ↓ Down - Position: (600, 481)
+   🏷️  Detected: 16 items
+📤 [46] Aisle 3 ↓ Down - Position: (600, 521)
+   🏷️  Detected: 8 items
+📤 [47] Aisle 3 ↓ Down - Position: (600, 561)
+   🏷️  Detected: 8 items
+📤 [48] Aisle 3 ↓ Down - Position: (600, 602)
+📤 [49] Aisle 3 ↓ Down - Position: (600, 642)
+📤 [50] Aisle 3 ↓ Down - Position: (600, 683)
+📤 [51] Aisle 3 ↓ Down - Position: (600, 700)
+📤 [52] Aisle 3 ↑ Up - Position: (600, 700)
+📤 [53] Aisle 3 ↑ Up - Position: (600, 660)
+📤 [54] Aisle 3 ↑ Up - Position: (600, 619)
+📤 [55] Aisle 3 ↑ Up - Position: (600, 579)
+📤 [56] Aisle 3 ↑ Up - Position: (600, 538)
+📤 [57] Aisle 3 ↑ Up - Position: (600, 498)
+📤 [58] Aisle 3 ↑ Up - Position: (600, 458)
+📤 [59] Aisle 3 ↑ Up - Position: (600, 418)
+📤 [60] Aisle 3 ↑ Up - Position: (600, 400)
+📤 [61] Aisle 4 ↓ Down - Position: (800, 400)
+   🏷️  Detected: 86 items
+📤 [62] Aisle 4 ↓ Down - Position: (800, 440)
+   🏷️  Detected: 8 items
+📤 [63] Aisle 4 ↓ Down - Position: (800, 481)
+   🏷️  Detected: 16 items
+📤 [64] Aisle 4 ↓ Down - Position: (800, 521)
+   🏷️  Detected: 8 items
+📤 [65] Aisle 4 ↓ Down - Position: (800, 562)
+   🏷️  Detected: 8 items
+📤 [66] Aisle 4 ↓ Down - Position: (800, 602)
+📤 [67] Aisle 4 ↓ Down - Position: (800, 643)
+📤 [68] Aisle 4 ↓ Down - Position: (800, 683)
+📤 [69] Aisle 4 ↓ Down - Position: (800, 700)
+📤 [70] Aisle 4 ↑ Up - Position: (800, 700)
+📤 [71] Aisle 4 ↑ Up - Position: (800, 660)
+📤 [72] Aisle 4 ↑ Up - Position: (800, 619)
+📤 [73] Aisle 4 ↑ Up - Position: (800, 579)
+📤 [74] Aisle 4 ↑ Up - Position: (800, 539)
+📤 [75] Aisle 4 ↑ Up - Position: (800, 499)
+📤 [76] Aisle 4 ↑ Up - Position: (800, 458)
+📤 [77] Aisle 4 ↑ Up - Position: (800, 418)
+📤 [78] Aisle 4 ↑ Up - Position: (800, 400)
+📤 [79] Aisle 1 ↓ Down - Position: (200, 400)
+📤 [80] Aisle 1 ↓ Down - Position: (200, 440)
+📤 [81] Aisle 1 ↓ Down - Position: (200, 481)
+📤 [82] Aisle 1 ↓ Down - Position: (200, 521)
+📤 [83] Aisle 1 ↓ Down - Position: (200, 562)
+📤 [84] Aisle 1 ↓ Down - Position: (200, 602)
+📤 [85] Aisle 1 ↓ Down - Position: (200, 642)
+📤 [86] Aisle 1 ↓ Down - Position: (200, 683)
+📤 [87] Aisle 1 ↓ Down - Position: (200, 700)
+📤 [88] Aisle 1 ↑ Up - Position: (200, 700)
+📤 [89] Aisle 1 ↑ Up - Position: (200, 660)
+📤 [90] Aisle 1 ↑ Up - Position: (200, 619)
+📤 [91] Aisle 1 ↑ Up - Position: (200, 577)
+📤 [92] Aisle 1 ↑ Up - Position: (200, 537)
+📤 [93] Aisle 1 ↑ Up - Position: (200, 496)
+📤 [94] Aisle 1 ↑ Up - Position: (200, 456)
+📤 [95] Aisle 1 ↑ Up - Position: (200, 416)
+📤 [96] Aisle 1 ↑ Up - Position: (200, 400)
+📤 [97] Aisle 2 ↓ Down - Position: (400, 400)
+📤 [98] Aisle 2 ↓ Down - Position: (400, 440)
+📤 [99] Aisle 2 ↓ Down - Position: (400, 481)
+📤 [100] Aisle 2 ↓ Down - Position: (400, 521)
+📤 [101] Aisle 2 ↓ Down - Position: (400, 562)
+📤 [102] Aisle 2 ↓ Down - Position: (400, 602)
+📤 [103] Aisle 2 ↓ Down - Position: (400, 642)
+📤 [104] Aisle 2 ↓ Down - Position: (400, 683)
+📤 [105] Aisle 2 ↓ Down - Position: (400, 700)
+📤 [106] Aisle 2 ↑ Up - Position: (400, 700)
+📤 [107] Aisle 2 ↑ Up - Position: (400, 660)
+📤 [108] Aisle 2 ↑ Up - Position: (400, 619)
+📤 [109] Aisle 2 ↑ Up - Position: (400, 579)
+📤 [110] Aisle 2 ↑ Up - Position: (400, 539)
+📤 [111] Aisle 2 ↑ Up - Position: (400, 498)
+📤 [112] Aisle 2 ↑ Up - Position: (400, 458)
+📤 [113] Aisle 2 ↑ Up - Position: (400, 418)
+📤 [114] Aisle 2 ↑ Up - Position: (400, 400)
+📤 [115] Aisle 3 ↓ Down - Position: (600, 400)
+📤 [116] Aisle 3 ↓ Down - Position: (600, 440)
+📤 [117] Aisle 3 ↓ Down - Position: (600, 481)
+📤 [118] Aisle 3 ↓ Down - Position: (600, 521)
+📤 [119] Aisle 3 ↓ Down - Position: (600, 561)
+📤 [120] Aisle 3 ↓ Down - Position: (600, 601)
+📤 [121] Aisle 3 ↓ Down - Position: (600, 642)
+📤 [122] Aisle 3 ↓ Down - Position: (600, 682)
+📤 [123] Aisle 3 ↓ Down - Position: (600, 700)
+📤 [124] Aisle 3 ↑ Up - Position: (600, 700)
+📤 [125] Aisle 3 ↑ Up - Position: (600, 660)
+📤 [126] Aisle 3 ↑ Up - Position: (600, 619)
+📤 [127] Aisle 3 ↑ Up - Position: (600, 579)
+📤 [128] Aisle 3 ↑ Up - Position: (600, 539)
+📤 [129] Aisle 3 ↑ Up - Position: (600, 498)
+📤 [130] Aisle 3 ↑ Up - Position: (600, 458)
+📤 [131] Aisle 3 ↑ Up - Position: (600, 418)
+📤 [132] Aisle 3 ↑ Up - Position: (600, 400)
+📤 [133] Aisle 4 ↓ Down - Position: (800, 400)
+📤 [134] Aisle 4 ↓ Down - Position: (800, 440)
+📤 [135] Aisle 4 ↓ Down - Position: (800, 480)
+📤 [136] Aisle 4 ↓ Down - Position: (800, 521)
+📤 [137] Aisle 4 ↓ Down - Position: (800, 561)
+📤 [138] Aisle 4 ↓ Down - Position: (800, 601)
+📤 [139] Aisle 4 ↓ Down - Position: (800, 642)

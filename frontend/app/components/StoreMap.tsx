@@ -86,7 +86,7 @@ export default function StoreMap({
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Draw grid
-    ctx.strokeStyle = '#333';
+    ctx.strokeStyle = '#2a2a2a';
     ctx.lineWidth = 1;
     const gridSize = 100; // 1 meter grid
     for (let x = 0; x < STORE_WIDTH; x += gridSize) {
@@ -109,60 +109,114 @@ export default function StoreMap({
     ctx.lineWidth = 2;
     ctx.strokeRect(0, 0, canvas.width, canvas.height);
 
+    // Draw aisles (4 vertical aisles at x=200, 400, 600, 800)
+    const aisleX = [200, 400, 600, 800];
+    const aisleStartY = 150;
+    const aisleEndY = 700;
+    const aisleWidth = 80; // 80cm wide aisles
+    
+    aisleX.forEach((x, index) => {
+      const leftEdge = toCanvasCoords(x - aisleWidth / 2, aisleStartY, canvas);
+      const rightEdge = toCanvasCoords(x + aisleWidth / 2, aisleStartY, canvas);
+      const bottomY = toCanvasCoords(x, aisleEndY, canvas).y;
+      
+      // Draw aisle background (lighter floor)
+      ctx.fillStyle = 'rgba(60, 60, 80, 0.3)';
+      ctx.fillRect(leftEdge.x, leftEdge.y, rightEdge.x - leftEdge.x, bottomY - leftEdge.y);
+      
+      // Draw aisle borders (shelving edges)
+      ctx.strokeStyle = 'rgba(100, 100, 120, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(leftEdge.x, leftEdge.y);
+      ctx.lineTo(leftEdge.x, bottomY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(rightEdge.x, leftEdge.y);
+      ctx.lineTo(rightEdge.x, bottomY);
+      ctx.stroke();
+      
+      // Draw aisle label
+      ctx.fillStyle = '#8888aa';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      const labelPos = toCanvasCoords(x, aisleStartY - 30, canvas);
+      ctx.fillText(`Aisle ${index + 1}`, labelPos.x, labelPos.y);
+    });
+    
+    // Draw cross aisle (horizontal at y=400)
+    const crossAisleY = 400;
+    const crossAisleHeight = 80;
+    const crossLeftEdge = toCanvasCoords(0, crossAisleY - crossAisleHeight / 2, canvas);
+    const crossRightEdge = toCanvasCoords(STORE_WIDTH, crossAisleY + crossAisleHeight / 2, canvas);
+    
+    ctx.fillStyle = 'rgba(60, 60, 80, 0.2)';
+    ctx.fillRect(0, crossLeftEdge.y, canvas.width, crossRightEdge.y - crossLeftEdge.y);
+    ctx.strokeStyle = 'rgba(100, 100, 120, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, crossLeftEdge.y, canvas.width, crossRightEdge.y - crossLeftEdge.y);
+
     // Draw items on the map
-    items.forEach((item) => {
+    const missingItems = items.filter(item => item.status === 'missing');
+    const presentItems = items.filter(item => item.status !== 'missing');
+    
+    // Draw present items first (so missing items are on top)
+    presentItems.forEach((item) => {
       const pos = toCanvasCoords(item.x_position, item.y_position, canvas);
       
-      // Item appearance based on status
-      let fillColor, strokeColor;
-      if (item.status === 'missing') {
-        fillColor = '#ef4444';  // Red for missing
-        strokeColor = '#dc2626';
-      } else if (item.status === 'present') {
-        fillColor = '#f59e0b';  // Orange for present
-        strokeColor = '#d97706';
-      } else {
-        fillColor = '#6b7280';  // Gray for unknown
-        strokeColor = '#4b5563';
-      }
-      
-      // Draw item as small square
-      ctx.fillStyle = fillColor;
-      ctx.fillRect(pos.x - 4, pos.y - 4, 8, 8);
-      ctx.strokeStyle = strokeColor;
+      // Draw item as small square with subtle glow
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.6)';  // Green for present
+      ctx.fillRect(pos.x - 3, pos.y - 3, 6, 6);
+      ctx.strokeStyle = '#22c55e';
       ctx.lineWidth = 1;
-      ctx.strokeRect(pos.x - 4, pos.y - 4, 8, 8);
+      ctx.strokeRect(pos.x - 3, pos.y - 3, 6, 6);
+    });
+    
+    // Draw missing items on top with emphasis
+    missingItems.forEach((item) => {
+      const pos = toCanvasCoords(item.x_position, item.y_position, canvas);
       
-      // Draw warning icon for missing items
-      if (item.status === 'missing') {
-        ctx.fillStyle = '#fef2f2';
-        ctx.font = 'bold 12px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('!', pos.x, pos.y + 4);
-      }
+      // Pulsing glow effect for missing items
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 12, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      // Draw missing item as prominent square
+      ctx.fillStyle = '#ef4444';  // Bright red
+      ctx.fillRect(pos.x - 5, pos.y - 5, 10, 10);
+      ctx.strokeStyle = '#fca5a5';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(pos.x - 5, pos.y - 5, 10, 10);
+      
+      // Draw warning icon
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('!', pos.x, pos.y + 5);
     });
 
-    // Draw distance circles from anchors to tags (if not in setup mode)
+    // Draw distance circles from anchors to tags (only for the most recent position)
     if (!setupMode && positions.length > 0) {
-      ctx.strokeStyle = 'rgba(59, 130, 246, 0.2)';
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.15)';
       ctx.lineWidth = 1;
       
-      positions.forEach(pos => {
-        anchors.forEach(anchor => {
-          if (!anchor.is_active) return;
-          
-          const anchorCanvas = toCanvasCoords(anchor.x_position, anchor.y_position, canvas);
-          const distance = Math.sqrt(
-            Math.pow(pos.x_position - anchor.x_position, 2) +
-            Math.pow(pos.y_position - anchor.y_position, 2)
-          );
-          
-          const radiusPx = distance * (canvas.width / STORE_WIDTH);
-          
-          ctx.beginPath();
-          ctx.arc(anchorCanvas.x, anchorCanvas.y, radiusPx, 0, 2 * Math.PI);
-          ctx.stroke();
-        });
+      // Only draw circles for the first (most recent) position
+      const recentPos = positions[0];
+      anchors.forEach(anchor => {
+        if (!anchor.is_active) return;
+        
+        const anchorCanvas = toCanvasCoords(anchor.x_position, anchor.y_position, canvas);
+        const distance = Math.sqrt(
+          Math.pow(recentPos.x_position - anchor.x_position, 2) +
+          Math.pow(recentPos.y_position - anchor.y_position, 2)
+        );
+        
+        const radiusPx = distance * (canvas.width / STORE_WIDTH);
+        
+        ctx.beginPath();
+        ctx.arc(anchorCanvas.x, anchorCanvas.y, radiusPx, 0, 2 * Math.PI);
+        ctx.stroke();
       });
     }
 
@@ -197,75 +251,145 @@ export default function StoreMap({
       ctx.fillText(anchor.mac_address, pos.x, pos.y + 30);
     });
 
-    // Draw tag positions
-    positions.forEach((pos, index) => {
-      const canvasPos = toCanvasCoords(pos.x_position, pos.y_position, canvas);
+    // Draw employee positions (from UWB triangulation)
+    if (positions.length > 0) {
+      // Draw trail for previous positions (fading)
+      for (let i = Math.min(positions.length - 1, 5); i > 0; i--) {
+        const pos = positions[i];
+        const canvasPos = toCanvasCoords(pos.x_position, pos.y_position, canvas);
+        const alpha = (5 - i) / 8;
+        
+        ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(canvasPos.x, canvasPos.y, 4, 0, 2 * Math.PI);
+        ctx.fill();
+      }
       
-      // Confidence indicator (outer circle)
-      const alpha = pos.confidence;
-      ctx.fillStyle = `rgba(16, 185, 129, ${alpha * 0.3})`;
+      // Draw current employee position (most recent)
+      const currentPos = positions[0];
+      const canvasPos = toCanvasCoords(currentPos.x_position, currentPos.y_position, canvas);
+      
+      // 1.5m detection radius circle (RFID range)
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 4]);
+      const radiusCm = 150; // 1.5 meters RFID range
+      const radiusPx = radiusCm * (canvas.width / STORE_WIDTH);
       ctx.beginPath();
-      ctx.arc(canvasPos.x, canvasPos.y, 20, 0, 2 * Math.PI);
+      ctx.arc(canvasPos.x, canvasPos.y, radiusPx, 0, 2 * Math.PI);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      
+      // Outer glow for employee
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
+      ctx.beginPath();
+      ctx.arc(canvasPos.x, canvasPos.y, 24, 0, 2 * Math.PI);
       ctx.fill();
       
-      // Tag circle
-      ctx.fillStyle = '#10b981';
-      ctx.beginPath();
-      ctx.arc(canvasPos.x, canvasPos.y, 8, 0, 2 * Math.PI);
-      ctx.fill();
+      // Employee icon (larger, more prominent)
+      ctx.fillStyle = '#3b82f6';
+      ctx.strokeStyle = '#60a5fa';
+      ctx.lineWidth = 2;
       
-      // Tag label
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 11px sans-serif';
+      // Head
+      ctx.beginPath();
+      ctx.arc(canvasPos.x, canvasPos.y - 8, 8, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.stroke();
+      
+      // Body
+      ctx.fillStyle = '#3b82f6';
+      ctx.fillRect(canvasPos.x - 6, canvasPos.y + 2, 12, 14);
+      ctx.strokeRect(canvasPos.x - 6, canvasPos.y + 2, 12, 14);
+      
+      // Employee label with emoji
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(pos.tag_id, canvasPos.x, canvasPos.y - 25);
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+      ctx.shadowBlur = 4;
+      ctx.fillText('� Employee', canvasPos.x, canvasPos.y - 32);
+      ctx.shadowBlur = 0;
       
-      // Confidence
-      ctx.font = '9px sans-serif';
-      ctx.fillStyle = '#aaa';
-      ctx.fillText(`${(pos.confidence * 100).toFixed(0)}%`, canvasPos.x, canvasPos.y + 35);
-    });
+      // Position coordinates (for debugging)
+      ctx.font = '10px monospace';
+      ctx.fillStyle = '#93c5fd';
+      ctx.fillText(`(${Math.round(currentPos.x_position)}, ${Math.round(currentPos.y_position)})`, canvasPos.x, canvasPos.y + 30);
+    }
 
     // Draw legend
     const legendX = 20;
     const legendY = 20;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(legendX, legendY, 150, setupMode ? 80 : 100);
+    const legendHeight = setupMode ? 80 : 140;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(legendX, legendY, 180, legendHeight);
+    ctx.strokeStyle = 'rgba(100, 100, 120, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(legendX, legendY, 180, legendHeight);
     
-    ctx.font = 'bold 12px sans-serif';
+    ctx.font = 'bold 13px sans-serif';
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'left';
-    ctx.fillText('Legend', legendX + 10, legendY + 20);
-    
-    // Anchor
-    ctx.fillStyle = '#3b82f6';
-    ctx.beginPath();
-    ctx.arc(legendX + 20, legendY + 40, 6, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.fillStyle = '#ddd';
-    ctx.font = '11px sans-serif';
-    ctx.fillText('Anchor', legendX + 35, legendY + 44);
+    ctx.fillText('📊 Live Store Map', legendX + 10, legendY + 20);
     
     if (!setupMode) {
-      // Tag
-      ctx.fillStyle = '#10b981';
+      // Employee
+      ctx.fillStyle = '#3b82f6';
+      ctx.fillRect(legendX + 17, legendY + 40, 8, 10);
+      ctx.fillStyle = '#e0e7ff';
+      ctx.font = '11px sans-serif';
+      ctx.fillText('� Employee', legendX + 35, legendY + 49);
+      
+      // Item - Present
+      ctx.fillStyle = '#22c55e';
+      ctx.fillRect(legendX + 17, legendY + 60, 6, 6);
+      ctx.fillStyle = '#d1fae5';
+      ctx.fillText('✓ Item Detected', legendX + 35, legendY + 67);
+      
+      // Item - Missing
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(legendX + 17, legendY + 80, 10, 10);
+      ctx.fillStyle = '#fef2f2';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillText('⚠️  Missing Item', legendX + 35, legendY + 89);
+      
+      // Detection range
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)';
+      ctx.setLineDash([4, 2]);
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(legendX + 20, legendY + 60, 6, 0, 2 * Math.PI);
+      ctx.arc(legendX + 22, legendY + 105, 10, 0, 2 * Math.PI);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '10px sans-serif';
+      ctx.fillText('1.5m RFID Range', legendX + 35, legendY + 109);
+    } else {
+      // Anchor in setup mode
+      ctx.fillStyle = '#3b82f6';
+      ctx.beginPath();
+      ctx.arc(legendX + 22, legendY + 45, 7, 0, 2 * Math.PI);
       ctx.fill();
       ctx.fillStyle = '#ddd';
-      ctx.fillText('Tag/Employee', legendX + 35, legendY + 64);
+      ctx.font = '11px sans-serif';
+      ctx.fillText('UWB Anchor', legendX + 35, legendY + 49);
     }
     
     // Grid info
-    ctx.fillStyle = '#888';
-    ctx.font = '10px sans-serif';
-    ctx.fillText('Grid: 1m squares', legendX + 10, legendY + (setupMode ? 65 : 85));
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9px sans-serif';
+    ctx.fillText('Grid: 1m × 1m', legendX + 10, legendY + legendHeight - 8);
   };
+
+  // Removed drawMissingItemsAlert function - now displayed in sidebar
 
   // Redraw when data changes
   useEffect(() => {
     drawMap();
-  }, [anchors, positions, setupMode, hoveredAnchor, draggedAnchor]);
+    // Removed drawMissingItemsAlert - now shown in sidebar instead
+  }, [anchors, positions, items, setupMode, hoveredAnchor, draggedAnchor]);
+
+  // Removed auto-pulsing animation for missing items alert (now shown in sidebar)
 
   // Handle canvas click (place new anchor in setup mode)
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -365,12 +489,38 @@ export default function StoreMap({
         </div>
       )}
       
-      <div className="mt-4 text-sm text-slate-400">
-        <p>Store dimensions: {STORE_WIDTH/100}m × {STORE_HEIGHT/100}m</p>
-        <p>Anchors: {anchors.filter(a => a.is_active).length} active / {anchors.length} total</p>
-        {positions.length > 0 && (
-          <p>Tags tracked: {new Set(positions.map(p => p.tag_id)).size}</p>
-        )}
+      <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+        <div className="bg-slate-800 p-3 rounded-lg">
+          <p className="text-slate-400 mb-1">Store Layout</p>
+          <p className="text-white font-semibold">{STORE_WIDTH/100}m × {STORE_HEIGHT/100}m</p>
+          <p className="text-slate-400 text-xs mt-1">4 Aisles + Cross Section</p>
+        </div>
+        
+        <div className="bg-slate-800 p-3 rounded-lg">
+          <p className="text-slate-400 mb-1">UWB Tracking</p>
+          <p className="text-white font-semibold">{anchors.filter(a => a.is_active).length} Anchors Active</p>
+          {positions.length > 0 && (
+            <p className="text-green-400 text-xs mt-1">✓ Employee Tracked</p>
+          )}
+        </div>
+        
+        <div className="bg-slate-800 p-3 rounded-lg">
+          <p className="text-slate-400 mb-1">Inventory</p>
+          <p className="text-white font-semibold">{items.length} Items Detected</p>
+          <p className="text-green-400 text-xs mt-1">
+            {items.filter(i => i.status !== 'missing').length} Present
+          </p>
+        </div>
+        
+        <div className={`p-3 rounded-lg ${items.filter(i => i.status === 'missing').length > 0 ? 'bg-red-900/40 border-2 border-red-500' : 'bg-slate-800'}`}>
+          <p className="text-slate-400 mb-1">Missing Items</p>
+          <p className={`font-bold text-2xl ${items.filter(i => i.status === 'missing').length > 0 ? 'text-red-400' : 'text-white'}`}>
+            {items.filter(i => i.status === 'missing').length}
+          </p>
+          {items.filter(i => i.status === 'missing').length > 0 && (
+            <p className="text-red-300 text-xs mt-1">⚠️ Restock Required</p>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -54,20 +54,35 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
         # Parse timestamp
         timestamp = datetime.fromisoformat(packet.timestamp.replace('Z', '+00:00'))
         
-        # Store detections
+        # Store detections - UPDATE existing records instead of always creating new ones
         detection_ids = []
         for det in packet.detections:
-            detection = Detection(
-                timestamp=timestamp,
-                product_id=det.product_id,
-                product_name=det.product_name,
-                x_position=det.x_position,
-                y_position=det.y_position,
-                status=det.status if det.status else "present"
-            )
-            db.add(detection)
-            db.flush()
-            detection_ids.append(detection.id)
+            # Check if this item already exists (find most recent detection)
+            existing = db.query(Detection)\
+                .filter(Detection.product_id == det.product_id)\
+                .order_by(Detection.timestamp.desc())\
+                .first()
+            
+            status = det.status if det.status else "present"
+            
+            # Only create new record if status changed or first detection
+            if not existing or existing.status != status:
+                detection = Detection(
+                    timestamp=timestamp,
+                    product_id=det.product_id,
+                    product_name=det.product_name,
+                    x_position=det.x_position,
+                    y_position=det.y_position,
+                    status=status
+                )
+                db.add(detection)
+                db.flush()
+                detection_ids.append(detection.id)
+            else:
+                # Item already exists with same status - just update timestamp
+                existing.timestamp = timestamp
+                db.flush()
+                detection_ids.append(existing.id)
         
         # Store UWB measurements
         uwb_ids = []
@@ -89,6 +104,9 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
         try:
             # Get active anchors
             anchors = db.query(Anchor).filter(Anchor.is_active == True).all()
+            
+            if len(anchors) < 2:
+                print(f"⚠️  Cannot calculate position: only {len(anchors)} active anchor(s). Need at least 2.")
             
             if len(anchors) >= 2 and len(packet.uwb_measurements) >= 2:
                 # Build measurement list from incoming data
@@ -157,7 +175,10 @@ def get_latest_data(limit: int = 50, db: Session = Depends(get_db)):
             id=d.id,
             timestamp=d.timestamp.isoformat(),
             product_id=d.product_id,
-            product_name=d.product_name
+            product_name=d.product_name,
+            x_position=d.x_position,
+            y_position=d.y_position,
+            status=d.status
         ) for d in detections],
         "uwb_measurements": [UWBMeasurementResponse(
             id=u.id,
@@ -168,11 +189,73 @@ def get_latest_data(limit: int = 50, db: Session = Depends(get_db)):
         ) for u in uwb_measurements]
     }
 
+@app.get("/data/items", response_model=List[DetectionResponse])
+def get_all_items(db: Session = Depends(get_db)):
+    """
+    Get all unique items with their latest status
+    Returns the most recent detection for each product_id
+    This prevents issues with query limits causing items to disappear
+    """
+    # Get all detections ordered by timestamp descending
+    all_detections = db.query(Detection)\
+        .order_by(Detection.timestamp.desc())\
+        .all()
+    
+    # Group by product_id to get only the latest detection of each item
+    latest_items = {}
+    for item in all_detections:
+        if item.product_id not in latest_items:
+            latest_items[item.product_id] = item
+    
+    return [DetectionResponse(
+        id=d.id,
+        timestamp=d.timestamp.isoformat(),
+        product_id=d.product_id,
+        product_name=d.product_name,
+        x_position=d.x_position,
+        y_position=d.y_position,
+        status=d.status
+    ) for d in latest_items.values()]
+
+@app.get("/data/missing", response_model=List[DetectionResponse])
+def get_missing_items(db: Session = Depends(get_db)):
+    """
+    Get all missing items (status = 'missing')
+    This endpoint returns ALL missing items regardless of employee position
+    Used for persistent missing items display on frontend
+    """
+    missing_items = db.query(Detection)\
+        .filter(Detection.status == 'missing')\
+        .order_by(Detection.timestamp.desc())\
+        .all()
+    
+    # Group by product_id to get only the latest status of each item
+    latest_missing = {}
+    for item in missing_items:
+        if item.product_id not in latest_missing:
+            latest_missing[item.product_id] = item
+    
+    return [DetectionResponse(
+        id=d.id,
+        timestamp=d.timestamp.isoformat(),
+        product_id=d.product_id,
+        product_name=d.product_name,
+        x_position=d.x_position,
+        y_position=d.y_position,
+        status=d.status
+    ) for d in latest_missing.values()]
+
 @app.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
     """Get basic statistics about stored data"""
     total_detections = db.query(Detection).count()
     total_uwb = db.query(UWBMeasurement).count()
+    
+    # Count unique items (by product_id)
+    unique_items = db.query(Detection.product_id).distinct().count()
+    missing_items = db.query(Detection.product_id)\
+        .filter(Detection.status == 'missing')\
+        .distinct().count()
     
     # Get latest timestamps
     latest_detection = db.query(Detection).order_by(Detection.timestamp.desc()).first()
@@ -180,6 +263,8 @@ def get_stats(db: Session = Depends(get_db)):
     
     return {
         "total_detections": total_detections,
+        "unique_items": unique_items,
+        "missing_items": missing_items,
         "total_uwb_measurements": total_uwb,
         "latest_detection_time": latest_detection.timestamp.isoformat() if latest_detection else None,
         "latest_uwb_time": latest_uwb.timestamp.isoformat() if latest_uwb else None
@@ -376,3 +461,51 @@ def calculate_position(tag_id: str, db: Session = Depends(get_db)):
         confidence=position.confidence,
         num_anchors=position.num_anchors
     )
+
+
+@app.delete("/data/clear")
+def clear_tracking_data(
+    keep_hours: int = 0,
+    db: Session = Depends(get_db)
+):
+    """
+    Clear old tracking data (positions, detections, UWB measurements)
+    
+    Args:
+        keep_hours: Keep data from the last N hours. Default 0 = clear everything
+    """
+    try:
+        if keep_hours > 0:
+            cutoff_time = datetime.utcnow() - timedelta(hours=keep_hours)
+            
+            # Delete old positions
+            positions_deleted = db.query(TagPosition).filter(
+                TagPosition.timestamp < cutoff_time
+            ).delete()
+            
+            # Delete old detections
+            detections_deleted = db.query(Detection).filter(
+                Detection.timestamp < cutoff_time
+            ).delete()
+            
+            # Delete old UWB measurements
+            uwb_deleted = db.query(UWBMeasurement).filter(
+                UWBMeasurement.timestamp < cutoff_time
+            ).delete()
+        else:
+            # Clear everything
+            positions_deleted = db.query(TagPosition).delete()
+            detections_deleted = db.query(Detection).delete()
+            uwb_deleted = db.query(UWBMeasurement).delete()
+        
+        db.commit()
+        
+        return {
+            "message": "Tracking data cleared successfully",
+            "positions_deleted": positions_deleted,
+            "detections_deleted": detections_deleted,
+            "uwb_measurements_deleted": uwb_deleted
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))

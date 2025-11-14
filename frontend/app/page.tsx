@@ -27,7 +27,7 @@ interface Position {
 export default function Home() {
   const [setupMode, setSetupMode] = useState(false);
   const [anchors, setAnchors] = useState<Anchor[]>([]);
-  const [positions, setPositions] = useState<TagPosition[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
   const [selectedAnchor, setSelectedAnchor] = useState<Anchor | null>(null);
   const [isSetupMode, setIsSetupMode] = useState(false);
   const [editingAnchorId, setEditingAnchorId] = useState<string | null>(null);
@@ -37,6 +37,15 @@ export default function Home() {
     x_position: number;
     y_position: number;
     status: string;
+    timestamp?: string;
+  }>>([]);
+  const [missingItems, setMissingItems] = useState<Array<{
+    product_id: string;
+    product_name: string;
+    x_position: number;
+    y_position: number;
+    status: string;
+    timestamp?: string;
   }>>([]);
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
@@ -52,44 +61,73 @@ export default function Home() {
     }
   };
 
-  // Fetch latest positions
+  // Fetch latest positions - show most recent position per tag
   const fetchPositions = async () => {
     try {
-      const response = await fetch('http://localhost:8000/positions/latest');
-      const data = await response.json();
-      setPositions(data);
-    } catch (error) {
-      console.error('Error fetching positions:', error);
-    }
-  };
-
-  // Fetch items from detections
-  const fetchItems = async () => {
-    try {
-      const response = await fetch('http://localhost:8000/data/latest?limit=100');
+      const response = await fetch('http://localhost:8000/positions/latest?limit=100');
       const data = await response.json();
       
-      // Group detections by product_id to get unique items with latest status
-      const itemMap = new Map();
-      data.forEach((detection: any) => {
-        if (detection.x_position && detection.y_position) {
-          const existing = itemMap.get(detection.product_id);
-          // Keep the most recent detection
-          if (!existing || new Date(detection.timestamp) > new Date(existing.timestamp)) {
-            itemMap.set(detection.product_id, {
-              product_id: detection.product_id,
-              product_name: detection.product_name,
-              x_position: detection.x_position,
-              y_position: detection.y_position,
-              status: detection.status || 'present',
-            });
-          }
+      // Group by tag_id and keep only the most recent position for each tag
+      const latestByTag = new Map();
+      data.forEach((pos: Position) => {
+        const existing = latestByTag.get(pos.tag_id);
+        if (!existing || new Date(pos.timestamp) > new Date(existing.timestamp)) {
+          latestByTag.set(pos.tag_id, pos);
         }
       });
       
-      setItems(Array.from(itemMap.values()));
+      setPositions(Array.from(latestByTag.values()));
+      setConnected(data.length > 0);
+    } catch (error) {
+      console.error('Error fetching positions:', error);
+      setConnected(false);
+    }
+  };
+
+  // Fetch items detected near employee (within 1.5m range)
+  const fetchItems = async () => {
+    try {
+      // Use new endpoint that returns unique items by product_id
+      // This prevents items from disappearing when query limit is exceeded
+      const response = await fetch('http://localhost:8000/data/items');
+      const data = await response.json();
+      
+      // Filter to only show items with 'present' status (not missing)
+      const presentItems = data.filter((item: any) => 
+        item.x_position && 
+        item.y_position && 
+        item.status === 'present'
+      );
+      
+      setItems(presentItems.map((item: any) => ({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        x_position: item.x_position,
+        y_position: item.y_position,
+        status: item.status,
+        timestamp: item.timestamp,
+      })));
     } catch (error) {
       console.error('Error fetching items:', error);
+    }
+  };
+
+  // Fetch missing items separately (always shown)
+  const fetchMissingItems = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/data/missing');
+      const data = await response.json();
+      
+      setMissingItems(data.map((item: any) => ({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        x_position: item.x_position,
+        y_position: item.y_position,
+        status: item.status,
+        timestamp: item.timestamp,
+      })));
+    } catch (error) {
+      console.error('Error fetching missing items:', error);
     }
   };  // Initial load
   useEffect(() => {
@@ -97,6 +135,7 @@ export default function Home() {
       await fetchAnchors();
       await fetchPositions();
       await fetchItems();
+      await fetchMissingItems();
       setLoading(false);
     };
     init();
@@ -109,7 +148,8 @@ export default function Home() {
     const interval = setInterval(() => {
       fetchPositions();
       fetchItems();
-    }, 2000); // Refresh every 2 seconds
+      fetchMissingItems();
+    }, 200); // Refresh every 200ms (5x per second) for smooth tracking
     
     return () => clearInterval(interval);
   }, [setupMode]);
@@ -177,6 +217,32 @@ export default function Home() {
     }
   };
 
+  // Clear all tracking data (positions and items)
+  const handleClearData = async () => {
+    if (!confirm('Clear all tracking data? This will remove all positions and item history from the database.')) return;
+
+    try {
+      // Call backend to clear database
+      const response = await fetch(`${API_URL}/data/clear`, { method: 'DELETE' });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Data cleared:', result);
+        
+        // Clear positions and items from display
+        setPositions([]);
+        setItems([]);
+        
+        alert(`Cleared: ${result.positions_deleted} positions, ${result.detections_deleted} detections, ${result.uwb_measurements_deleted} measurements`);
+      } else {
+        throw new Error('Failed to clear data');
+      }
+    } catch (error) {
+      console.error('Failed to clear data:', error);
+      alert('Failed to clear data. Check console for details.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -186,39 +252,101 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen p-8">
+    <div className="min-h-screen p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       <header className="mb-8">
-        <h1 className="text-4xl font-bold mb-2">🏪 OptiFlow</h1>
-        <p className="text-slate-400">Real-time Store Tracking System</p>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-5xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-emerald-400 text-transparent bg-clip-text">
+              🏪 OptiFlow
+            </h1>
+            <p className="text-slate-400 text-lg">Real-time Store Inventory & Employee Tracking</p>
+          </div>
+          
+          <div className="flex flex-col items-end gap-2">
+            <div className={`px-4 py-2 rounded-lg flex items-center gap-2 ${connected ? 'bg-green-900/30 border-2 border-green-700' : 'bg-red-900/30 border-2 border-red-700'}`}>
+              <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
+              <span className="mr-2 text-slate-300">System:</span>
+              <span className={`font-bold ${connected ? 'text-green-400' : 'text-red-400'}`}>
+                {connected ? 'LIVE' : 'OFFLINE'}
+              </span>
+            </div>
+            {missingItems.length > 0 && (
+              <div className="px-4 py-2 rounded-lg bg-red-900/40 border-2 border-red-500 animate-pulse">
+                <span className="font-bold text-red-300">
+                  ⚠️ {missingItems.length} Items Need Restocking
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
         
-        <div className="mt-4 flex items-center gap-4">
-          <div className={`px-4 py-2 rounded-lg ${connected ? 'bg-green-900/30 border border-green-700' : 'bg-red-900/30 border border-red-700'}`}>
-            <span className="mr-2">Backend:</span>
-            <span className={`font-semibold ${connected ? 'text-green-400' : 'text-red-400'}`}>
-              ● {connected ? 'Connected' : 'Disconnected'}
-            </span>
+        <div className="mt-6 grid grid-cols-4 gap-4">
+          <div className="bg-slate-800/70 backdrop-blur-sm p-4 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-3">
+              <div className="text-3xl">📡</div>
+              <div>
+                <p className="text-slate-400 text-sm">UWB Anchors</p>
+                <p className="text-2xl font-bold text-blue-400">
+                  {anchors.filter(a => a.is_active).length}/{anchors.length}
+                </p>
+              </div>
+            </div>
           </div>
           
-          <div className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700">
-            <span className="mr-2">Anchors:</span>
-            <span className="font-semibold text-blue-400">
-              {anchors.filter(a => a.is_active).length} active
-            </span>
+          <div className="bg-slate-800/70 backdrop-blur-sm p-4 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-3">
+              <div className="text-3xl">🚶</div>
+              <div>
+                <p className="text-slate-400 text-sm">Employees</p>
+                <p className="text-2xl font-bold text-emerald-400">
+                  {new Set(positions.map(p => p.tag_id)).size}
+                </p>
+              </div>
+            </div>
           </div>
           
-          <div className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700">
-            <span className="mr-2">Tags:</span>
-            <span className="font-semibold text-green-400">
-              {new Set(positions.map(p => p.tag_id)).size} tracked
-            </span>
+          <div className="bg-slate-800/70 backdrop-blur-sm p-4 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-3">
+              <div className="text-3xl">📦</div>
+              <div>
+                <p className="text-slate-400 text-sm">Items Tracked</p>
+                <p className="text-2xl font-bold text-white">
+                  {items.length + missingItems.length}
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div className={`p-4 rounded-lg border-2 ${
+            missingItems.length > 0 
+              ? 'bg-red-900/40 border-red-500' 
+              : 'bg-slate-800/70 border-slate-700'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="text-3xl">⚠️</div>
+              <div>
+                <p className="text-slate-400 text-sm">Missing Items</p>
+                <p className={`text-2xl font-bold ${
+                  missingItems.length > 0 
+                    ? 'text-red-400' 
+                    : 'text-slate-400'
+                }`}>
+                  {missingItems.length}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="mb-6 flex gap-4">
+      <div className="mb-6 flex flex-wrap gap-4 items-center">
         <button
           onClick={() => setSetupMode(!setupMode)}
-          className={`btn-primary ${setupMode ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
+          className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
+            setupMode 
+              ? 'bg-green-600 hover:bg-green-700 text-white' 
+              : 'bg-blue-600 hover:bg-blue-700 text-white'
+          }`}
         >
           {setupMode ? '✓ Finish Setup' : '⚙️ Setup Mode'}
         </button>
@@ -227,38 +355,63 @@ export default function Home() {
           <>
             <button
               onClick={handleResetAnchors}
-              className="btn-secondary bg-red-700 hover:bg-red-600"
+              className="px-6 py-3 rounded-lg font-semibold bg-red-700 hover:bg-red-600 text-white transition-colors"
             >
               🗑️ Reset Anchors
             </button>
             
             <div className="ml-auto text-sm text-slate-400 flex items-center">
-              <div className="bg-slate-800 px-4 py-2 rounded-lg">
-                💡 Click on the map to place anchors at their physical locations.<br/>
-                Drag anchors to reposition them.
+              <div className="bg-slate-800 px-4 py-2 rounded-lg border border-slate-700">
+                💡 Click on the map to place anchors. Drag to reposition.
               </div>
             </div>
           </>
         )}
         
         {!setupMode && (
-          <button
-            onClick={fetchPositions}
-            className="btn-secondary"
-          >
-            🔄 Refresh
-          </button>
+          <>
+            <button
+              onClick={fetchPositions}
+              className="px-6 py-3 rounded-lg font-semibold bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+            >
+              🔄 Refresh
+            </button>
+            
+            <button
+              onClick={handleClearData}
+              className="px-6 py-3 rounded-lg font-semibold bg-yellow-700 hover:bg-yellow-600 text-white transition-colors"
+            >
+              🧹 Clear Data
+            </button>
+            
+            {positions.length === 0 && anchors.length >= 2 && (
+              <div className="ml-auto text-sm flex items-center">
+                <div className="bg-blue-900/30 border border-blue-700 px-4 py-2 rounded-lg text-blue-300">
+                  📡 Ready! Run: <code className="bg-slate-800 px-2 py-1 rounded ml-2">python3 esp32_simulator.py</code>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         <div className="xl:col-span-2">
-          <div className="bg-slate-800 p-6 rounded-lg">
-            <h2 className="text-2xl font-semibold mb-4">Store Map</h2>
+          <div className="bg-slate-800/70 backdrop-blur-sm p-6 rounded-lg border border-slate-700 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-semibold">📍 Live Store Map</h2>
+              <div className="text-sm text-slate-400">
+                {!setupMode && positions.length > 0 && (
+                  <span className="bg-green-900/30 text-green-400 px-3 py-1 rounded-full border border-green-700">
+                    ● Tracking Active
+                  </span>
+                )}
+              </div>
+            </div>
             <StoreMap
               anchors={anchors}
               positions={positions}
-              items={items}
+              items={[...items, ...missingItems]}
               setupMode={setupMode}
               onAnchorPlace={handleAnchorPlace}
               onAnchorUpdate={handleAnchorUpdate}
@@ -267,34 +420,62 @@ export default function Home() {
         </div>
 
         <div className="space-y-6">
-          {/* Missing Items Alert */}
-          {items.filter(item => item.status === 'missing').length > 0 && (
-            <div className="bg-red-900/30 border border-red-500 p-6 rounded-lg">
-              <h2 className="text-xl font-semibold mb-4 text-red-400 flex items-center gap-2">
-                <span>⚠️</span>
-                Missing Items ({items.filter(item => item.status === 'missing').length})
-              </h2>
-              <div className="space-y-2">
-                {items
-                  .filter(item => item.status === 'missing')
-                  .slice(0, 5)
-                  .map(item => (
-                    <div
-                      key={item.product_id}
-                      className="p-3 bg-slate-800 rounded border border-red-500/30"
-                    >
-                      <div className="font-semibold text-red-300">{item.product_name}</div>
-                      <div className="text-xs text-slate-400 mt-1">
-                        ID: {item.product_id}
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        Last seen: ({Math.round(item.x_position)}cm, {Math.round(item.y_position)}cm)
-                      </div>
-                    </div>
-                  ))}
+          {/* Missing Items - Items Needing Restock */}
+          <div className={`p-6 rounded-lg border-2 ${
+            missingItems.length > 0 
+              ? 'bg-red-900/40 border-red-500' 
+              : 'bg-slate-800/70 border-slate-700'
+          }`}>
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <span className="text-2xl">📋</span>
+              <span className={missingItems.length > 0 ? 'text-red-300' : 'text-slate-300'}>
+                Restock Queue ({missingItems.length})
+              </span>
+            </h2>
+            
+            {missingItems.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-5xl mb-3">✅</div>
+                <p className="text-slate-400">All items accounted for!</p>
+                <p className="text-slate-500 text-sm mt-2">No restocking needed</p>
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                {missingItems.map((item, index) => (
+                  <div
+                    key={item.product_id}
+                    className="p-3 bg-slate-800 rounded border border-red-500/40 hover:bg-slate-750 transition-colors"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-red-400 font-bold">#{index + 1}</span>
+                          <span className="font-semibold text-red-300">{item.product_name}</span>
+                        </div>
+                        <div className="text-xs text-slate-400 space-y-0.5">
+                          <div className="font-mono">ID: {item.product_id}</div>
+                          <div>Location: ({Math.round(item.x_position)}cm, {Math.round(item.y_position)}cm)</div>
+                          {item.timestamp && (
+                            <div>Last seen: {new Date(item.timestamp).toLocaleTimeString()}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-2xl">⚠️</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {missingItems.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-red-500/30">
+                <div className="text-sm text-red-300 flex items-center justify-between">
+                  <span>Priority: High</span>
+                  <span className="font-bold">{missingItems.length} items to restock</span>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Anchor List */}
           <div className="bg-slate-800 p-6 rounded-lg">
@@ -369,17 +550,62 @@ export default function Home() {
             )}
           </div>
 
-          {/* Quick Start */}
+          {/* Quick Start Guide */}
           {anchors.length === 0 && (
-            <div className="bg-blue-900/20 border border-blue-700 p-6 rounded-lg">
-              <h3 className="text-lg font-semibold mb-3">🚀 Quick Start</h3>
-              <ol className="text-sm space-y-2 text-slate-300">
-                <li>1. Click "Setup Mode" above</li>
-                <li>2. Click on the map to place 4 anchors at your physical anchor locations</li>
-                <li>3. Click "Finish Setup"</li>
-                <li>4. Run: <code className="bg-slate-800 px-2 py-1 rounded">python esp32_simulator.py</code></li>
-                <li>5. Start data: <code className="bg-slate-800 px-2 py-1 rounded">mosquitto_pub -h 172.20.10.3 -t store/control -m START</code></li>
-              </ol>
+            <div className="bg-blue-900/30 border-2 border-blue-500 p-6 rounded-lg">
+              <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                <span className="text-2xl">🚀</span>
+                Setup Guide
+              </h3>
+              <div className="space-y-4">
+                <div className="bg-slate-800/50 p-4 rounded-lg border border-blue-700/50">
+                  <h4 className="font-semibold text-blue-300 mb-2">Step 1: Configure Anchors</h4>
+                  <ol className="text-sm space-y-2 text-slate-300 ml-4">
+                    <li>1. Click "⚙️ Setup Mode" button above</li>
+                    <li>2. Place anchors on the map by clicking at their physical locations</li>
+                    <li>3. Drag anchors to adjust positions if needed</li>
+                    <li>4. Place at least 2 anchors (4 recommended for best accuracy)</li>
+                    <li>5. Click "✓ Finish Setup" when done</li>
+                  </ol>
+                </div>
+                
+                <div className="bg-slate-800/50 p-4 rounded-lg border border-blue-700/50">
+                  <h4 className="font-semibold text-blue-300 mb-2">Step 2: Start Simulator</h4>
+                  <p className="text-sm text-slate-300 mb-2">Run the ESP32 simulator (will auto-load anchor config):</p>
+                  <code className="block bg-slate-900 px-3 py-2 rounded text-xs text-green-400 font-mono">
+                    python3 esp32_simulator.py
+                  </code>
+                </div>
+                
+                <div className="bg-yellow-900/30 border border-yellow-700/50 p-4 rounded-lg">
+                  <p className="text-xs text-yellow-200 flex items-start gap-2">
+                    <span className="text-lg">💡</span>
+                    <span>
+                      <strong>Tip:</strong> Employee movement follows store aisles, not anchor positions. 
+                      Place anchors at the corners or edges of your store for best triangulation accuracy.
+                    </span>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Anchor Configuration Status */}
+          {anchors.length > 0 && anchors.length < 2 && (
+            <div className="bg-yellow-900/30 border-2 border-yellow-500 p-6 rounded-lg">
+              <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-yellow-300">
+                <span>⚠️</span>
+                Insufficient Anchors
+              </h3>
+              <p className="text-sm text-yellow-200 mb-3">
+                You have {anchors.length} anchor(s) configured. At least 2 active anchors are required for position tracking.
+              </p>
+              <button
+                onClick={() => setSetupMode(true)}
+                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-semibold transition-colors"
+              >
+                Add More Anchors
+              </button>
             </div>
           )}
         </div>

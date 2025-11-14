@@ -30,7 +30,7 @@ def on_message(client, userdata, msg):
         # Decode and parse the message
         payload = msg.payload.decode('utf-8')
         print(f"\n📥 Received message on {msg.topic}")
-        print(f"   Payload: {payload[:100]}..." if len(payload) > 100 else f"   Payload: {payload}")
+        print(f"   Full Payload: {payload}")
         
         data = json.loads(payload)
         

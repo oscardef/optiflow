@@ -50,27 +50,45 @@ docker compose up -d
 ### Configure Anchors
 
 1. Open http://localhost:3000 in your browser
-2. Click **"Setup Mode"** button
-3. Click on the map to place 3-4 anchors (corners of the store work best)
-4. Click **"Finish Setup"** when done
+2. Click **"⚙️ Setup Mode"** button
+3. Click on the map to place anchors at your physical anchor locations
+   - Minimum: 2 anchors (basic positioning)
+   - Recommended: 4 anchors (best accuracy)
+   - Place at corners or edges of store for optimal triangulation
+4. Drag anchors to adjust positions if needed
+5. Click **"✓ Finish Setup"** when done
+
+**Important:** The simulator will automatically load anchor positions from the backend!
 
 ### Run Simulator
 
 ```bash
-# Terminal 1: Start simulator
+# Terminal 1: Install dependencies (first time only)
+pip3 install -r requirements.txt
+
+# Terminal 2: Start simulator (auto-loads anchors from backend)
 python3 esp32_simulator.py
 
-# Terminal 2: Send START command
-mosquitto_pub -h localhost -t 'store/control' -m 'START'
+# Simulator will automatically start tracking
+# No need for manual START command anymore!
 ```
 
 ### Step 4: Watch Magic Happen ✨
 
 You should now see:
-- 🔵 Blue dot (tag) moving through aisles
-- 🟠 Orange squares (items detected and present)
-- 🔴 Red squares (missing items) with alerts in sidebar
+- 🚶 **Blue employee icon** moving through aisles (UWB triangulated position)
+- **Dashed circle** around employee showing 1.5m RFID detection range
+- ✅ **Green squares** for items detected within range (RFID)
+- ⚠️ **Red squares** for missing items (displayed on map AND in sidebar)
 - 📊 Live position updates with confidence scores
+- 📋 **Restock Queue** sidebar showing all missing items
+
+**How it works:**
+1. UWB anchors triangulate employee position every 0.5s
+2. Employee walks through aisles following realistic patterns
+3. RFID detects items within 2 meters of employee
+4. Items persist on map even after employee walks away
+5. Missing items are flagged when expected items aren't detected
 
 ---
 
@@ -114,65 +132,50 @@ You should now see:
 
 ## 📊 How It Works
 
-### 1. UWB Triangulation
+### 1. Employee Tracking (UWB Triangulation)
 
-The system uses **trilateration** to calculate 2D positions from distance measurements:
+The system uses **trilateration** to calculate employee's 2D position:
 
 - **2 anchors**: Weighted midpoint (~50% confidence)
 - **3+ anchors**: Least-squares algorithm (70-90% confidence)
+- **Update rate**: 6-7 times per second (0.15s interval)
+- **Accuracy**: Typically 20-50cm with 4 anchors
 
-**Algorithm:**
+### 2. Item Detection (RFID Simulation)
+
+- **Detection range**: 1.5m radius around employee
+- **Persistent display**: Items stay on map after detection
+- **Status tracking**: present/missing
+- **First pass**: All items detected as "present" (baseline inventory)
+- **Later passes**: 1-2% chance items go missing per pass
+- **Smart reporting**: Only reports status changes, not duplicate scans (prevents database bloat)
+
+### 3. Movement Pattern
+
+Employee follows realistic back-and-forth pattern:
 ```
-For each anchor i: (x - x_i)² + (y - y_i)² = r_i²
-
-Linearize and solve: position = (A^T A)^-1 (A^T b)
-
-Confidence = exp(-avg_error / 50)
+Aisle 1 (down) → Cross aisle → Aisle 2 (up/down) → Cross aisle →
+Aisle 3 (up/down) → Cross aisle → Aisle 4 (up/down) → Walk back to start
 ```
 
-### 2. Store Simulation
+- **Speed**: 30 cm/s (realistic walking pace)
+- **Updates**: 6-7 per second for smooth tracking
+- **Movement**: Independent of anchor positions (follows store layout)
 
-The simulator creates a realistic store environment:
+### 4. Data Efficiency
 
-- **4 vertical aisles** (x = 200, 400, 600, 800 cm)
-- **1 cross aisle** (y = 400 cm)
-- **15+ items** distributed throughout aisles
-- **Tag navigation** follows aisle patterns (up/down movement)
-- **Boundary constraints** keep tag within 50-950cm x 50-750cm
+**Backend optimizations:**
+- Only creates new Detection record when item status changes
+- Updates timestamp for unchanged items (no duplicate records)
+- New `/data/items` endpoint returns unique items (not raw detection logs)
 
-### 3. Item Detection
-
-- **RFID range**: 100cm detection radius
-- **Status tracking**: present/missing/unknown
-- **Missing probability**: 2% chance when detected
-- **Persistent display**: All items stay on map regardless of detection
+**Result**: Database grows ~30-50x slower, items never disappear from map
 
 ---
 
 ## 🎮 Using the System
 
-### Anchor Setup Mode
-
-1. Click **"Setup Mode"**
-2. **Click** on map to place new anchors
-3. **Drag** existing anchors to reposition
-4. **Delete** anchors via sidebar
-5. Click **"Finish Setup"**
-
-**Tip:** Place anchors at store corners for best triangulation accuracy.
-
-### Simulator Configuration
-
-Edit `esp32_simulator.py` to customize:
-
-```python
-STORE_WIDTH = 1000   # Store width in cm
-STORE_HEIGHT = 800   # Store height in cm
-RFID_RANGE = 100     # Detection range in cm
-UPDATE_INTERVAL = 0.5  # Seconds between updates
-```
-
-### Manual Testing
+### API Endpoints
 
 ```bash
 # Check backend health
@@ -181,32 +184,42 @@ curl http://localhost:8000
 # List configured anchors
 curl http://localhost:8000/anchors | jq
 
-# Get latest positions
-curl http://localhost:8000/positions/latest | jq
+# Get latest position
+curl http://localhost:8000/positions/latest?limit=1 | jq
 
-# Get all detections (items)
-curl http://localhost:8000/data/latest?limit=100 | jq
+# Get all unique items (with latest status)
+curl http://localhost:8000/data/items | jq
+
+# Get only missing items
+curl http://localhost:8000/data/missing | jq
+
+# Clear all tracking data
+curl -X DELETE http://localhost:8000/data/clear
 ```
 
----
+### Simulator Options
 
-## 🔧 API Endpoints
+```bash
+# Custom MQTT broker
+python3 esp32_simulator.py --broker 192.168.1.100
 
-### Anchors
-- `GET /anchors` - List all anchors
-- `POST /anchors` - Create anchor (auto-called from UI)
-- `PUT /anchors/{id}` - Update anchor position
-- `DELETE /anchors/{id}` - Remove anchor
+# Custom update interval
+python3 esp32_simulator.py --interval 0.2
 
-### Positions
-- `GET /positions/latest` - Recent calculated positions
-- `POST /calculate-position` - Manually trigger triangulation
+# Custom backend API
+python3 esp32_simulator.py --api http://192.168.1.100:8000
+```
 
-### Data
-- `POST /data` - Receive UWB measurements (MQTT bridge uses this)
-- `GET /data/latest?limit=N` - Recent detections with locations
+### Customize Store Layout
 
----
+Edit `esp32_simulator.py`:
+```python
+STORE_WIDTH = 1000       # Store width in cm
+STORE_HEIGHT = 800       # Store height in cm
+UPDATE_INTERVAL = 0.15   # Update frequency (lower = more updates)
+```
+
+
 
 ## 📁 Project Structure
 
@@ -214,30 +227,27 @@ curl http://localhost:8000/data/latest?limit=100 | jq
 optiflow/
 ├── backend/                     # FastAPI backend
 │   ├── app/
-│   │   ├── main.py             # API endpoints
+│   │   ├── main.py             # API endpoints + triangulation
 │   │   ├── models.py           # Database models
 │   │   ├── schemas.py          # Pydantic schemas
-│   │   ├── triangulation.py   # Position calculation algorithm
+│   │   ├── triangulation.py   # Position calculation
 │   │   └── database.py         # DB connection
 │   └── Dockerfile
 ├── frontend/                    # Next.js dashboard
 │   ├── app/
-│   │   ├── page.tsx           # Main dashboard page
+│   │   ├── page.tsx           # Main dashboard
 │   │   └── components/
-│   │       └── StoreMap.tsx   # Interactive canvas map
+│   │       └── StoreMap.tsx   # Interactive map
 │   └── Dockerfile
 ├── mqtt_bridge/                # MQTT → HTTP bridge
 │   ├── mqtt_to_api.py
 │   └── Dockerfile
-├── firmware/                    # ESP32 hardware code (optional)
+├── firmware/                    # ESP32 hardware docs (optional)
 │   ├── UWB_TEST/              # UWB setup guides
-│   └── RFID_TEST/             # RFID integration docs
-├── scripts/                     # Optional helper scripts
-│   ├── setup.sh               # Manual dependency installation
-│   └── test_system.sh         # System validation tests
-├── esp32_simulator.py          # Hardware simulator (no ESP32 needed!)
-├── start.sh                    # One-command startup script
+│   └── RFID_TEST/             # RFID integration
+├── esp32_simulator.py          # Hardware simulator
 ├── docker-compose.yml          # Service orchestration
+├── requirements.txt            # Python dependencies
 └── README.md                   # This file
 ```
 
@@ -245,57 +255,54 @@ optiflow/
 
 ## 🐛 Troubleshooting
 
-### Docker Command Not Found
-
+### "Could not load anchors from backend"
 ```bash
-# Add Docker to PATH permanently
-echo 'export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+# Check backend is running
+curl http://localhost:8000
+
+# If not, restart services
+docker compose restart backend
+
+# Configure anchors in web UI at http://localhost:3000
 ```
 
-### Python Module Not Found
-
+### "Items disappearing from map"
+This should be fixed! Items now persist regardless of pass count. If still happening:
 ```bash
-# Use pip3 for Python 3 (not pip which may use Python 2)
-pip3 install paho-mqtt
+# Clear old data and restart
+curl -X DELETE http://localhost:8000/data/clear
+docker compose restart backend frontend
+python3 esp32_simulator.py
+```
+
+### Services won't start
+```bash
+# Check if ports are in use
+lsof -i :3000  # Frontend
+lsof -i :8000  # Backend
+lsof -i :1883  # MQTT
+
+# Stop Docker and restart
+docker compose down
+docker compose up -d
+
+# Check logs
+docker compose logs backend
+docker compose logs frontend
 ```
 
 ### No Positions Calculated
-
-**Check:**
-1. At least 2 anchors configured: `curl http://localhost:8000/anchors`
-2. UWB measurements arriving: `curl http://localhost:8000/data/latest?limit=5`
-3. Simulator is running and received START command
-
-### Frontend Shows "Disconnected"
-
 ```bash
-# Restart backend
-docker compose restart backend
+# Verify at least 2 anchors configured
+curl http://localhost:8000/anchors
 
-# Check logs
-docker logs optiflow-backend --tail 50
+# Check UWB measurements arriving
+curl http://localhost:8000/data/latest?limit=5
 ```
 
-### Items Not Appearing on Map
-
+### Python Module Not Found
 ```bash
-# Rebuild frontend with updated code
-docker compose build frontend --no-cache
-docker compose up -d frontend
-```
-
-### Simulator Connection Failed
-
-```bash
-# Check Mosquitto is running
-brew services list | grep mosquitto
-
-# Restart if needed
-brew services restart mosquitto
-
-# Verify your Mac's IP (if using hotspot)
-ipconfig getifaddr en0
+pip3 install -r requirements.txt
 ```
 
 ---
