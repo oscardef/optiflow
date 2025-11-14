@@ -49,9 +49,12 @@ export default function StoreMap({
   onAnchorUpdate 
 }: StoreMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [draggedAnchor, setDraggedAnchor] = useState<number | null>(null);
   const [hoveredAnchor, setHoveredAnchor] = useState<number | null>(null);
   const [nextAnchorIndex, setNextAnchorIndex] = useState(0);
+  const [canvasSize, setCanvasSize] = useState({ width: 800, height: 640 });
+  const [legendCollapsed, setLegendCollapsed] = useState(false);
 
   // Convert store coordinates (cm) to canvas coordinates (pixels)
   const toCanvasCoords = (x: number, y: number, canvas: HTMLCanvasElement) => {
@@ -81,13 +84,13 @@ export default function StoreMap({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clear canvas
-    ctx.fillStyle = '#1a1a1a';
+    // Clear canvas with white background
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Draw grid
-    ctx.strokeStyle = '#2a2a2a';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 2;
     const gridSize = 100; // 1 meter grid
     for (let x = 0; x < STORE_WIDTH; x += gridSize) {
       const canvasX = toCanvasCoords(x, 0, canvas).x;
@@ -105,8 +108,8 @@ export default function StoreMap({
     }
 
     // Draw store boundary
-    ctx.strokeStyle = '#555';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#d1d5db';
+    ctx.lineWidth = 4;
     ctx.strokeRect(0, 0, canvas.width, canvas.height);
 
     // Draw aisles (4 vertical aisles at x=200, 400, 600, 800)
@@ -120,13 +123,13 @@ export default function StoreMap({
       const rightEdge = toCanvasCoords(x + aisleWidth / 2, aisleStartY, canvas);
       const bottomY = toCanvasCoords(x, aisleEndY, canvas).y;
       
-      // Draw aisle background (lighter floor)
-      ctx.fillStyle = 'rgba(60, 60, 80, 0.3)';
+      // Draw aisle background
+      ctx.fillStyle = 'rgba(243, 244, 246, 0.8)';
       ctx.fillRect(leftEdge.x, leftEdge.y, rightEdge.x - leftEdge.x, bottomY - leftEdge.y);
       
       // Draw aisle borders (shelving edges)
-      ctx.strokeStyle = 'rgba(100, 100, 120, 0.5)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#9ca3af';
+      ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.moveTo(leftEdge.x, leftEdge.y);
       ctx.lineTo(leftEdge.x, bottomY);
@@ -137,8 +140,8 @@ export default function StoreMap({
       ctx.stroke();
       
       // Draw aisle label
-      ctx.fillStyle = '#8888aa';
-      ctx.font = 'bold 14px sans-serif';
+      ctx.fillStyle = '#6b7280';
+      ctx.font = 'bold 28px sans-serif';
       ctx.textAlign = 'center';
       const labelPos = toCanvasCoords(x, aisleStartY - 30, canvas);
       ctx.fillText(`Aisle ${index + 1}`, labelPos.x, labelPos.y);
@@ -150,10 +153,10 @@ export default function StoreMap({
     const crossLeftEdge = toCanvasCoords(0, crossAisleY - crossAisleHeight / 2, canvas);
     const crossRightEdge = toCanvasCoords(STORE_WIDTH, crossAisleY + crossAisleHeight / 2, canvas);
     
-    ctx.fillStyle = 'rgba(60, 60, 80, 0.2)';
+    ctx.fillStyle = 'rgba(243, 244, 246, 0.6)';
     ctx.fillRect(0, crossLeftEdge.y, canvas.width, crossRightEdge.y - crossLeftEdge.y);
-    ctx.strokeStyle = 'rgba(100, 100, 120, 0.3)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#d1d5db';
+    ctx.lineWidth = 2;
     ctx.strokeRect(0, crossLeftEdge.y, canvas.width, crossRightEdge.y - crossLeftEdge.y);
 
     // Draw items on the map
@@ -166,10 +169,10 @@ export default function StoreMap({
       
       // Draw item as small square with subtle glow
       ctx.fillStyle = 'rgba(34, 197, 94, 0.6)';  // Green for present
-      ctx.fillRect(pos.x - 3, pos.y - 3, 6, 6);
+      ctx.fillRect(pos.x - 6, pos.y - 6, 12, 12);
       ctx.strokeStyle = '#22c55e';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(pos.x - 3, pos.y - 3, 6, 6);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(pos.x - 6, pos.y - 6, 12, 12);
     });
     
     // Draw missing items on top with emphasis
@@ -179,27 +182,27 @@ export default function StoreMap({
       // Pulsing glow effect for missing items
       ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 12, 0, 2 * Math.PI);
+      ctx.arc(pos.x, pos.y, 24, 0, 2 * Math.PI);
       ctx.fill();
       
       // Draw missing item as prominent square
       ctx.fillStyle = '#ef4444';  // Bright red
-      ctx.fillRect(pos.x - 5, pos.y - 5, 10, 10);
+      ctx.fillRect(pos.x - 10, pos.y - 10, 20, 20);
       ctx.strokeStyle = '#fca5a5';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(pos.x - 5, pos.y - 5, 10, 10);
+      ctx.lineWidth = 4;
+      ctx.strokeRect(pos.x - 10, pos.y - 10, 20, 20);
       
       // Draw warning icon
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 16px sans-serif';
+      ctx.font = 'bold 32px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('!', pos.x, pos.y + 5);
+      ctx.fillText('!', pos.x, pos.y + 10);
     });
 
     // Draw distance circles from anchors to tags (only for the most recent position)
     if (!setupMode && positions.length > 0) {
       ctx.strokeStyle = 'rgba(59, 130, 246, 0.15)';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 2;
       
       // Only draw circles for the first (most recent) position
       const recentPos = positions[0];
@@ -224,31 +227,31 @@ export default function StoreMap({
     anchors.forEach((anchor, index) => {
       const pos = toCanvasCoords(anchor.x_position, anchor.y_position, canvas);
       
-      // Anchor circle
-      ctx.fillStyle = anchor.is_active ? '#3b82f6' : '#6b7280';
+      // Anchor circle - royal blue
+      ctx.fillStyle = anchor.is_active ? '#0055A4' : '#9ca3af';
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 12, 0, 2 * Math.PI);
+      ctx.arc(pos.x, pos.y, 24, 0, 2 * Math.PI);
       ctx.fill();
       
       // Highlight if hovered or dragged
       if (hoveredAnchor === anchor.id || draggedAnchor === anchor.id) {
-        ctx.strokeStyle = '#60a5fa';
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#1a6bbb';
+        ctx.lineWidth = 6;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 15, 0, 2 * Math.PI);
+        ctx.arc(pos.x, pos.y, 30, 0, 2 * Math.PI);
         ctx.stroke();
       }
       
       // Anchor label
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px sans-serif';
+      ctx.fillStyle = '#111827';
+      ctx.font = 'bold 24px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(anchor.name || anchor.mac_address, pos.x, pos.y - 20);
+      ctx.fillText(anchor.name || anchor.mac_address, pos.x, pos.y - 40);
       
       // MAC address
-      ctx.font = '10px sans-serif';
-      ctx.fillStyle = '#aaa';
-      ctx.fillText(anchor.mac_address, pos.x, pos.y + 30);
+      ctx.font = '20px sans-serif';
+      ctx.fillStyle = '#6b7280';
+      ctx.fillText(anchor.mac_address, pos.x, pos.y + 60);
     });
 
     // Draw employee positions (from UWB triangulation)
@@ -261,7 +264,7 @@ export default function StoreMap({
         
         ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`;
         ctx.beginPath();
-        ctx.arc(canvasPos.x, canvasPos.y, 4, 0, 2 * Math.PI);
+        ctx.arc(canvasPos.x, canvasPos.y, 8, 0, 2 * Math.PI);
         ctx.fill();
       }
       
@@ -270,9 +273,9 @@ export default function StoreMap({
       const canvasPos = toCanvasCoords(currentPos.x_position, currentPos.y_position, canvas);
       
       // 1.5m detection radius circle (RFID range)
-      ctx.strokeStyle = 'rgba(59, 130, 246, 0.4)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([8, 4]);
+      ctx.strokeStyle = 'rgba(0, 85, 164, 0.3)';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([16, 8]);
       const radiusCm = 150; // 1.5 meters RFID range
       const radiusPx = radiusCm * (canvas.width / STORE_WIDTH);
       ctx.beginPath();
@@ -281,113 +284,85 @@ export default function StoreMap({
       ctx.setLineDash([]);
       
       // Outer glow for employee
-      ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
+      ctx.fillStyle = 'rgba(0, 85, 164, 0.15)';
       ctx.beginPath();
-      ctx.arc(canvasPos.x, canvasPos.y, 24, 0, 2 * Math.PI);
+      ctx.arc(canvasPos.x, canvasPos.y, 48, 0, 2 * Math.PI);
       ctx.fill();
       
-      // Employee icon (larger, more prominent)
-      ctx.fillStyle = '#3b82f6';
-      ctx.strokeStyle = '#60a5fa';
-      ctx.lineWidth = 2;
+      // Employee icon - royal blue (scaled 2x)
+      ctx.fillStyle = '#0055A4';
+      ctx.strokeStyle = '#1a6bbb';
+      ctx.lineWidth = 4;
       
       // Head
       ctx.beginPath();
-      ctx.arc(canvasPos.x, canvasPos.y - 8, 8, 0, 2 * Math.PI);
+      ctx.arc(canvasPos.x, canvasPos.y - 16, 16, 0, 2 * Math.PI);
       ctx.fill();
       ctx.stroke();
       
       // Body
-      ctx.fillStyle = '#3b82f6';
-      ctx.fillRect(canvasPos.x - 6, canvasPos.y + 2, 12, 14);
-      ctx.strokeRect(canvasPos.x - 6, canvasPos.y + 2, 12, 14);
+      ctx.fillStyle = '#0055A4';
+      ctx.fillRect(canvasPos.x - 12, canvasPos.y + 4, 24, 28);
+      ctx.strokeRect(canvasPos.x - 12, canvasPos.y + 4, 24, 28);
       
-      // Employee label with emoji
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 13px sans-serif';
+      // Employee label
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 26px sans-serif';
       ctx.textAlign = 'center';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-      ctx.shadowBlur = 4;
-      ctx.fillText('� Employee', canvasPos.x, canvasPos.y - 32);
+      ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
+      ctx.shadowBlur = 6;
+      ctx.fillText('Employee', canvasPos.x, canvasPos.y - 64);
       ctx.shadowBlur = 0;
       
-      // Position coordinates (for debugging)
-      ctx.font = '10px monospace';
-      ctx.fillStyle = '#93c5fd';
-      ctx.fillText(`(${Math.round(currentPos.x_position)}, ${Math.round(currentPos.y_position)})`, canvasPos.x, canvasPos.y + 30);
+      // Position coordinates
+      ctx.font = '20px monospace';
+      ctx.fillStyle = '#374151';
+      ctx.fillText(`(${Math.round(currentPos.x_position)}, ${Math.round(currentPos.y_position)})`, canvasPos.x, canvasPos.y + 60);
     }
 
-    // Draw legend
-    const legendX = 20;
-    const legendY = 20;
-    const legendHeight = setupMode ? 80 : 140;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-    ctx.fillRect(legendX, legendY, 180, legendHeight);
-    ctx.strokeStyle = 'rgba(100, 100, 120, 0.5)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(legendX, legendY, 180, legendHeight);
-    
-    ctx.font = 'bold 13px sans-serif';
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'left';
-    ctx.fillText('📊 Live Store Map', legendX + 10, legendY + 20);
-    
-    if (!setupMode) {
-      // Employee
-      ctx.fillStyle = '#3b82f6';
-      ctx.fillRect(legendX + 17, legendY + 40, 8, 10);
-      ctx.fillStyle = '#e0e7ff';
-      ctx.font = '11px sans-serif';
-      ctx.fillText('� Employee', legendX + 35, legendY + 49);
-      
-      // Item - Present
-      ctx.fillStyle = '#22c55e';
-      ctx.fillRect(legendX + 17, legendY + 60, 6, 6);
-      ctx.fillStyle = '#d1fae5';
-      ctx.fillText('✓ Item Detected', legendX + 35, legendY + 67);
-      
-      // Item - Missing
-      ctx.fillStyle = '#ef4444';
-      ctx.fillRect(legendX + 17, legendY + 80, 10, 10);
-      ctx.fillStyle = '#fef2f2';
-      ctx.font = 'bold 11px sans-serif';
-      ctx.fillText('⚠️  Missing Item', legendX + 35, legendY + 89);
-      
-      // Detection range
-      ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)';
-      ctx.setLineDash([4, 2]);
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(legendX + 22, legendY + 105, 10, 0, 2 * Math.PI);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '10px sans-serif';
-      ctx.fillText('1.5m RFID Range', legendX + 35, legendY + 109);
-    } else {
-      // Anchor in setup mode
-      ctx.fillStyle = '#3b82f6';
-      ctx.beginPath();
-      ctx.arc(legendX + 22, legendY + 45, 7, 0, 2 * Math.PI);
-      ctx.fill();
-      ctx.fillStyle = '#ddd';
-      ctx.font = '11px sans-serif';
-      ctx.fillText('UWB Anchor', legendX + 35, legendY + 49);
-    }
-    
-    // Grid info
-    ctx.fillStyle = '#64748b';
-    ctx.font = '9px sans-serif';
-    ctx.fillText('Grid: 1m × 1m', legendX + 10, legendY + legendHeight - 8);
   };
 
   // Removed drawMissingItemsAlert function - now displayed in sidebar
+
+  // Handle responsive canvas sizing
+  useEffect(() => {
+    const updateCanvasSize = () => {
+      if (!containerRef.current) return;
+      
+      const container = containerRef.current;
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
+      
+      // Maintain aspect ratio of STORE_WIDTH:STORE_HEIGHT (1000:800 = 1.25:1)
+      const aspectRatio = STORE_WIDTH / STORE_HEIGHT;
+      
+      let width = containerWidth;
+      let height = width / aspectRatio;
+      
+      // If height exceeds container, constrain by height instead
+      if (height > containerHeight) {
+        height = containerHeight;
+        width = height * aspectRatio;
+      }
+      
+      // Increase resolution by 2x for sharper rendering
+      setCanvasSize({ 
+        width: Math.floor(width * 2), 
+        height: Math.floor(height * 2) 
+      });
+    };
+    
+    updateCanvasSize();
+    window.addEventListener('resize', updateCanvasSize);
+    
+    return () => window.removeEventListener('resize', updateCanvasSize);
+  }, []);
 
   // Redraw when data changes
   useEffect(() => {
     drawMap();
     // Removed drawMissingItemsAlert - now shown in sidebar instead
-  }, [anchors, positions, items, setupMode, hoveredAnchor, draggedAnchor]);
+  }, [anchors, positions, items, setupMode, hoveredAnchor, draggedAnchor, canvasSize, legendCollapsed]);
 
   // Removed auto-pulsing animation for missing items alert (now shown in sidebar)
 
@@ -469,12 +444,16 @@ export default function StoreMap({
   };
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative w-full h-full flex items-center justify-center">
       <canvas
         ref={canvasRef}
-        width={800}
-        height={640}
-        className="border-2 border-slate-700 rounded-lg cursor-crosshair"
+        width={canvasSize.width}
+        height={canvasSize.height}
+        style={{
+          width: `${canvasSize.width / 2}px`,
+          height: `${canvasSize.height / 2}px`
+        }}
+        className="border-2 border-gray-300 cursor-crosshair"
         onClick={handleCanvasClick}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -483,45 +462,11 @@ export default function StoreMap({
       />
       
       {setupMode && (
-        <div className="absolute top-4 right-4 bg-blue-900/80 text-white px-4 py-2 rounded-lg text-sm">
+        <div className="absolute top-4 right-4 bg-[#0055A4] text-white px-4 py-2 text-sm font-medium">
           Click to place anchor #{nextAnchorIndex + 1}<br/>
           Drag existing anchors to reposition
         </div>
       )}
-      
-      <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-        <div className="bg-slate-800 p-3 rounded-lg">
-          <p className="text-slate-400 mb-1">Store Layout</p>
-          <p className="text-white font-semibold">{STORE_WIDTH/100}m × {STORE_HEIGHT/100}m</p>
-          <p className="text-slate-400 text-xs mt-1">4 Aisles + Cross Section</p>
-        </div>
-        
-        <div className="bg-slate-800 p-3 rounded-lg">
-          <p className="text-slate-400 mb-1">UWB Tracking</p>
-          <p className="text-white font-semibold">{anchors.filter(a => a.is_active).length} Anchors Active</p>
-          {positions.length > 0 && (
-            <p className="text-green-400 text-xs mt-1">✓ Employee Tracked</p>
-          )}
-        </div>
-        
-        <div className="bg-slate-800 p-3 rounded-lg">
-          <p className="text-slate-400 mb-1">Inventory</p>
-          <p className="text-white font-semibold">{items.length} Items Detected</p>
-          <p className="text-green-400 text-xs mt-1">
-            {items.filter(i => i.status !== 'missing').length} Present
-          </p>
-        </div>
-        
-        <div className={`p-3 rounded-lg ${items.filter(i => i.status === 'missing').length > 0 ? 'bg-red-900/40 border-2 border-red-500' : 'bg-slate-800'}`}>
-          <p className="text-slate-400 mb-1">Missing Items</p>
-          <p className={`font-bold text-2xl ${items.filter(i => i.status === 'missing').length > 0 ? 'text-red-400' : 'text-white'}`}>
-            {items.filter(i => i.status === 'missing').length}
-          </p>
-          {items.filter(i => i.status === 'missing').length > 0 && (
-            <p className="text-red-300 text-xs mt-1">⚠️ Restock Required</p>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
