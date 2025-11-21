@@ -27,7 +27,7 @@ This task dictates the system's "heartbeat". Because RFID polling is a blocking 
 **Workflow:**
 1. **Polls RFID Module**: Executes `rfid.pollingMultiple(30)`, blocking for ~2s.
 2. **Locks Mutex**: Acquires `rfidMutex`.
-3. **Updates Buffer**: Copies up to `RFID_MAX_TAGS` (200) into shared memory.
+3. **Updates Buffer**: Copies up to `RFID_MAX_TAGS` into shared memory.
 4. **Increments Cycle**: Updates `currentCycle` counter (protected by `cycleMutex`).
 5. **Restarts**: Immediately begins the next polling cycle.
 
@@ -64,6 +64,22 @@ This task bridges the sensor world (Core 1) and the network world (Core 0). It w
    - Calculates average UWB distances (`totalDistance / successCount`).
    - Builds a large JSON document (up to 4KB).
 5. **Publishing**: Sends the JSON payload to `store/aisle1` via MQTT.
+
+### D. Memory Management Strategy
+
+The system operates within the ESP32-S3's 512KB RAM constraints using a strict memory layout:
+
+1. **Task Stacks (Static)**:
+   - Each task is allocated a fixed **16KB stack**.
+   - This is sufficient for local variables, including the `RFIDTagData` struct array (~6KB).
+   - **Safety**: Stack usage is deterministic and safe from overflow.
+
+2. **Heap (Dynamic)**:
+   - **String Data**: The actual character data for RFID EPCs and UWB MACs lives here.
+   - **MQTT Buffer**: A large **32KB buffer** is allocated on the heap to handle the worst-case JSON payload (200 tags + 100 anchors).
+   - **UWB Map**: The `std::map` for anchor stats grows dynamically but is capped at 100 entries to prevent heap exhaustion.
+
+> **Note**: The 32KB MQTT buffer is critical. A full payload (200 tags + 100 anchors) exceeds 16KB. The standard 4KB or 8KB buffers would cause silent publication failures.
 
 ---
 
@@ -109,11 +125,20 @@ sequenceDiagram
 |-----------|-------|-------------|
 | `RFID_POLLING_COUNT` | 30 | Number of hardware scan cycles per poll. Determines cycle duration (~2s). |
 | `RFID_MAX_TAGS` | 200 | Maximum unique tags stored per cycle. Matches library limit. |
+| `UWB_MAX_ANCHORS` | 100 | Maximum unique anchors tracked per cycle. Prevents memory overflow. |
 | `UWB_BUFFER_SIZE` | 2048 | UART buffer size for UWB session data. |
-| `MQTT_BUFFER_SIZE` | 4096 | Max JSON payload size. |
+| `MQTT_BUFFER_SIZE` | 32768 | Max JSON payload size (32KB). |
 
 ## 5. Why This Architecture?
 
 1. **Non-Blocking Network**: MQTT publishing can take 100ms+. By moving it to Core 0 (Output Task), the RFID and UWB tasks on Core 1 never miss a beat.
 2. **Data Coherency**: UWB data is averaged exactly over the duration of the RFID scan, providing a synchronized "snapshot" of the environment.
 3. **Stability**: Separating the WiFi stack (Core 0) from the time-sensitive UART/SPI sensor communication (Core 1) prevents watchdog resets and buffer overflows.
+
+### E. Debugging & Observability
+
+The firmware includes a compile-time debug switch:
+- **`DEBUG_MODE 1`**: Enables verbose serial output for development (Task startup, heap status, MQTT events).
+- **`DEBUG_MODE 0`**: Disables all non-essential serial prints for production efficiency.
+
+All debug prints use the `DEBUG_PRINT()` macro, allowing the entire logging system to be compiled out for maximum performance.

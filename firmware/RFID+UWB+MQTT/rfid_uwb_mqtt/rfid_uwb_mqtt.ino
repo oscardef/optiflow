@@ -38,6 +38,16 @@
 // CONFIGURATION
 // ============================================
 
+#define DEBUG_MODE 1    // Set to 1 for debugging
+
+#if DEBUG_MODE
+#define DEBUG_PRINT(x) Serial.print(x)
+#define DEBUG_PRINTLN(x) Serial.println(x)
+#else
+#define DEBUG_PRINT(x)
+#define DEBUG_PRINTLN(x)
+#endif
+
 // WiFi Configuration - UPDATE THESE
 const char* WIFI_SSID = "Oscar";              // Your WiFi name
 const char* WIFI_PASSWORD = "password";        // Your WiFi password
@@ -56,6 +66,7 @@ const char* TOPIC_STATUS = "store/status";     // Status updates
 #define RFID_MAX_TX_POWER   3000        // 26.00dB
 #define RFID_POLLING_COUNT  30
 #define RFID_MAX_TAGS       200         // Maximum tags per polling cycle
+#define UWB_MAX_ANCHORS     100  
 
 // UWB Configuration
 #define UWB_RX_PIN          18
@@ -157,7 +168,7 @@ void setup() {
     // Initialize WiFi and MQTT
     setupWiFi();
     mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
-    mqttClient.setBufferSize(4096);  // Large buffer for JSON
+    mqttClient.setBufferSize(32768);  // Large buffer for JSON
     mqttClient.setCallback(mqttCallback);
     reconnectMQTT();
     
@@ -174,14 +185,18 @@ void setup() {
     // Initialize UWB session
     latestUwbSession.valid = false;
     
-    Serial.println("\n=================================");
-    Serial.println("✓ System Ready - Starting Tasks");
-    Serial.println("=================================\n");
-    Serial.println("Send START signal with:");
-    Serial.printf("  mosquitto_pub -h %s -t %s -m 'START'\n\n", MQTT_SERVER, TOPIC_CONTROL);
+    DEBUG_PRINTLN("\n=================================");
+    DEBUG_PRINTLN("✓ System Ready - Starting Tasks");
+    DEBUG_PRINTLN("=================================\n");
+    DEBUG_PRINTLN("Send START signal with:");
+    DEBUG_PRINT("  mosquitto_pub -h ");
+    DEBUG_PRINT(MQTT_SERVER);
+    DEBUG_PRINT(" -t ");
+    DEBUG_PRINT(TOPIC_CONTROL);
+    DEBUG_PRINTLN(" -m 'START'\n");
     
-    Serial.print("Heap before tasks: ");
-    Serial.println(ESP.getFreeHeap());
+    DEBUG_PRINT("Heap before tasks: ");
+    DEBUG_PRINTLN(ESP.getFreeHeap());
     // Create FreeRTOS tasks
     xTaskCreatePinnedToCore(
         rfidTask,           // Task function
@@ -213,8 +228,8 @@ void setup() {
         0                   // Core 0 - WiFi/Network & MQTT
     );
     
-    Serial.print("Heap after tasks: ");
-    Serial.println(ESP.getFreeHeap());
+    DEBUG_PRINT("Heap after tasks: ");
+    DEBUG_PRINTLN(ESP.getFreeHeap());
 }
 
 // ============================================
@@ -228,10 +243,13 @@ void loop() {
         cmd.trim();
         if (cmd.length() > 0) {
             uwbSerial.println(cmd);
-            Serial.printf("[UWB CMD] %s\n", cmd.c_str());
+            DEBUG_PRINT("[UWB CMD] ");
+            DEBUG_PRINTLN(cmd);
         }
     }
-    vTaskDelay(pdMS_TO_TICKS(100));  // Minimal work - loop() runs on Core 1 by default
+    DEBUG_PRINT("Free heap: ");
+    DEBUG_PRINTLN(ESP.getFreeHeap());
+    vTaskDelay(pdMS_TO_TICKS(200));  // Minimal work - loop() runs on Core 1 by default
 }
 
 // ============================================
@@ -244,8 +262,26 @@ void loop() {
  */
 void rfidTask(void *parameter) {
     while (true) {
-        // Perform RFID polling (blocking - takes time)
+        unsigned long cycleStart = millis();
+        
         uint8_t tagCount = rfid.pollingMultiple(RFID_POLLING_COUNT);
+        
+        // Wait until EITHER:
+        // - Minimum time has passed
+        // - UWB has accumulated data
+        const unsigned long MIN_CYCLE_MS = 500;
+        while (millis() - cycleStart < MIN_CYCLE_MS) {
+            // Check if UWB has data
+            bool hasUwbData = false;
+            if (xSemaphoreTake(anchorStatsMutex, pdMS_TO_TICKS(5))) {
+                hasUwbData = !anchorStatsMap.empty();
+                xSemaphoreGive(anchorStatsMutex);
+            }
+            
+            if (hasUwbData) break; // Early exit if data ready
+            
+            vTaskDelay(pdMS_TO_TICKS(50)); // Check every 50ms
+        }
         
         // Increment cycle counter
         if (xSemaphoreTake(cycleMutex, portMAX_DELAY)) {
@@ -301,10 +337,12 @@ void uwbTask(void *parameter) {
  */
 void outputTask(void *parameter) {
     // Print task info at startup
-    Serial.println("\n=== OUTPUT TASK STARTUP ===");
+    DEBUG_PRINTLN("\n=== OUTPUT TASK STARTUP ===");
     UBaseType_t stackSize = uxTaskGetStackHighWaterMark(NULL);
-    Serial.printf("Initial stack available: %u bytes\n", stackSize * sizeof(StackType_t));
-    Serial.println("===========================\n");
+    DEBUG_PRINT("Initial stack available: ");
+    DEBUG_PRINT(stackSize * sizeof(StackType_t));
+    DEBUG_PRINTLN(" bytes");
+    DEBUG_PRINTLN("===========================\n");
     
     while (true) {
         // MQTT keepalive (runs on Core 0 with WiFi/network stack)
@@ -346,7 +384,7 @@ void outputTask(void *parameter) {
 // ============================================
 
 void initializeRFID() {
-    Serial.println("\n--- Initializing RFID Module ---");
+    DEBUG_PRINTLN("\n--- Initializing RFID Module ---");
     
     rfid.begin(&rfidSerial, RFID_BAUD, RFID_RX_PIN, RFID_TX_PIN, false);
     rfid.waitModuleInitialization();
@@ -358,13 +396,15 @@ void initializeRFID() {
     
     // Set maximum transmission power
     if (rfid.setTxPower(RFID_MAX_TX_POWER)) {
-        Serial.println("✓ TX Power set successfully");
-        Serial.printf("✓ TX Power: %.2f dB\n", RFID_MAX_TX_POWER / 100.0);
+        DEBUG_PRINTLN("✓ TX Power set successfully");
+        DEBUG_PRINT("✓ TX Power: ");
+        DEBUG_PRINT(RFID_MAX_TX_POWER / 100.0);
+        DEBUG_PRINTLN(" dB");
     } else {
-        Serial.println("✗ TX Power setting failed!");
+        DEBUG_PRINTLN("✗ TX Power setting failed!");
     }
     
-    Serial.println("✓ RFID Module initialized successfully");
+    DEBUG_PRINTLN("✓ RFID Module initialized successfully");
 }
 
 // ============================================
@@ -432,12 +472,19 @@ void combineDataFromPollingAndSend(uint32_t cycleCount) {
     }
     
     // Print to Serial Monitor
-    Serial.println("{");
-    Serial.printf("  \"polling_cycle\": %u,\n", cycleCount);
-    Serial.printf("  \"timestamp\": \"%s\",\n", timeStr);
-    Serial.printf("  \"rfid_tags\": %u,\n", tagCount);
-    Serial.printf("  \"uwb_anchors\": %u\n", measurements.size());
-    Serial.println("}\n");
+    DEBUG_PRINTLN("{");
+    DEBUG_PRINT("  \"polling_cycle\": ");
+    DEBUG_PRINT(cycleCount);
+    DEBUG_PRINTLN(",");
+    DEBUG_PRINT("  \"timestamp\": \"");
+    DEBUG_PRINT(timeStr);
+    DEBUG_PRINTLN("\",");
+    DEBUG_PRINT("  \"rfid_tags\": ");
+    DEBUG_PRINT(tagCount);
+    DEBUG_PRINTLN(",");
+    DEBUG_PRINT("  \"uwb_anchors\": ");
+    DEBUG_PRINTLN(measurements.size());
+    DEBUG_PRINTLN("}\n");
     
     // Publish to MQTT if START signal received and we have data
     if (startSignal && (tagCount > 0 || measurements.size() > 0)) {
@@ -446,13 +493,18 @@ void combineDataFromPollingAndSend(uint32_t cycleCount) {
         
         bool success = mqttClient.publish(TOPIC_DATA, payload.c_str());
         if (success) {
-            Serial.printf("[MQTT] ✓ Published - Cycle #%u (%u tags, %u UWB)\n", 
-                         cycleCount, tagCount, measurements.size());
+            DEBUG_PRINT("[MQTT] ✓ Published - Cycle #");
+            DEBUG_PRINT(cycleCount);
+            DEBUG_PRINT(" (");
+            DEBUG_PRINT(tagCount);
+            DEBUG_PRINT(" tags, ");
+            DEBUG_PRINT(measurements.size());
+            DEBUG_PRINTLN(" UWB)");
         } else {
-            Serial.println("[MQTT] ✗ Publish failed!");
+            DEBUG_PRINTLN("[MQTT] ✗ Publish failed!");
         }
     } else if (startSignal) {
-        Serial.println("[MQTT] ⊘ No data to publish");
+        DEBUG_PRINTLN("[MQTT] ⊘ No data to publish");
     }
 }
 
@@ -460,10 +512,13 @@ void combineDataFromPollingAndSend(uint32_t cycleCount) {
  * Print combined RFID + UWB data (legacy function, kept for compatibility)
  */
 void printCombinedData(UWBSession &uwbSession) {
-    Serial.println("\n╔════════════════════════════════════════╗");
-    Serial.printf("║  Session #%-4u | Time: %-12lu ║\n", 
-                  uwbSession.sessionCount, uwbSession.timestamp);
-    Serial.println("╚════════════════════════════════════════╝");
+    DEBUG_PRINTLN("\n╔════════════════════════════════════════╗");
+    DEBUG_PRINT("║  Session #");
+    DEBUG_PRINT(uwbSession.sessionCount);
+    DEBUG_PRINT(" | Time: ");
+    DEBUG_PRINT(uwbSession.timestamp);
+    DEBUG_PRINTLN(" ║");
+    DEBUG_PRINTLN("╚════════════════════════════════════════╝");
     
     // Print UWB data with average distance
     printUWBData(uwbSession);
@@ -471,11 +526,11 @@ void printCombinedData(UWBSession &uwbSession) {
     // Print RFID tags detected during this period
     printRFIDData();
     
-    Serial.println("════════════════════════════════════════\n");
+    DEBUG_PRINTLN("════════════════════════════════════════\n");
 }
 
 void printUWBData(UWBSession &session) {
-    Serial.println("\n[UWB POSITIONING]");
+    DEBUG_PRINTLN("\n[UWB POSITIONING]");
     
     // Calculate average distance from successful measurements
     float totalDistance = 0;
@@ -491,27 +546,33 @@ void printUWBData(UWBSession &session) {
     
     if (successCount > 0) {
         float avgDistance = totalDistance / successCount;
-        Serial.printf("  Average Distance: %.1f cm (%d anchors)\n\n", 
-                      avgDistance, successCount);
+        DEBUG_PRINT("  Average Distance: ");
+        DEBUG_PRINT(avgDistance);
+        DEBUG_PRINT(" cm (");
+        DEBUG_PRINT(successCount);
+        DEBUG_PRINTLN(" anchors)\n");
     } else {
-        Serial.println("  Average Distance: N/A (no successful measurements)\n");
+        DEBUG_PRINTLN("  Average Distance: N/A (no successful measurements)\n");
     }
     
     // Print individual anchor distances
-    Serial.println("  Anchor Distances:");
+    DEBUG_PRINTLN("  Anchor Distances:");
     for (uint8_t i = 0; i < session.nMeasurements; i++) {
-        Serial.printf("    • 0x%s: ", session.measurements[i].macAddress.c_str());
+        DEBUG_PRINT("    • 0x");
+        DEBUG_PRINT(session.measurements[i].macAddress);
+        DEBUG_PRINT(": ");
         
         if (session.measurements[i].status == "SUCCESS") {
-            Serial.printf("%d cm\n", session.measurements[i].distanceCm);
+            DEBUG_PRINT(session.measurements[i].distanceCm);
+            DEBUG_PRINTLN(" cm");
         } else {
-            Serial.printf("%s\n", session.measurements[i].status.c_str());
+            DEBUG_PRINTLN(session.measurements[i].status);
         }
     }
 }
 
 void printRFIDData() {
-    Serial.println("\n[RFID TAGS]");
+    DEBUG_PRINTLN("\n[RFID TAGS]");
     
     uint8_t tagCount = 0;
     RFIDTagData tags[RFID_MAX_TAGS];
@@ -526,16 +587,23 @@ void printRFIDData() {
     }
     
     if (tagCount > 0) {
-        Serial.printf("  Tags Detected: %d\n\n", tagCount);
+        DEBUG_PRINT("  Tags Detected: ");
+        DEBUG_PRINTLN(tagCount);
+        DEBUG_PRINTLN("");
         
         for (uint8_t i = 0; i < tagCount; i++) {
-            Serial.printf("  Tag #%d:\n", i + 1);
-            Serial.printf("    EPC:  %s\n", tags[i].epc.c_str());
-            Serial.printf("    RSSI: %d dBm %s\n", 
-                          tags[i].rssi, rfid.getSignalQuality(tags[i].rssi).c_str());
+            DEBUG_PRINT("  Tag #");
+            DEBUG_PRINT(i + 1);
+            DEBUG_PRINTLN(":");
+            DEBUG_PRINT("    EPC:  ");
+            DEBUG_PRINTLN(tags[i].epc);
+            DEBUG_PRINT("    RSSI: ");
+            DEBUG_PRINT(tags[i].rssi);
+            DEBUG_PRINT(" dBm ");
+            DEBUG_PRINTLN(rfid.getSignalQuality(tags[i].rssi));
         }
     } else {
-        Serial.println("  No tags detected");
+        DEBUG_PRINTLN("  No tags detected");
     }
 }
 
@@ -544,12 +612,12 @@ void printRFIDData() {
 // ============================================
 
 void initializeUWB() {
-    Serial.println("\n--- Initializing UWB Module ---");
+    DEBUG_PRINTLN("\n--- Initializing UWB Module ---");
     
     uwbSerial.begin(UWB_BAUD, SERIAL_8N1, UWB_RX_PIN, UWB_TX_PIN);
     delay(500);
     
-    Serial.println("✓ DWM3001CDK UART Ready");
+    DEBUG_PRINTLN("✓ DWM3001CDK UART Ready");
 }
 
 void processUWBLine(String line) {
@@ -565,7 +633,7 @@ void processUWBLine(String line) {
         uwbSessionBuffer += " " + line + "\n";
 
         if (uwbSessionBuffer.length() > UWB_BUFFER_SIZE) {
-            Serial.println("[UWB] Session buffer overflow!");
+            DEBUG_PRINTLN("[UWB] Session buffer overflow!");
             inUwbSession = false;
             uwbSessionBuffer = "";
             return;
@@ -680,13 +748,26 @@ void updateAnchorStatistics() {
     
     if (!hasData) return;
     
-    // Update anchor statistics using dynamic map
+    // Update anchor statistics using dynamic map (with size limit)
     if (xSemaphoreTake(anchorStatsMutex, pdMS_TO_TICKS(100))) {
         for (uint8_t i = 0; i < session.nMeasurements; i++) {
             String macAddr = session.measurements[i].macAddress;
             
-            // Create or get anchor stats
-            if (anchorStatsMap.find(macAddr) == anchorStatsMap.end()) {
+            // Check if anchor exists OR if we have space for new anchors
+            bool anchorExists = anchorStatsMap.find(macAddr) != anchorStatsMap.end();
+            bool hasSpace = anchorStatsMap.size() < UWB_MAX_ANCHORS;
+            
+            if (!anchorExists && !hasSpace) {
+                // Skip this anchor - map is full
+                DEBUG_PRINT("[UWB] Warning: Anchor limit reached (");
+                DEBUG_PRINT(UWB_MAX_ANCHORS);
+                DEBUG_PRINT("), ignoring 0x");
+                DEBUG_PRINTLN(macAddr);
+                continue;
+            }
+            
+            // Create new anchor stats if needed
+            if (!anchorExists) {
                 AnchorStats newStats;
                 newStats.macAddress = macAddr;
                 newStats.totalDistance = 0;
@@ -713,37 +794,37 @@ void updateAnchorStatistics() {
 // ============================================
 
 void setupWiFi() {
-    Serial.println("\n[WiFi] Connecting...");
+    DEBUG_PRINTLN("\n[WiFi] Connecting...");
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 30) {
         delay(500);
-        Serial.print(".");
+        DEBUG_PRINT(".");
         attempts++;
     }
     
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\n[WiFi] ✓ Connected!");
-        Serial.print("[WiFi] IP: ");
-        Serial.println(WiFi.localIP());
+        DEBUG_PRINTLN("\n[WiFi] ✓ Connected!");
+        DEBUG_PRINT("[WiFi] IP: ");
+        DEBUG_PRINTLN(WiFi.localIP());
     } else {
-        Serial.println("\n[WiFi] ✗ Failed to connect!");
+        DEBUG_PRINTLN("\n[WiFi] ✗ Failed to connect!");
     }
 }
 
 void reconnectMQTT() {
     while (!mqttClient.connected()) {
-        Serial.print("[MQTT] Connecting...");
+        DEBUG_PRINT("[MQTT] Connecting...");
         if (mqttClient.connect("ESP32_RFID_UWB")) {
-            Serial.println(" ✓ Connected!");
+            DEBUG_PRINTLN(" ✓ Connected!");
             mqttClient.subscribe(TOPIC_CONTROL);
             mqttClient.publish(TOPIC_STATUS, "ESP32_READY");
-            Serial.println("[MQTT] Subscribed to control topic");
+            DEBUG_PRINTLN("[MQTT] Subscribed to control topic");
         } else {
-            Serial.print(" ✗ Failed, rc=");
-            Serial.println(mqttClient.state());
+            DEBUG_PRINT(" ✗ Failed, rc=");
+            DEBUG_PRINTLN(mqttClient.state());
             delay(2000);
         }
     }
@@ -758,10 +839,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     if (String(topic) == TOPIC_CONTROL) {
         if (msg == "START") {
             startSignal = true;
-            Serial.println("\n[CONTROL] ▶ START received - Publishing enabled");
+            DEBUG_PRINTLN("\n[CONTROL] ▶ START received - Publishing enabled");
         } else if (msg == "STOP") {
             startSignal = false;
-            Serial.println("\n[CONTROL] ⏸ STOP received - Publishing paused");
+            DEBUG_PRINTLN("\n[CONTROL] ⏸ STOP received - Publishing paused");
         }
     }
 }
