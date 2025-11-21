@@ -41,12 +41,14 @@ This task runs asynchronously, continuously parsing the high-speed UART stream f
 **Workflow:**
 1. **Parses UART**: Reads byte-by-byte looking for `SESSION_INFO_NTF`.
 2. **Extracts Data**: Parses JSON-like UWB session data (MAC, Distance, Status).
-3. **Accumulates Stats**: 
+3. **Accumulates Stats with Time-Based Expiration**: 
    - Instead of overwriting, it **accumulates** measurements in `anchorStatsMap`.
+   - Each entry is timestamped when updated.
+   - **Automatic Staleness Removal**: Entries older than 3 seconds are purged automatically.
+   - **Circular Buffer**: Limited to 30 anchors. When full, replaces the oldest entry.
    - Calculates running totals for distance and success counts.
-   - This allows averaging multiple UWB measurements over the duration of one RFID cycle.
 
-> **Key Concept**: During one 2-second RFID cycle, the UWB task might capture and average 10-15 separate distance measurements per anchor.
+> **Key Concept**: The system maintains a rolling 3-second window of UWB data. This ensures data freshness regardless of network connectivity, preventing stale measurements from being published after outages.
 
 ### C. Output Task (The Synchronizer) 🔗
 *Running on Core 0*
@@ -54,16 +56,20 @@ This task runs asynchronously, continuously parsing the high-speed UART stream f
 This task bridges the sensor world (Core 1) and the network world (Core 0). It waits for the RFID task to signal a completed cycle.
 
 **Workflow:**
-1. **MQTT Keepalive**: Calls `mqttClient.loop()` every 10ms to maintain connection.
-2. **Cycle Detection**: Checks if `currentCycle > lastPrintedCycle`.
-3. **Data Fusion**:
+1. **Non-Blocking Reconnect**: Attempts MQTT connection every 5 seconds if disconnected (no blocking loops).
+2. **MQTT Keepalive**: Calls `mqttClient.loop()` every 10ms when connected.
+3. **Cycle Detection**: Checks if `currentCycle > lastPrintedCycle`.
+4. **Data Fusion**:
    - **Locks Mutexes**: Pauses sensor updates briefly.
-   - **Snapshots Data**: Copies latest RFID tags and accumulated UWB stats.
+   - **Snapshots Data**: Copies latest RFID tags and accumulated UWB stats (only fresh data < 3s old).
    - **Clears UWB Stats**: Resets `anchorStatsMap` for the next cycle.
-4. **Processing**:
+5. **Conditional Processing**:
+   - If **MQTT connected**: Build JSON and publish.
+   - If **MQTT offline**: Drop data immediately to ensure freshness (no queuing or buffering).
+6. **Processing**:
    - Calculates average UWB distances (`totalDistance / successCount`).
    - Builds a large JSON document (up to 4KB).
-5. **Publishing**: Sends the JSON payload to `store/aisle1` via MQTT.
+7. **Publishing**: Sends the JSON payload to `store/aisle1` via MQTT.
 
 ### D. Memory Management Strategy
 
@@ -76,10 +82,10 @@ The system operates within the ESP32-S3's 512KB RAM constraints using a strict m
 
 2. **Heap (Dynamic)**:
    - **String Data**: The actual character data for RFID EPCs and UWB MACs lives here.
-   - **MQTT Buffer**: A large **32KB buffer** is allocated on the heap to handle the worst-case JSON payload (200 tags + 100 anchors).
-   - **UWB Map**: The `std::map` for anchor stats grows dynamically but is capped at 100 entries to prevent heap exhaustion.
+   - **MQTT Buffer**: A large **32KB buffer** is allocated on the heap to handle the worst-case JSON payload (200 tags + 30 anchors).
+   - **UWB Map**: The `std::map` for anchor stats grows dynamically but is capped at **30 entries** to prevent heap exhaustion. Uses a circular buffer approach with timestamp-based expiration.
 
-> **Note**: The 32KB MQTT buffer is critical. A full payload (200 tags + 100 anchors) exceeds 16KB. The standard 4KB or 8KB buffers would cause silent publication failures.
+> **Note**: The 32KB MQTT buffer is critical. A full payload (200 tags + 30 anchors) can exceed 16KB. The standard 4KB or 8KB buffers would cause silent publication failures.
 
 ---
 
@@ -125,17 +131,54 @@ sequenceDiagram
 |-----------|-------|-------------|
 | `RFID_POLLING_COUNT` | 30 | Number of hardware scan cycles per poll. Determines cycle duration (~2s). |
 | `RFID_MAX_TAGS` | 200 | Maximum unique tags stored per cycle. Matches library limit. |
-| `UWB_MAX_ANCHORS` | 100 | Maximum unique anchors tracked per cycle. Prevents memory overflow. |
+| `UWB_MAX_ANCHORS` | 30 | Circular buffer size for UWB anchors. When full, replaces oldest entry. |
+| `UWB_FRESHNESS_MS` | 3000 | Data validity window (3 seconds). Older entries are auto-purged. |
 | `UWB_BUFFER_SIZE` | 2048 | UART buffer size for UWB session data. |
 | `MQTT_BUFFER_SIZE` | 32768 | Max JSON payload size (32KB). |
+| `MQTT_RECONNECT_INTERVAL` | 5000 | Non-blocking reconnect attempt interval (5 seconds). |
 
 ## 5. Why This Architecture?
 
 1. **Non-Blocking Network**: MQTT publishing can take 100ms+. By moving it to Core 0 (Output Task), the RFID and UWB tasks on Core 1 never miss a beat.
 2. **Data Coherency**: UWB data is averaged exactly over the duration of the RFID scan, providing a synchronized "snapshot" of the environment.
 3. **Stability**: Separating the WiFi stack (Core 0) from the time-sensitive UART/SPI sensor communication (Core 1) prevents watchdog resets and buffer overflows.
+4. **Resilience**: Time-based data expiration and non-blocking reconnects ensure the system gracefully handles network outages without accumulating stale data.
 
-### E. Debugging & Observability
+---
+
+## 6. Offline Behavior & Data Freshness
+
+The system implements a **"Drop-and-Expire"** policy to handle network instability without compromising data integrity.
+
+### Policy: Time-Based Freshness with Offline Dropping
+
+1. **Automatic Expiration**:
+   - Every UWB measurement entry in `anchorStatsMap` is timestamped.
+   - Before processing new measurements, entries older than **3 seconds** are automatically purged.
+   - This happens continuously, independent of network state.
+
+2. **Circular Buffer**:
+   - The `anchorStatsMap` is limited to **30 entries**.
+   - When a new anchor appears and the buffer is full, the **oldest entry** (by timestamp) is replaced.
+   - This prevents memory exhaustion while maintaining fresh data.
+
+3. **Non-Blocking Reconnection**:
+   - The Output Task attempts to reconnect every **5 seconds** if MQTT is disconnected.
+   - **No blocking loops**: The system continues collecting sensor data during outages.
+
+4. **Offline Data Dropping**:
+   - If MQTT is unavailable when a cycle completes, the data is **dropped immediately**.
+   - No buffering or queuing of offline data is performed to prevent memory exhaustion and latency buildup.
+
+5. **Freshness Guarantee**:
+   - The UWB stats map is **cleared after every cycle**, regardless of whether data was published or dropped.
+   - When the connection is restored, the first published message contains only **fresh, real-time data** from active measurements within the last 3 seconds.
+
+**Key Benefit**: The system never publishes stale data. Whether the outage lasts 5 seconds or 5 minutes, the first post-reconnection message reflects the current state, not accumulated history.
+
+---
+
+## 7. Debugging & Observability
 
 The firmware includes a compile-time debug switch:
 - **`DEBUG_MODE 1`**: Enables verbose serial output for development (Task startup, heap status, MQTT events).
