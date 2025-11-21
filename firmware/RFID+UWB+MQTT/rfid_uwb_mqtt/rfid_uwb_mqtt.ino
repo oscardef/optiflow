@@ -28,7 +28,7 @@
 
 #include <WiFi.h>
 #include <PubSubClient.h>
-#include <ArduinoJson.h>
+#include <ArduinoJson.h> // Install library by Bblanchon
 #include <HardwareSerial.h>
 #include <vector>
 #include <map>
@@ -66,7 +66,8 @@ const char* TOPIC_STATUS = "store/status";     // Status updates
 #define RFID_MAX_TX_POWER   3000        // 26.00dB
 #define RFID_POLLING_COUNT  30
 #define RFID_MAX_TAGS       200         // Maximum tags per polling cycle
-#define UWB_MAX_ANCHORS     100  
+#define UWB_MAX_ANCHORS     30          // Circular buffer size
+#define UWB_FRESHNESS_MS    3000        // Data valid for 3 seconds  
 
 // UWB Configuration
 #define UWB_RX_PIN          18
@@ -114,6 +115,7 @@ struct AnchorStats {
     float totalDistance;
     uint32_t successCount;
     uint32_t totalCount;
+    unsigned long timestamp;        // When this entry was last updated
 };
 
 // ============================================
@@ -346,10 +348,11 @@ void outputTask(void *parameter) {
     
     while (true) {
         // MQTT keepalive (runs on Core 0 with WiFi/network stack)
-        if (!mqttClient.connected()) {
-            reconnectMQTT();
+        reconnectMQTT(); // Non-blocking retry logic
+        
+        if (mqttClient.connected()) {
+            mqttClient.loop();
         }
-        mqttClient.loop();
         
         uint32_t cycleToProcess = 0;
         bool shouldProcess = false;
@@ -365,10 +368,15 @@ void outputTask(void *parameter) {
         }
         
         if (shouldProcess) {
-            // Do all the heavy work here (JSON building + MQTT publishing)
-            combineDataFromPollingAndSend(cycleToProcess);
+            if (mqttClient.connected()) {
+                // Do all the heavy work here (JSON building + MQTT publishing)
+                combineDataFromPollingAndSend(cycleToProcess);
+            } else {
+                DEBUG_PRINTLN("[MQTT] Offline - Dropping data cycle to ensure freshness");
+            }
             
             // Clear anchor statistics for next cycle
+            // Time-based expiration in updateAnchorStatistics() handles staleness
             if (xSemaphoreTake(anchorStatsMutex, portMAX_DELAY)) {
                 anchorStatsMap.clear();
                 xSemaphoreGive(anchorStatsMutex);
@@ -748,8 +756,23 @@ void updateAnchorStatistics() {
     
     if (!hasData) return;
     
-    // Update anchor statistics using dynamic map (with size limit)
+    unsigned long now = millis();
+    
+    // Update anchor statistics using circular buffer with time-based expiration
     if (xSemaphoreTake(anchorStatsMutex, pdMS_TO_TICKS(100))) {
+        // First pass: Remove stale entries (older than 3 seconds)
+        auto it = anchorStatsMap.begin();
+        while (it != anchorStatsMap.end()) {
+            if (now - it->second.timestamp > UWB_FRESHNESS_MS) {
+                DEBUG_PRINT("[UWB] Removing stale anchor 0x");
+                DEBUG_PRINTLN(it->first);
+                it = anchorStatsMap.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        
+        // Second pass: Update/add measurements
         for (uint8_t i = 0; i < session.nMeasurements; i++) {
             String macAddr = session.measurements[i].macAddress;
             
@@ -758,12 +781,26 @@ void updateAnchorStatistics() {
             bool hasSpace = anchorStatsMap.size() < UWB_MAX_ANCHORS;
             
             if (!anchorExists && !hasSpace) {
-                // Skip this anchor - map is full
-                DEBUG_PRINT("[UWB] Warning: Anchor limit reached (");
-                DEBUG_PRINT(UWB_MAX_ANCHORS);
-                DEBUG_PRINT("), ignoring 0x");
-                DEBUG_PRINTLN(macAddr);
-                continue;
+                // Buffer full - find and replace oldest entry
+                String oldestMac;
+                unsigned long oldestTime = now;
+                
+                for (auto& pair : anchorStatsMap) {
+                    if (pair.second.timestamp < oldestTime) {
+                        oldestTime = pair.second.timestamp;
+                        oldestMac = pair.first;
+                    }
+                }
+                
+                if (!oldestMac.isEmpty()) {
+                    DEBUG_PRINT("[UWB] Buffer full, replacing oldest anchor 0x");
+                    DEBUG_PRINT(oldestMac);
+                    DEBUG_PRINT(" with 0x");
+                    DEBUG_PRINTLN(macAddr);
+                    anchorStatsMap.erase(oldestMac);
+                    anchorExists = false;
+                    hasSpace = true;
+                }
             }
             
             // Create new anchor stats if needed
@@ -773,11 +810,13 @@ void updateAnchorStatistics() {
                 newStats.totalDistance = 0;
                 newStats.successCount = 0;
                 newStats.totalCount = 0;
+                newStats.timestamp = now;
                 anchorStatsMap[macAddr] = newStats;
             }
             
             // Update statistics
             anchorStatsMap[macAddr].totalCount++;
+            anchorStatsMap[macAddr].timestamp = now;  // Update timestamp
             
             if (session.measurements[i].status == "SUCCESS" && 
                 session.measurements[i].distanceCm > 0) {
@@ -815,17 +854,22 @@ void setupWiFi() {
 }
 
 void reconnectMQTT() {
-    while (!mqttClient.connected()) {
-        DEBUG_PRINT("[MQTT] Connecting...");
-        if (mqttClient.connect("ESP32_RFID_UWB")) {
-            DEBUG_PRINTLN(" ✓ Connected!");
-            mqttClient.subscribe(TOPIC_CONTROL);
-            mqttClient.publish(TOPIC_STATUS, "ESP32_READY");
-            DEBUG_PRINTLN("[MQTT] Subscribed to control topic");
-        } else {
-            DEBUG_PRINT(" ✗ Failed, rc=");
-            DEBUG_PRINTLN(mqttClient.state());
-            delay(2000);
+    static unsigned long lastReconnectAttempt = 0;
+    unsigned long now = millis();
+
+    if (!mqttClient.connected()) {
+        if (now - lastReconnectAttempt > 2000) {
+            lastReconnectAttempt = now;
+            DEBUG_PRINT("[MQTT] Connecting...");
+            if (mqttClient.connect("ESP32_RFID_UWB")) {
+                DEBUG_PRINTLN(" ✓ Connected!");
+                mqttClient.subscribe(TOPIC_CONTROL);
+                mqttClient.publish(TOPIC_STATUS, "ESP32_READY");
+                DEBUG_PRINTLN("[MQTT] Subscribed to control topic");
+            } else {
+                DEBUG_PRINT(" ✗ Failed, rc=");
+                DEBUG_PRINTLN(mqttClient.state());
+            }
         }
     }
 }
