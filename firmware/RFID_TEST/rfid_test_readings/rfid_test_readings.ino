@@ -26,7 +26,7 @@
 
 // Region Codes
 #define REGION_CHINA1   0x01        // 920–925 MHz
-#define REGION_USA      0x02        // 902–928 MHz  
+#define REGION_USA      0x02        // 902–928 MHz
 #define REGION_EUROPE   0x03        // 865–868 MHz
 #define REGION_KOREA    0x04        // 917–923.5 MHz
 

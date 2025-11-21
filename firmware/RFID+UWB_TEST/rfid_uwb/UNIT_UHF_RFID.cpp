@@ -391,10 +391,7 @@ bool Unit_UHF_RFID::setTxPower(uint16_t db) {
 }
 
 /*! @brief Initialize the RFID module and wait for it to respond.*/
-void Unit_UHF_RFID::initializeModule(uint8_t rx_pin, uint8_t tx_pin) {
-    Serial.println("Initializing RFID module...");
-    begin(&Serial2, 115200, rx_pin, tx_pin, false);
-    
+void Unit_UHF_RFID::waitModuleInitialization() {    
     String info = "";
     while (1) {
         info = getVersion();

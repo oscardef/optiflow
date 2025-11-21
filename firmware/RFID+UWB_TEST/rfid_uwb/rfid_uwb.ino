@@ -88,13 +88,14 @@ struct AnchorStats {
 // ============================================
 
 // RFID
+HardwareSerial rfidSerial(2);
 Unit_UHF_RFID rfid;
 RFIDTagData currentRfidTags[50];
 uint8_t currentRfidTagCount = 0;
 SemaphoreHandle_t rfidMutex;
 
 // UWB
-HardwareSerial uwbSerial(2);
+HardwareSerial uwbSerial(1);
 String uwbRxBuffer = "";
 String uwbSessionBuffer = "";
 bool inUwbSession = false;
@@ -143,11 +144,13 @@ void setup() {
     Serial.println("✓ System Ready - Starting Tasks");
     Serial.println("=================================\n");
     
+    Serial.print("Heap before tasks: ");
+    Serial.println(ESP.getFreeHeap());
     // Create FreeRTOS tasks
     xTaskCreatePinnedToCore(
         rfidTask,           // Task function
         "RFID_Task",        // Task name
-        4096,               // Stack size
+        16384,              // Stack size
         NULL,               // Parameters
         2,                  // Priority
         &rfidTaskHandle,    // Task handle
@@ -157,7 +160,7 @@ void setup() {
     xTaskCreatePinnedToCore(
         uwbTask,
         "UWB_Task",
-        8192,
+        16384,
         NULL,
         2,
         &uwbTaskHandle,
@@ -167,12 +170,15 @@ void setup() {
     xTaskCreatePinnedToCore(
         outputTask,
         "Output_Task",
-        4096,
+        16384,
         NULL,
         1,
         &outputTaskHandle,
         1                   // Core 1
     );
+    
+    Serial.print("Heap after tasks: ");
+    Serial.println(ESP.getFreeHeap());
 }
 
 // ============================================
@@ -180,7 +186,7 @@ void setup() {
 // ============================================
 
 void loop() {
-    // Handle serial commands for UWB
+    // Handle serial commands for UWB (Important for feedback!)
     if (Serial.available()) {
         String cmd = Serial.readStringUntil('\n');
         cmd.trim();
@@ -258,6 +264,12 @@ void uwbTask(void *parameter) {
  * Output Task - Handles all heavy processing and printing
  */
 void outputTask(void *parameter) {
+    // Print task info at startup
+    Serial.println("\n=== OUTPUT TASK STARTUP ===");
+    UBaseType_t stackSize = uxTaskGetStackHighWaterMark(NULL);
+    Serial.printf("Initial stack available: %u bytes\n", stackSize * sizeof(StackType_t));
+    Serial.println("===========================\n");
+    
     while (true) {
         uint32_t cycleToProcess = 0;
         bool shouldProcess = false;
@@ -273,8 +285,17 @@ void outputTask(void *parameter) {
         }
         
         if (shouldProcess) {
+            // Measure stack before heavy operation
+            UBaseType_t stackBefore = uxTaskGetStackHighWaterMark(NULL);
+            
             // Do all the heavy work here
             printCombinedDataFromPolling(cycleToProcess);
+            
+            // Measure stack after
+            UBaseType_t stackAfter = uxTaskGetStackHighWaterMark(NULL);
+            uint32_t stackUsed = (stackBefore - stackAfter) * sizeof(StackType_t);
+            
+            // Serial.printf("[DEBUG] Stack before: %u bytes, after: %u bytes, used: %u bytes\n", stackBefore * sizeof(StackType_t), stackAfter * sizeof(StackType_t),stackUsed);
             
             // Clear anchor statistics for next cycle
             if (xSemaphoreTake(anchorStatsMutex, portMAX_DELAY)) {
@@ -294,7 +315,8 @@ void outputTask(void *parameter) {
 void initializeRFID() {
     Serial.println("\n--- Initializing RFID Module ---");
     
-    rfid.initializeModule(RFID_RX_PIN, RFID_TX_PIN);
+    rfid.begin(&rfidSerial, RFID_BAUD, RFID_RX_PIN, RFID_TX_PIN, false);
+    rfid.waitModuleInitialization();
     rfid.setRegion(CURRENT_REGION);
     rfid.verifyRegion();
     
@@ -510,6 +532,13 @@ void processUWBLine(String line) {
     // Accumulate session lines
     if (inUwbSession) {
         uwbSessionBuffer += " " + line + "\n";
+
+        if (uwbSessionBuffer.length() > UWB_BUFFER_SIZE) {
+            Serial.println("[UWB] Session buffer overflow!");
+            inUwbSession = false;
+            uwbSessionBuffer = "";
+            return;
+        }
         
         // Detect end of session
         if (line.indexOf("}") != -1) {

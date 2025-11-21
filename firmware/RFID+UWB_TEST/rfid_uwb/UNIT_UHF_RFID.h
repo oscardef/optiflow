@@ -54,7 +54,7 @@ class Unit_UHF_RFID {
     bool readCard(uint8_t *data, size_t size, uint8_t membank, uint16_t sa, uint32_t access_password = 0);
     
     // Initialization and configuration functions
-    void initializeModule(uint8_t rx_pin, uint8_t tx_pin);
+    void waitModuleInitialization();
     bool setRegion(uint8_t regionCode);
     bool verifyRegion();
     String getRegionName(uint8_t regionCode);
