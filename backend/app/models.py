@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Numeric, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -89,4 +89,156 @@ class TagPosition(Base):
             "y_position": self.y_position,
             "confidence": self.confidence,
             "num_anchors": self.num_anchors
+        }
+
+class Product(Base):
+    """Master catalog of all products in the store"""
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sku = Column(String(100), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    category = Column(String(100), index=True)
+    unit_price = Column(Numeric(10, 2))
+    reorder_threshold = Column(Integer, default=10)
+    optimal_stock_level = Column(Integer, default=50)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    inventory_items = relationship("InventoryItem", back_populates="product")
+    stock_level = relationship("StockLevel", back_populates="product", uselist=False)
+    purchase_events = relationship("PurchaseEvent", back_populates="product")
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "sku": self.sku,
+            "name": self.name,
+            "category": self.category,
+            "unit_price": float(self.unit_price) if self.unit_price else None,
+            "reorder_threshold": self.reorder_threshold,
+            "optimal_stock_level": self.optimal_stock_level,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+class Zone(Base):
+    """Store map divided into zones for heat mapping"""
+    __tablename__ = "zones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    x_min = Column(Float, nullable=False)
+    y_min = Column(Float, nullable=False)
+    x_max = Column(Float, nullable=False)
+    y_max = Column(Float, nullable=False)
+    zone_type = Column(String(50), index=True)  # aisle, checkout, entrance, storage
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    inventory_items = relationship("InventoryItem", back_populates="zone")
+    purchase_events = relationship("PurchaseEvent", back_populates="zone")
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.zone_type,  # Using zone_type as description
+            "x_min": self.x_min,
+            "y_min": self.y_min,
+            "x_max": self.x_max,
+            "y_max": self.y_max,
+            "zone_type": self.zone_type,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+class InventoryItem(Base):
+    """Individual RFID-tagged items in the store"""
+    __tablename__ = "inventory_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    rfid_tag = Column(String(50), unique=True, nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String(20), default="present", index=True)  # present, sold, missing, restocking
+    x_position = Column(Float)
+    y_position = Column(Float)
+    zone_id = Column(Integer, ForeignKey("zones.id", ondelete="SET NULL"), index=True)
+    last_seen_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    product = relationship("Product", back_populates="inventory_items")
+    zone = relationship("Zone", back_populates="inventory_items")
+    purchase_event = relationship("PurchaseEvent", back_populates="inventory_item", uselist=False)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "rfid_tag": self.rfid_tag,
+            "product_id": self.product_id,
+            "status": self.status,
+            "x_position": self.x_position,
+            "y_position": self.y_position,
+            "zone_id": self.zone_id,
+            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat()
+        }
+
+class StockLevel(Base):
+    """Aggregated current stock counts per product"""
+    __tablename__ = "stock_levels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    current_count = Column(Integer, default=0)
+    missing_count = Column(Integer, default=0)
+    sold_today = Column(Integer, default=0)
+    last_restock_at = Column(DateTime)
+    priority_score = Column(Float, default=0.0, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    product = relationship("Product", back_populates="stock_level")
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "product_id": self.product_id,
+            "current_count": self.current_count,
+            "missing_count": self.missing_count,
+            "sold_today": self.sold_today,
+            "last_restock_at": self.last_restock_at.isoformat() if self.last_restock_at else None,
+            "priority_score": self.priority_score,
+            "updated_at": self.updated_at.isoformat()
+        }
+
+class PurchaseEvent(Base):
+    """Track when items are sold (for analytics)"""
+    __tablename__ = "purchase_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    inventory_item_id = Column(Integer, ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    x_position = Column(Float)
+    y_position = Column(Float)
+    zone_id = Column(Integer, ForeignKey("zones.id", ondelete="SET NULL"), index=True)
+    purchased_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Relationships
+    inventory_item = relationship("InventoryItem", back_populates="purchase_event")
+    product = relationship("Product", back_populates="purchase_events")
+    zone = relationship("Zone", back_populates="purchase_events")
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "inventory_item_id": self.inventory_item_id,
+            "product_id": self.product_id,
+            "x_position": self.x_position,
+            "y_position": self.y_position,
+            "zone_id": self.zone_id,
+            "purchased_at": self.purchased_at.isoformat()
         }

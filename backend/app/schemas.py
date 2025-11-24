@@ -84,3 +84,26 @@ class TagPositionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# Product schemas
+class ProductCreate(BaseModel):
+    sku: str
+    name: str
+    category: str
+    unit_price: Optional[float] = None
+    reorder_threshold: int = 10
+    optimal_stock_level: int = 50
+
+class ProductResponse(BaseModel):
+    id: int
+    sku: str
+    name: str
+    category: str
+    unit_price: Optional[float] = None
+    reorder_threshold: int
+    optimal_stock_level: int
+    created_at: str
+    updated_at: str
+
+    class Config:
+        from_attributes = True

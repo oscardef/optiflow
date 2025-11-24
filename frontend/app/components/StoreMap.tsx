@@ -28,13 +28,21 @@ interface Item {
   status: string; // "present", "missing", "unknown"
 }
 
+type ViewMode = 'live' | 'stock-heatmap' | 'purchase-heatmap' | 'restock-queue';
+
 interface StoreMapProps {
   anchors: Anchor[];
   positions: Position[];
   items: Item[];
   setupMode: boolean;
+  viewMode?: ViewMode;
+  stockHeatmap?: any[];
+  purchaseHeatmap?: any[];
+  restockQueue?: any[];
+  highlightedItem?: string | null;
   onAnchorPlace?: (x: number, y: number, anchorIndex: number) => void;
   onAnchorUpdate?: (anchorId: number, x: number, y: number) => void;
+  onItemClick?: (item: Item) => void;
 }
 
 const STORE_WIDTH = 1000;  // 10 meters in cm
@@ -44,9 +52,15 @@ export default function StoreMap({
   anchors, 
   positions,
   items,
-  setupMode, 
+  setupMode,
+  viewMode = 'live',
+  stockHeatmap = [],
+  purchaseHeatmap = [],
+  restockQueue = [],
+  highlightedItem = null,
   onAnchorPlace,
-  onAnchorUpdate 
+  onAnchorUpdate,
+  onItemClick 
 }: StoreMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -73,6 +87,54 @@ export default function StoreMap({
       x: x * scaleX,
       y: y * scaleY
     };
+  };
+
+  // Draw heatmap overlay for zones
+  const drawHeatmap = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, data: any[], type: 'stock' | 'purchase') => {
+    if (!data || data.length === 0) return;
+    
+    // Find max value for normalization
+    const maxValue = Math.max(...data.map(d => type === 'stock' ? d.item_count : d.purchase_count));
+    if (maxValue === 0) return;
+    
+    // Draw zones with heat colors
+    data.forEach(entry => {
+      const zone = entry.zone;
+      const value = type === 'stock' ? entry.item_count : entry.purchase_count;
+      const intensity = value / maxValue;
+      
+      // Convert zone coordinates
+      const topLeft = toCanvasCoords(zone.x_min, zone.y_min, canvas);
+      const bottomRight = toCanvasCoords(zone.x_max, zone.y_max, canvas);
+      const width = bottomRight.x - topLeft.x;
+      const height = bottomRight.y - topLeft.y;
+      
+      // Heat color: blue (low) -> yellow -> red (high)
+      let r, g, b;
+      if (intensity < 0.5) {
+        r = Math.floor(intensity * 2 * 255);
+        g = Math.floor(intensity * 2 * 255);
+        b = 255;
+      } else {
+        r = 255;
+        g = Math.floor((1 - intensity) * 2 * 255);
+        b = 0;
+      }
+      
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.3)`;
+      ctx.fillRect(topLeft.x, topLeft.y, width, height);
+      
+      // Draw zone border
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.6)`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(topLeft.x, topLeft.y, width, height);
+      
+      // Draw value label
+      ctx.fillStyle = '#111827';
+      ctx.font = 'bold 24px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(value.toString(), topLeft.x + width/2, topLeft.y + height/2);
+    });
   };
 
   // Draw the entire map
@@ -158,37 +220,55 @@ export default function StoreMap({
     ctx.lineWidth = 2;
     ctx.strokeRect(0, crossLeftEdge.y, canvas.width, crossRightEdge.y - crossLeftEdge.y);
 
-    // Draw items on the map
-    const missingItems = items.filter(item => item.status === 'missing');
-    const presentItems = items.filter(item => item.status !== 'missing');
-    
-    // Draw present items first (so missing items are on top)
-    presentItems.forEach((item) => {
+    // Draw heatmap overlays for non-live modes
+    if (viewMode === 'stock-heatmap') {
+      drawHeatmap(ctx, canvas, stockHeatmap, 'stock');
+    } else if (viewMode === 'purchase-heatmap') {
+      drawHeatmap(ctx, canvas, purchaseHeatmap, 'purchase');
+    }
+
+    // Draw items on the map (only in live mode)
+    if (viewMode === 'live') {
+      const missingItems = items.filter(item => item.status === 'missing');
+      const presentItems = items.filter(item => item.status !== 'missing');
+      
+      // Draw present items first (so missing items are on top)
+      presentItems.forEach((item) => {
       const pos = toCanvasCoords(item.x_position, item.y_position, canvas);
+      const isHighlighted = highlightedItem && item.product_id === highlightedItem;
+      
+      // Draw highlight glow if this item is selected
+      if (isHighlighted) {
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.4)';  // Gold glow
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 28, 0, 2 * Math.PI);
+        ctx.fill();
+      }
       
       // Draw item as small square with subtle glow
-      ctx.fillStyle = 'rgba(34, 197, 94, 0.6)';  // Green for present
+      ctx.fillStyle = isHighlighted ? 'rgba(255, 215, 0, 0.9)' : 'rgba(34, 197, 94, 0.6)';  // Gold if highlighted, green otherwise
       ctx.fillRect(pos.x - 6, pos.y - 6, 12, 12);
-      ctx.strokeStyle = '#22c55e';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = isHighlighted ? '#FFD700' : '#22c55e';
+      ctx.lineWidth = isHighlighted ? 4 : 2;
       ctx.strokeRect(pos.x - 6, pos.y - 6, 12, 12);
     });
     
     // Draw missing items on top with emphasis
     missingItems.forEach((item) => {
       const pos = toCanvasCoords(item.x_position, item.y_position, canvas);
+      const isHighlighted = highlightedItem && item.product_id === highlightedItem;
       
       // Pulsing glow effect for missing items
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
+      ctx.fillStyle = isHighlighted ? 'rgba(255, 215, 0, 0.4)' : 'rgba(239, 68, 68, 0.3)';
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 24, 0, 2 * Math.PI);
+      ctx.arc(pos.x, pos.y, isHighlighted ? 32 : 24, 0, 2 * Math.PI);
       ctx.fill();
       
       // Draw missing item as prominent square
-      ctx.fillStyle = '#ef4444';  // Bright red
+      ctx.fillStyle = isHighlighted ? '#FFD700' : '#ef4444';  // Gold if highlighted, red otherwise
       ctx.fillRect(pos.x - 10, pos.y - 10, 20, 20);
-      ctx.strokeStyle = '#fca5a5';
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = isHighlighted ? '#FFA500' : '#fca5a5';
+      ctx.lineWidth = isHighlighted ? 6 : 4;
       ctx.strokeRect(pos.x - 10, pos.y - 10, 20, 20);
       
       // Draw warning icon
@@ -197,9 +277,10 @@ export default function StoreMap({
       ctx.textAlign = 'center';
       ctx.fillText('!', pos.x, pos.y + 10);
     });
+    }
 
-    // Draw distance circles from anchors to tags (only for the most recent position)
-    if (!setupMode && positions.length > 0) {
+    // Draw distance circles from anchors to tags (only for the most recent position in live mode)
+    if (viewMode === 'live' && !setupMode && positions.length > 0) {
       ctx.strokeStyle = 'rgba(59, 130, 246, 0.15)';
       ctx.lineWidth = 2;
       
@@ -253,8 +334,8 @@ export default function StoreMap({
       ctx.fillText(anchor.mac_address, pos.x, pos.y + 60);
     });
 
-    // Draw employee positions (from UWB triangulation)
-    if (positions.length > 0) {
+    // Draw employee positions (from UWB triangulation) - only in live mode
+    if (viewMode === 'live' && positions.length > 0) {
       // Draw trail for previous positions (fading)
       for (let i = Math.min(positions.length - 1, 5); i > 0; i--) {
         const pos = positions[i];
@@ -361,25 +442,56 @@ export default function StoreMap({
   useEffect(() => {
     drawMap();
     // Removed drawMissingItemsAlert - now shown in sidebar instead
-  }, [anchors, positions, items, setupMode, hoveredAnchor, draggedAnchor, canvasSize]);
+  }, [anchors, positions, items, setupMode, hoveredAnchor, draggedAnchor, canvasSize, viewMode, stockHeatmap, purchaseHeatmap]);
 
   // Removed auto-pulsing animation for missing items alert (now shown in sidebar)
 
   // Handle canvas click (place new anchor in setup mode)
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!setupMode || !onAnchorPlace) return;
-    if (draggedAnchor !== null) return; // Don't place if we were dragging
-    
     const canvas = canvasRef.current;
     if (!canvas) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    // Get click position in displayed coordinates
+    const displayX = e.clientX - rect.left;
+    const displayY = e.clientY - rect.top;
     
-    const storeCoords = toStoreCoords(x, y, canvas);
-    onAnchorPlace(storeCoords.x, storeCoords.y, nextAnchorIndex);
-    setNextAnchorIndex(nextAnchorIndex + 1);
+    // Scale up to actual canvas resolution (canvas is 2x for high DPI)
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = displayX * scaleX;
+    const y = displayY * scaleY;
+    
+    // If in setup mode, handle anchor placement
+    if (setupMode && onAnchorPlace) {
+      if (draggedAnchor !== null) return; // Don't place if we were dragging
+      const storeCoords = toStoreCoords(x, y, canvas);
+      onAnchorPlace(storeCoords.x, storeCoords.y, nextAnchorIndex);
+      setNextAnchorIndex(nextAnchorIndex + 1);
+      return;
+    }
+    
+    // If in live mode and onItemClick is provided, check for item clicks
+    if (viewMode === 'live' && onItemClick) {
+      const storeCoords = toStoreCoords(x, y, canvas);
+      const clickRadius = 15; // pixels
+      
+      // Check if click is near any item
+      for (const item of items) {
+        const distance = Math.sqrt(
+          Math.pow(storeCoords.x - item.x_position, 2) + 
+          Math.pow(storeCoords.y - item.y_position, 2)
+        );
+        
+        // Convert distance to canvas pixels for comparison
+        const distancePx = distance * (canvas.width / STORE_WIDTH);
+        
+        if (distancePx < clickRadius) {
+          onItemClick(item);
+          return;
+        }
+      }
+    }
   };
 
   // Handle mouse down (start dragging)
@@ -390,8 +502,14 @@ export default function StoreMap({
     if (!canvas) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const displayX = e.clientX - rect.left;
+    const displayY = e.clientY - rect.top;
+    
+    // Scale up to actual canvas resolution (canvas is 2x for high DPI)
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = displayX * scaleX;
+    const y = displayY * scaleY;
     
     // Check if clicking on an anchor
     for (const anchor of anchors) {
@@ -400,7 +518,7 @@ export default function StoreMap({
         Math.pow(x - anchorCanvas.x, 2) + Math.pow(y - anchorCanvas.y, 2)
       );
       
-      if (distance < 15) {
+      if (distance < 30) {  // Increased radius for easier clicking
         setDraggedAnchor(anchor.id);
         break;
       }
@@ -413,8 +531,14 @@ export default function StoreMap({
     if (!canvas) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const displayX = e.clientX - rect.left;
+    const displayY = e.clientY - rect.top;
+    
+    // Scale up to actual canvas resolution (canvas is 2x for high DPI)
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = displayX * scaleX;
+    const y = displayY * scaleY;
     
     if (draggedAnchor !== null && setupMode && onAnchorUpdate) {
       const storeCoords = toStoreCoords(x, y, canvas);
@@ -429,7 +553,7 @@ export default function StoreMap({
         Math.pow(x - anchorCanvas.x, 2) + Math.pow(y - anchorCanvas.y, 2)
       );
       
-      if (distance < 15) {
+      if (distance < 30) {  // Increased radius for easier hovering
         hovering = anchor.id;
         break;
       }

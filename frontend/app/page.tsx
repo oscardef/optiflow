@@ -33,7 +33,10 @@ interface Item {
   timestamp?: string;
 }
 
+type ViewMode = 'live' | 'stock-heatmap' | 'purchase-heatmap';
+
 export default function Home() {
+  const [viewMode, setViewMode] = useState<ViewMode>('live');
   const [setupMode, setSetupMode] = useState(false);
   const [anchors, setAnchors] = useState<Anchor[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -42,7 +45,15 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
-  const [activePanel, setActivePanel] = useState<'restock' | 'anchors' | 'positions' | null>('restock');
+  const [activePanel, setActivePanel] = useState<'missing' | 'anchors' | 'positions' | null>('missing');
+  const [products, setProducts] = useState<any[]>([]);
+  const [stockHeatmap, setStockHeatmap] = useState<any[]>([]);
+  const [purchaseHeatmap, setPurchaseHeatmap] = useState<any[]>([]);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [highlightedItem, setHighlightedItem] = useState<string | null>(null);
 
   const fetchAnchors = async () => {
     try {
@@ -102,12 +113,73 @@ export default function Home() {
     }
   };
 
+  const fetchProducts = async () => {
+    try {
+      const response = await fetch(`${API_URL}/products/summary`);
+      const data = await response.json();
+      setProducts(data);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    }
+  };
+
+  const fetchStockHeatmap = async () => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/stock-heatmap`);
+      const data = await response.json();
+      setStockHeatmap(data);
+    } catch (error) {
+      console.error('Error fetching stock heatmap:', error);
+    }
+  };
+
+  const fetchPurchaseHeatmap = async () => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/purchase-heatmap?hours=24`);
+      const data = await response.json();
+      setPurchaseHeatmap(data);
+    } catch (error) {
+      console.error('Error fetching purchase heatmap:', error);
+    }
+  };
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      setHighlightedItem(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/search/items?q=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      setSearchResults(data.items || []);
+    } catch (error) {
+      console.error('Error searching items:', error);
+      setSearchResults([]);
+    }
+  };
+
+  const handleItemClick = async (rfidTag: string) => {
+    try {
+      const response = await fetch(`${API_URL}/items/${rfidTag}`);
+      const data = await response.json();
+      setSelectedItem(data);
+      setHighlightedItem(rfidTag);
+      setActivePanel(null); // Show item detail
+    } catch (error) {
+      console.error('Error fetching item details:', error);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       await fetchAnchors();
       await fetchPositions();
       await fetchItems();
       await fetchMissingItems();
+      await fetchProducts();
       setLoading(false);
     };
     init();
@@ -120,10 +192,21 @@ export default function Home() {
       fetchPositions();
       fetchItems();
       fetchMissingItems();
+      
+      if (viewMode !== 'live') {
+        fetchProducts();
+        if (viewMode === 'stock-heatmap') fetchStockHeatmap();
+        if (viewMode === 'purchase-heatmap') fetchPurchaseHeatmap();
+      }
     }, 200);
     
     return () => clearInterval(interval);
-  }, [setupMode]);
+  }, [setupMode, viewMode]);
+
+  useEffect(() => {
+    if (viewMode === 'stock-heatmap') fetchStockHeatmap();
+    else if (viewMode === 'purchase-heatmap') fetchPurchaseHeatmap();
+  }, [viewMode]);
 
   const handleAnchorPlace = async (x: number, y: number, index: number) => {
     const anchorData = {
@@ -217,6 +300,36 @@ export default function Home() {
             </div>
             
             <div className="flex items-center gap-4">
+              {!setupMode && (
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search items..."
+                    value={searchQuery}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    className="px-4 py-2 border border-gray-300 focus:outline-none focus:border-[#0055A4] w-64 text-sm"
+                  />
+                  {searchResults.length > 0 && (
+                    <div className="absolute top-full mt-1 w-full bg-white border border-gray-200 shadow-lg max-h-96 overflow-y-auto z-50">
+                      {searchResults.map((result) => (
+                        <button
+                          key={result.rfid_tag}
+                          onClick={() => {
+                            handleItemClick(result.rfid_tag);
+                            setSearchQuery('');
+                            setSearchResults([]);
+                          }}
+                          className="w-full px-4 py-2 text-left hover:bg-gray-50 border-b border-gray-100 text-sm"
+                        >
+                          <div className="font-medium text-gray-900">{result.name}</div>
+                          <div className="text-xs text-gray-500">{result.rfid_tag} • {result.status}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              
               <div className={`flex items-center gap-2 px-3 py-1.5 border ${
                 connected 
                   ? 'border-green-200 bg-green-50' 
@@ -265,6 +378,28 @@ export default function Home() {
               </button>
             </div>
           </div>
+
+          {!setupMode && (
+            <div className="flex gap-2 mt-3 border-t border-gray-200 pt-3">
+              {[
+                { id: 'live', label: 'Live Tracking' },
+                { id: 'stock-heatmap', label: 'Stock Heatmap' },
+                { id: 'purchase-heatmap', label: 'Purchase Hotspots' },
+              ].map((view) => (
+                <button
+                  key={view.id}
+                  onClick={() => setViewMode(view.id as ViewMode)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors border ${
+                    viewMode === view.id
+                      ? 'bg-[#0055A4] text-white border-[#0055A4]'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {view.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </header>
 
@@ -277,8 +412,13 @@ export default function Home() {
                 positions={positions}
                 items={[...items, ...missingItems]}
                 setupMode={setupMode}
+                viewMode={viewMode}
+                stockHeatmap={stockHeatmap}
+                purchaseHeatmap={purchaseHeatmap}
+                highlightedItem={highlightedItem}
                 onAnchorPlace={handleAnchorPlace}
                 onAnchorUpdate={handleAnchorUpdate}
+                onItemClick={(item) => handleItemClick(item.product_id)}
               />
             </div>
           </div>
@@ -306,7 +446,7 @@ export default function Home() {
             
             <div className="flex border-b border-gray-200">
               {[
-                { id: 'restock', label: 'Restock', count: missingItems.length },
+                { id: 'missing', label: 'Missing Items', count: missingItems.length },
                 { id: 'anchors', label: 'Anchors', count: anchors.length },
                 { id: 'positions', label: 'Positions', count: positions.length },
               ].map((tab) => (
@@ -322,7 +462,7 @@ export default function Home() {
                   {tab.label}
                   {tab.count > 0 && (
                     <span className={`ml-2 px-2 py-0.5 text-xs font-semibold ${
-                      tab.id === 'restock' && tab.count > 0
+                      tab.id === 'missing' && tab.count > 0
                         ? 'bg-red-100 text-red-700'
                         : 'bg-gray-100 text-gray-700'
                     }`}>
@@ -334,7 +474,7 @@ export default function Home() {
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              {activePanel === 'restock' && (
+              {activePanel === 'missing' && (
                 <div className="p-4">
                   {missingItems.length === 0 ? (
                     <div className="text-center py-12 text-gray-500">
@@ -346,7 +486,11 @@ export default function Home() {
                       {missingItems.map((item, index) => (
                         <div
                           key={item.product_id}
-                          className="border-l-4 border-red-500 bg-red-50 p-3"
+                          className="border-l-4 border-red-500 bg-red-50 p-3 cursor-pointer hover:bg-red-100 transition-colors"
+                          onClick={() => {
+                            setSelectedItem(null);
+                            setHighlightedItem(item.product_id);
+                          }}
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
@@ -358,10 +502,13 @@ export default function Home() {
                               </div>
                               <div className="text-xs text-gray-600 space-y-0.5">
                                 <div className="font-mono">{item.product_id}</div>
-                                <div>Location: ({Math.round(item.x_position)}, {Math.round(item.y_position)}) cm</div>
+                                <div>Last Location: ({Math.round(item.x_position)}, {Math.round(item.y_position)}) cm</div>
                                 {item.timestamp && (
                                   <div>Last seen: {new Date(item.timestamp).toLocaleTimeString()}</div>
                                 )}
+                              </div>
+                              <div className="mt-2 text-xs font-semibold text-red-700">
+                                ⚠️ Needs restocking
                               </div>
                             </div>
                           </div>
@@ -372,6 +519,90 @@ export default function Home() {
                 </div>
               )}
 
+              {selectedItem && (
+                <div className="p-4 border-b border-gray-200 bg-blue-50">
+                  <div className="flex items-start justify-between mb-3">
+                    <h3 className="text-lg font-bold text-gray-900">Item Details</h3>
+                    <button
+                      onClick={() => {
+                        setSelectedItem(null);
+                        setHighlightedItem(null);
+                      }}
+                      className="text-gray-500 hover:text-gray-700 text-xl"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900 mb-1">
+                        {selectedItem.name}
+                      </div>
+                      <div className="text-xs text-gray-600 font-mono">
+                        {selectedItem.rfid_tag}
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="border border-gray-200 bg-white p-2">
+                        <div className="text-xs text-gray-500 uppercase">Status</div>
+                        <div className={`text-sm font-bold ${
+                          selectedItem.status === 'present' ? 'text-green-600' :
+                          selectedItem.status === 'missing' ? 'text-red-600' :
+                          'text-gray-600'
+                        }`}>
+                          {selectedItem.status}
+                        </div>
+                      </div>
+                      
+                      <div className="border border-gray-200 bg-white p-2">
+                        <div className="text-xs text-gray-500 uppercase">In Stock</div>
+                        <div className="text-sm font-bold text-gray-900">
+                          {selectedItem.inventory_summary?.in_stock || 0}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {selectedItem.zone && (
+                      <div className="border border-gray-200 bg-white p-2">
+                        <div className="text-xs text-gray-500 uppercase mb-1">Zone</div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {selectedItem.zone.name}
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          {selectedItem.zone.description}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="border border-gray-200 bg-white p-2">
+                      <div className="text-xs text-gray-500 uppercase mb-1">Location</div>
+                      <div className="text-sm text-gray-900">
+                        X: {Math.round(selectedItem.x_position)} cm, Y: {Math.round(selectedItem.y_position)} cm
+                      </div>
+                    </div>
+                    
+                    {selectedItem.last_seen && (
+                      <div className="border border-gray-200 bg-white p-2">
+                        <div className="text-xs text-gray-500 uppercase mb-1">Last Seen</div>
+                        <div className="text-sm text-gray-900">
+                          {new Date(selectedItem.last_seen).toLocaleString()}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {selectedItem.inventory_summary?.missing > 0 && (
+                      <div className="border-l-4 border-red-500 bg-red-50 p-2">
+                        <div className="text-xs text-red-700 font-semibold">
+                          ⚠️ {selectedItem.inventory_summary.missing} items missing
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              
               {activePanel === 'anchors' && (
                 <div className="p-4">
                   {anchors.length === 0 ? (
