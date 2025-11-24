@@ -4,10 +4,10 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from .database import get_db, init_db
+from .database import get_db, init_db, SessionLocal
 from .models import (
     Detection, UWBMeasurement, Anchor, TagPosition,
-    Product, InventoryItem, Zone, StockLevel, PurchaseEvent
+    Product, InventoryItem, Zone, StockLevel, PurchaseEvent, ProductLocationHistory
 )
 from .schemas import (
     DataPacket, LatestDataResponse, DetectionResponse, UWBMeasurementResponse,
@@ -31,6 +31,33 @@ app.add_middleware(
 def startup_event():
     """Initialize database on startup"""
     init_db()
+    
+    # Create default zones if they don't exist
+    db = SessionLocal()
+    try:
+        zone_count = db.query(Zone).count()
+        if zone_count == 0:
+            # Create store zones based on typical retail layout
+            # Store dimensions: 1000cm x 800cm
+            zones = [
+                Zone(name="Entrance", x_min=0, x_max=200, y_min=0, y_max=160),
+                Zone(name="Aisle 1", x_min=200, x_max=400, y_min=0, y_max=400),
+                Zone(name="Aisle 2", x_min=400, x_max=600, y_min=0, y_max=400),
+                Zone(name="Aisle 3", x_min=600, x_max=800, y_min=0, y_max=400),
+                Zone(name="Aisle 4", x_min=800, x_max=1000, y_min=0, y_max=400),
+                Zone(name="Cross Aisle", x_min=0, x_max=1000, y_min=360, y_max=440),
+                Zone(name="Aisle 5", x_min=200, x_max=400, y_min=440, y_max=800),
+                Zone(name="Aisle 6", x_min=400, x_max=600, y_min=440, y_max=800),
+                Zone(name="Aisle 7", x_min=600, x_max=800, y_min=440, y_max=800),
+                Zone(name="Aisle 8", x_min=800, x_max=1000, y_min=440, y_max=800),
+                Zone(name="Checkout", x_min=0, x_max=200, y_min=640, y_max=800),
+            ]
+            db.add_all(zones)
+            db.commit()
+            print(f"✅ Created {len(zones)} default zones")
+    finally:
+        db.close()
+    
     print("✅ Database initialized")
 
 @app.get("/")
@@ -526,6 +553,8 @@ def clear_tracking_data(
     try:
         inventory_deleted = 0
         purchase_events_deleted = 0
+        location_history_deleted = 0
+        stock_levels_reset = 0
         
         if keep_hours > 0:
             cutoff_time = datetime.utcnow() - timedelta(hours=keep_hours)
@@ -549,15 +578,29 @@ def clear_tracking_data(
             inventory_deleted = db.query(InventoryItem).filter(
                 InventoryItem.last_seen_at < cutoff_time
             ).delete()
+            
+            # Delete old location history
+            location_history_deleted = db.query(ProductLocationHistory).filter(
+                ProductLocationHistory.last_updated < cutoff_time
+            ).delete()
         else:
             # Clear everything
             positions_deleted = db.query(TagPosition).delete()
             detections_deleted = db.query(Detection).delete()
             uwb_deleted = db.query(UWBMeasurement).delete()
             
-            # Also clear inventory items (new primary data source)
+            # Clear inventory items (new primary data source)
             inventory_deleted = db.query(InventoryItem).delete()
             purchase_events_deleted = db.query(PurchaseEvent).delete()
+            
+            # Clear location history (heatmap data)
+            location_history_deleted = db.query(ProductLocationHistory).delete()
+            
+            # Reset max_items_seen in stock levels
+            stock_levels = db.query(StockLevel).all()
+            for stock_level in stock_levels:
+                stock_level.max_items_seen = 0
+            stock_levels_reset = len(stock_levels)
         
         db.commit()
         
@@ -567,7 +610,9 @@ def clear_tracking_data(
             "detections_deleted": detections_deleted,
             "uwb_measurements_deleted": uwb_deleted,
             "inventory_items_deleted": inventory_deleted,
-            "purchase_events_deleted": purchase_events_deleted
+            "purchase_events_deleted": purchase_events_deleted,
+            "location_history_deleted": location_history_deleted,
+            "stock_levels_reset": stock_levels_reset
         }
     except Exception as e:
         db.rollback()
@@ -647,26 +692,125 @@ def get_products_summary(db: Session = Depends(get_db)):
 @app.get("/analytics/stock-heatmap")
 def get_stock_heatmap(db: Session = Depends(get_db)):
     """
-    Get stock density heatmap by zone
-    Returns count of items per zone
+    Get stock depletion heatmap based on location clusters
+    Returns per-product location data with depletion percentage based on historical maximum
+    0% depletion = all items present (green), 100% = all items missing (red)
     """
     from sqlalchemy import func
     
-    # Count present items per zone
-    results = db.query(
-        Zone,
-        func.count(InventoryItem.id).label("item_count")
-    ).outerjoin(
-        InventoryItem,
-        (InventoryItem.zone_id == Zone.id) & (InventoryItem.status == "present")
-    ).group_by(Zone.id).all()
+    # First, get all zones for position-based assignment
+    zones = db.query(Zone).all()
+    
+    # Helper function to determine zone from position
+    def get_zone_from_position(x, y):
+        for zone in zones:
+            if (zone.x_min <= x <= zone.x_max and 
+                zone.y_min <= y <= zone.y_max):
+                return zone.id
+        return None
+    
+    # Get all items and group by product
+    items = db.query(InventoryItem).all()
+    
+    # Group items by product and calculate stats
+    from collections import defaultdict
+    product_stats = defaultdict(lambda: {
+        'x_positions': [],
+        'y_positions': [],
+        'present_count': 0,
+        'total_count': 0,
+        'zone_id': None
+    })
+    
+    for item in items:
+        # Determine zone from position if not set
+        zone_id = item.zone_id if item.zone_id else get_zone_from_position(item.x_position, item.y_position)
+        
+        if zone_id:  # Only process items that have or can get a zone
+            key = (item.product_id, zone_id)
+            product_stats[key]['x_positions'].append(item.x_position)
+            product_stats[key]['y_positions'].append(item.y_position)
+            product_stats[key]['total_count'] += 1
+            if item.status == "present":
+                product_stats[key]['present_count'] += 1
+            product_stats[key]['zone_id'] = zone_id
+    
+    # Convert to stats format
+    current_stats = []
+    for (product_id, zone_id), stats in product_stats.items():
+        if stats['total_count'] > 0:
+            from statistics import mean
+            current_stats.append({
+                'product_id': product_id,
+                'zone_id': zone_id,
+                'x_center': mean(stats['x_positions']),
+                'y_center': mean(stats['y_positions']),
+                'present_count': stats['present_count'],
+                'total_count': stats['total_count']
+            })
+    
+    # Update or create location history records
+    for stat in current_stats:
+        location_history = db.query(ProductLocationHistory).filter(
+            ProductLocationHistory.product_id == stat['product_id'],
+            ProductLocationHistory.zone_id == stat['zone_id']
+        ).first()
+        
+        if location_history:
+            # Update existing record
+            location_history.current_count = stat['present_count']
+            location_history.x_center = stat['x_center']
+            location_history.y_center = stat['y_center']
+            # Update max if current total is higher
+            if stat['total_count'] > location_history.max_items_seen:
+                location_history.max_items_seen = stat['total_count']
+            location_history.last_updated = datetime.utcnow()
+        else:
+            # Create new record
+            location_history = ProductLocationHistory(
+                product_id=stat['product_id'],
+                zone_id=stat['zone_id'],
+                x_center=stat['x_center'],
+                y_center=stat['y_center'],
+                current_count=stat['present_count'],
+                max_items_seen=stat['total_count'],
+                last_updated=datetime.utcnow()
+            )
+            db.add(location_history)
+    
+    db.commit()
+    
+    # Now fetch all location history with product and zone info for heatmap
+    heatmap_data = db.query(
+        ProductLocationHistory,
+        Product,
+        Zone
+    ).join(
+        Product, ProductLocationHistory.product_id == Product.id
+    ).join(
+        Zone, ProductLocationHistory.zone_id == Zone.id
+    ).filter(
+        ProductLocationHistory.max_items_seen > 0  # Only include locations that have had items
+    ).all()
     
     return [
         {
-            "zone": zone.to_dict(),
-            "item_count": count
+            "product_id": location.product_id,
+            "product_name": product.name,
+            "product_category": product.category,
+            "zone_id": location.zone_id,
+            "zone_name": zone.name,
+            "x": location.x_center,
+            "y": location.y_center,
+            "current_count": location.current_count,
+            "max_items_seen": location.max_items_seen,
+            "items_missing": location.max_items_seen - location.current_count,
+            "depletion_percentage": round(
+                ((location.max_items_seen - location.current_count) / location.max_items_seen * 100), 
+                1
+            ) if location.max_items_seen > 0 else 0
         }
-        for zone, count in results
+        for location, product, zone in heatmap_data
     ]
 
 @app.get("/analytics/purchase-heatmap")

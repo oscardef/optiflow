@@ -115,7 +115,7 @@ export default function Home() {
 
   const fetchProducts = async () => {
     try {
-      const response = await fetch(`${API_URL}/products/summary`);
+      const response = await fetch(`${API_URL}/products`);
       const data = await response.json();
       setProducts(data);
     } catch (error) {
@@ -266,9 +266,21 @@ export default function Home() {
 
     try {
       await fetch(`${API_URL}/data/clear`, { method: 'DELETE' });
+      
+      // Clear all state
       setPositions([]);
       setItems([]);
       setMissingItems([]);
+      setStockHeatmap([]);
+      setPurchaseHeatmap([]);
+      
+      // Force immediate refetch from backend to ensure cleared state
+      await Promise.all([
+        fetchItems(),
+        fetchMissingItems(),
+        viewMode === 'stock-heatmap' ? fetchStockHeatmap() : Promise.resolve(),
+        viewMode === 'purchase-heatmap' ? fetchPurchaseHeatmap() : Promise.resolve()
+      ]);
     } catch (error) {
       console.error('Failed to clear data:', error);
     }

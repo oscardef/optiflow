@@ -89,52 +89,251 @@ export default function StoreMap({
     };
   };
 
-  // Draw heatmap overlay for zones
+  // Create smooth gradient heatmap based on depletion percentage
+  // Green (0% depleted) → Yellow → Orange → Red (100% depleted)
+  const drawSmoothHeatmap = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, heatmapData: any[]) => {
+    if (!heatmapData || heatmapData.length === 0) return;
+    
+    // Create a separate canvas for heatmap processing
+    const heatCanvas = document.createElement('canvas');
+    heatCanvas.width = canvas.width;
+    heatCanvas.height = canvas.height;
+    const heatCtx = heatCanvas.getContext('2d');
+    if (!heatCtx) return;
+    
+    // Parameters for smooth gradient heatmap
+    const baseRadius = 50; // Base radius of influence for each location
+    const blur = 20;       // Blur for smooth gradients
+    
+    // Create intensity map for depletion
+    const intensityData = heatCtx.createImageData(canvas.width, canvas.height);
+    
+    // Add depletion gradient for each location cluster
+    heatmapData.forEach(location => {
+      const pos = toCanvasCoords(location.x, location.y, canvas);
+      const depletionPct = location.depletion_percentage / 100; // 0 to 1
+      
+      // Increase radius for highly depleted areas to make them more prominent
+      const radius = depletionPct > 0.75 ? baseRadius * 1.3 : baseRadius;
+      
+      for (let y = Math.max(0, Math.floor(pos.y - radius)); y < Math.min(canvas.height, Math.ceil(pos.y + radius)); y++) {
+        for (let x = Math.max(0, Math.floor(pos.x - radius)); x < Math.min(canvas.width, Math.ceil(pos.x + radius)); x++) {
+          const distance = Math.sqrt(Math.pow(x - pos.x, 2) + Math.pow(y - pos.y, 2));
+          if (distance <= radius) {
+            // Gaussian falloff for smooth gradients
+            const falloff = Math.exp(-Math.pow(distance / (radius * 0.4), 2));
+            const index = (y * canvas.width + x) * 4;
+            
+            // Store depletion percentage (0-100) in red channel, intensity in alpha
+            // Use max to prioritize worse depletion areas
+            const currentDepletion = intensityData.data[index] / 2.55; // Convert back to percentage
+            const newDepletion = depletionPct * 100;
+            
+            if (newDepletion > currentDepletion || intensityData.data[index + 3] === 0) {
+              intensityData.data[index] = Math.floor(depletionPct * 255); // Store 0-1 as 0-255
+              intensityData.data[index + 3] = Math.floor(falloff * 255);
+            }
+          }
+        }
+      }
+    });
+    
+    // Apply blur for smooth gradients
+    heatCtx.putImageData(intensityData, 0, 0);
+    heatCtx.filter = `blur(${blur}px)`;
+    heatCtx.drawImage(heatCanvas, 0, 0);
+    const blurredData = heatCtx.getImageData(0, 0, canvas.width, canvas.height);
+    
+    // Create final colored heatmap with gradient
+    const colorData = ctx.createImageData(canvas.width, canvas.height);
+    
+    for (let i = 0; i < blurredData.data.length; i += 4) {
+      const alpha = blurredData.data[i + 3];
+      if (alpha > 10) { // Only render visible pixels
+        // Extract depletion percentage (0-1)
+        const depletionPct = blurredData.data[i] / 255;
+        const intensity = alpha / 255;
+        
+        let r, g, b;
+        
+        // More sensitive color gradient - starts changing immediately with any depletion
+        // Even 1/8 missing (12.5%) should show visible color shift
+        // Progressive transition: Green → Yellow-Green → Yellow → Orange → Red
+        
+        if (depletionPct === 0) {
+          // Perfect stock - pure green
+          r = 34;
+          g = 197;
+          b = 94;
+        } else if (depletionPct <= 0.125) {
+          // 1/8 missing - noticeable shift to yellow-green (12.5%)
+          const t = depletionPct / 0.125;
+          r = Math.floor(34 + t * (120 - 34));    // Start warming up
+          g = Math.floor(197 + t * (200 - 197));  // Stay bright
+          b = Math.floor(94 + t * (50 - 94));     // Reduce blue
+        } else if (depletionPct <= 0.25) {
+          // 2/8 missing - more yellow (25%)
+          const t = (depletionPct - 0.125) / 0.125;
+          r = Math.floor(120 + t * (200 - 120));
+          g = Math.floor(200 + t * (200 - 200));
+          b = Math.floor(50 + t * (20 - 50));
+        } else if (depletionPct <= 0.50) {
+          // 3-4/8 missing - yellow to orange (50%)
+          const t = (depletionPct - 0.25) / 0.25;
+          r = Math.floor(200 + t * (251 - 200));
+          g = Math.floor(200 + t * (146 - 200));
+          b = Math.floor(20 + t * (60 - 20));
+        } else if (depletionPct <= 0.75) {
+          // 5-6/8 missing - orange (75%)
+          const t = (depletionPct - 0.50) / 0.25;
+          r = Math.floor(251 + t * (245 - 251));
+          g = Math.floor(146 + t * (100 - 146));
+          b = Math.floor(60 + t * (65 - 60));
+        } else {
+          // 7/8 or more missing - red (87.5%+)
+          const t = (depletionPct - 0.75) / 0.25;
+          r = Math.floor(245 + t * (239 - 245));
+          g = Math.floor(100 + t * (68 - 100));
+          b = Math.floor(65 + t * (68 - 65));
+        }
+        
+        // Make high depletion areas more saturated and visible
+        const finalAlpha = Math.floor(Math.min(intensity * 200 + (depletionPct * 60), 240));
+        
+        colorData.data[i] = r;
+        colorData.data[i + 1] = g;
+        colorData.data[i + 2] = b;
+        colorData.data[i + 3] = finalAlpha;
+      }
+    }
+    
+    ctx.putImageData(colorData, 0, 0);
+  };
+
+  // Draw heatmap overlay for zones (legacy zone-based view)
   const drawHeatmap = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, data: any[], type: 'stock' | 'purchase') => {
     if (!data || data.length === 0) return;
     
-    // Find max value for normalization
-    const maxValue = Math.max(...data.map(d => type === 'stock' ? d.item_count : d.purchase_count));
-    if (maxValue === 0) return;
-    
-    // Draw zones with heat colors
-    data.forEach(entry => {
-      const zone = entry.zone;
-      const value = type === 'stock' ? entry.item_count : entry.purchase_count;
-      const intensity = value / maxValue;
+    if (type === 'stock') {
+      // Stock depletion heatmap: green (good) -> yellow (warning) -> red (critical)
+      data.forEach(entry => {
+        const zone = entry.zone;
+        const depletionPct = entry.depletion_percentage || 0;
+        const currentCount = entry.current_count || 0;
+        const missingCount = entry.missing_count || 0;
+        const totalExpected = entry.total_expected || 0;
+        
+        // Convert zone coordinates
+        const topLeft = toCanvasCoords(zone.x_min, zone.y_min, canvas);
+        const bottomRight = toCanvasCoords(zone.x_max, zone.y_max, canvas);
+        const width = bottomRight.x - topLeft.x;
+        const height = bottomRight.y - topLeft.y;
+        
+        // Color gradient based on depletion percentage:
+        // 0% = Green (fully stocked)
+        // 50% = Yellow (half depleted)
+        // 100% = Red (completely depleted)
+        let r, g, b;
+        if (depletionPct <= 50) {
+          // Green to Yellow: 0-50% depletion
+          const ratio = depletionPct / 50;
+          r = Math.floor(34 + ratio * (234 - 34));   // 34 -> 234 (green to yellow)
+          g = Math.floor(197 - ratio * (197 - 179)); // 197 -> 179
+          b = Math.floor(94 - ratio * 94);           // 94 -> 0
+        } else {
+          // Yellow to Red: 50-100% depletion
+          const ratio = (depletionPct - 50) / 50;
+          r = Math.floor(234 + ratio * (239 - 234)); // 234 -> 239
+          g = Math.floor(179 - ratio * (179 - 68));  // 179 -> 68
+          b = 0;
+        }
+        
+        // Darker overlay for higher depletion
+        const alpha = 0.4 + (depletionPct / 100) * 0.3;
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        ctx.fillRect(topLeft.x, topLeft.y, width, height);
+        
+        // Draw zone border with matching color
+        ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(topLeft.x, topLeft.y, width, height);
+        
+        // Draw stock information
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.font = 'bold 22px sans-serif';
+        ctx.textAlign = 'center';
+        
+        const centerX = topLeft.x + width / 2;
+        const centerY = topLeft.y + height / 2;
+        
+        // Stock status text with outline
+        const statusText = `${currentCount}/${totalExpected}`;
+        ctx.strokeText(statusText, centerX, centerY - 8);
+        ctx.fillText(statusText, centerX, centerY - 8);
+        
+        // Depletion percentage
+        if (depletionPct > 0) {
+          ctx.font = 'bold 18px sans-serif';
+          const depletionText = `${Math.round(depletionPct)}% depleted`;
+          ctx.strokeText(depletionText, centerX, centerY + 18);
+          ctx.fillText(depletionText, centerX, centerY + 18);
+        } else {
+          ctx.font = 'bold 18px sans-serif';
+          const fullText = 'Fully Stocked';
+          ctx.strokeText(fullText, centerX, centerY + 18);
+          ctx.fillText(fullText, centerX, centerY + 18);
+        }
+      });
+    } else {
+      // Purchase heatmap: blue (low) -> yellow -> red (high activity)
+      const maxValue = Math.max(...data.map(d => d.purchase_count));
+      if (maxValue === 0) return;
       
-      // Convert zone coordinates
-      const topLeft = toCanvasCoords(zone.x_min, zone.y_min, canvas);
-      const bottomRight = toCanvasCoords(zone.x_max, zone.y_max, canvas);
-      const width = bottomRight.x - topLeft.x;
-      const height = bottomRight.y - topLeft.y;
-      
-      // Heat color: blue (low) -> yellow -> red (high)
-      let r, g, b;
-      if (intensity < 0.5) {
-        r = Math.floor(intensity * 2 * 255);
-        g = Math.floor(intensity * 2 * 255);
-        b = 255;
-      } else {
-        r = 255;
-        g = Math.floor((1 - intensity) * 2 * 255);
-        b = 0;
-      }
-      
-      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.3)`;
-      ctx.fillRect(topLeft.x, topLeft.y, width, height);
-      
-      // Draw zone border
-      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.6)`;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(topLeft.x, topLeft.y, width, height);
-      
-      // Draw value label
-      ctx.fillStyle = '#111827';
-      ctx.font = 'bold 24px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(value.toString(), topLeft.x + width/2, topLeft.y + height/2);
-    });
+      data.forEach(entry => {
+        const zone = entry.zone;
+        const value = entry.purchase_count;
+        const intensity = value / maxValue;
+        
+        // Convert zone coordinates
+        const topLeft = toCanvasCoords(zone.x_min, zone.y_min, canvas);
+        const bottomRight = toCanvasCoords(zone.x_max, zone.y_max, canvas);
+        const width = bottomRight.x - topLeft.x;
+        const height = bottomRight.y - topLeft.y;
+        
+        // Heat color: blue (low) -> yellow -> red (high)
+        let r, g, b;
+        if (intensity < 0.5) {
+          r = Math.floor(intensity * 2 * 255);
+          g = Math.floor(intensity * 2 * 255);
+          b = 255;
+        } else {
+          r = 255;
+          g = Math.floor((1 - intensity) * 2 * 255);
+          b = 0;
+        }
+        
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.4)`;
+        ctx.fillRect(topLeft.x, topLeft.y, width, height);
+        
+        // Draw zone border
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(topLeft.x, topLeft.y, width, height);
+        
+        // Draw value label with outline for readability
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        const centerX = topLeft.x + width / 2;
+        const centerY = topLeft.y + height / 2;
+        ctx.strokeText(value.toString(), centerX, centerY);
+        ctx.fillText(value.toString(), centerX, centerY);
+      });
+    }
   };
 
   // Draw the entire map
@@ -222,7 +421,8 @@ export default function StoreMap({
 
     // Draw heatmap overlays for non-live modes
     if (viewMode === 'stock-heatmap') {
-      drawHeatmap(ctx, canvas, stockHeatmap, 'stock');
+      // Use smooth gradient heatmap based on depletion percentage
+      drawSmoothHeatmap(ctx, canvas, stockHeatmap);
     } else if (viewMode === 'purchase-heatmap') {
       drawHeatmap(ctx, canvas, purchaseHeatmap, 'purchase');
     }
@@ -588,6 +788,27 @@ export default function StoreMap({
         <div className="absolute top-4 right-4 bg-[#0055A4] text-white px-4 py-2 text-sm font-medium">
           Click to place anchor #{nextAnchorIndex + 1}<br/>
           Drag existing anchors to reposition
+        </div>
+      )}
+      
+
+      {viewMode === 'purchase-heatmap' && (
+        <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm border-2 border-gray-300 px-4 py-3 shadow-lg">
+          <div className="text-sm font-bold text-gray-900 mb-2">Purchase Activity</div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-4 bg-gradient-to-r from-blue-400 to-blue-500" style={{borderRadius: '2px'}}></div>
+              <span className="text-xs text-gray-700">Low Activity</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-4 bg-gradient-to-r from-yellow-400 to-yellow-500" style={{borderRadius: '2px'}}></div>
+              <span className="text-xs text-gray-700">Medium Activity</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-4 bg-gradient-to-r from-red-500 to-red-600" style={{borderRadius: '2px'}}></div>
+              <span className="text-xs text-gray-700">High Activity</span>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -196,6 +196,7 @@ class StockLevel(Base):
     current_count = Column(Integer, default=0)
     missing_count = Column(Integer, default=0)
     sold_today = Column(Integer, default=0)
+    max_items_seen = Column(Integer, default=0)  # Track historical maximum for depletion calculation
     last_restock_at = Column(DateTime)
     priority_score = Column(Float, default=0.0, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -210,9 +211,36 @@ class StockLevel(Base):
             "current_count": self.current_count,
             "missing_count": self.missing_count,
             "sold_today": self.sold_today,
+            "max_items_seen": self.max_items_seen,
             "last_restock_at": self.last_restock_at.isoformat() if self.last_restock_at else None,
             "priority_score": self.priority_score,
             "updated_at": self.updated_at.isoformat()
+        }
+
+class ProductLocationHistory(Base):
+    """Track maximum items seen per product per location cluster for heatmap depletion"""
+    __tablename__ = "product_location_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    zone_id = Column(Integer, ForeignKey("zones.id", ondelete="CASCADE"), nullable=False, index=True)
+    x_center = Column(Float)  # Center of location cluster
+    y_center = Column(Float)
+    max_items_seen = Column(Integer, default=0)
+    current_count = Column(Integer, default=0)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "product_id": self.product_id,
+            "zone_id": self.zone_id,
+            "x_center": self.x_center,
+            "y_center": self.y_center,
+            "max_items_seen": self.max_items_seen,
+            "current_count": self.current_count,
+            "depletion_percentage": round(((self.max_items_seen - self.current_count) / self.max_items_seen * 100), 1) if self.max_items_seen > 0 else 0,
+            "last_updated": self.last_updated.isoformat()
         }
 
 class PurchaseEvent(Base):
