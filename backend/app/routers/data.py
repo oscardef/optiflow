@@ -1,0 +1,429 @@
+"""Data ingestion and retrieval router"""
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
+from typing import List
+
+from ..database import get_db
+from ..models import (
+    Detection, UWBMeasurement, TagPosition, Anchor,
+    InventoryItem, Product, PurchaseEvent, ProductLocationHistory, StockLevel
+)
+from ..schemas import (
+    DataPacket, DetectionResponse, UWBMeasurementResponse, LatestDataResponse
+)
+from ..triangulation import TriangulationService
+from ..core import logger
+
+router = APIRouter(tags=["data"])
+
+@router.post("/data")
+def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
+    """
+    Receive combined RFID detections and UWB measurements from devices
+    Automatically calculates position if 2+ anchors available
+    """
+    try:
+        timestamp = datetime.fromisoformat(packet.timestamp.replace('Z', '+00:00'))
+        detection_ids = []
+        uwb_ids = []
+        position_calculated = False
+        
+        # Store RFID detections
+        for detection in packet.detections:
+            det = Detection(
+                timestamp=timestamp,
+                product_id=detection.product_id,
+                product_name=detection.product_name,
+                x_position=detection.x_position,
+                y_position=detection.y_position,
+                status=detection.status
+            )
+            db.add(det)
+            db.flush()
+            detection_ids.append(det.id)
+            
+            # Sync to inventory_items table for analytics
+            inventory_item = db.query(InventoryItem).filter(
+                InventoryItem.rfid_tag == detection.product_id
+            ).first()
+            
+            if not inventory_item:
+                # Create new inventory item (find or create product first)
+                product = db.query(Product).filter(Product.name == detection.product_name).first()
+                if not product:
+                    # Create a generic product for this item
+                    product = Product(
+                        sku=f"GEN-{detection.product_id}",
+                        name=detection.product_name,
+                        category="General",
+                        unit_price=29.99,
+                        reorder_threshold=10,
+                        optimal_stock_level=50
+                    )
+                    db.add(product)
+                    db.flush()
+                
+                # Determine zone based on position
+                from ..models import Zone
+                zone = None
+                if detection.x_position and detection.y_position:
+                    zones = db.query(Zone).all()
+                    for z in zones:
+                        if (z.x_min <= detection.x_position <= z.x_max and 
+                            z.y_min <= detection.y_position <= z.y_max):
+                            zone = z
+                            break
+                
+                inventory_item = InventoryItem(
+                    rfid_tag=detection.product_id,
+                    product_id=product.id,
+                    status=detection.status if detection.status else "present",
+                    x_position=detection.x_position,
+                    y_position=detection.y_position,
+                    zone_id=zone.id if zone else None,
+                    last_seen_at=timestamp
+                )
+                db.add(inventory_item)
+            else:
+                # Update existing inventory item
+                inventory_item.status = detection.status if detection.status else "present"
+                inventory_item.x_position = detection.x_position
+                inventory_item.y_position = detection.y_position
+                inventory_item.last_seen_at = timestamp
+                
+                # Update zone if position changed
+                if detection.x_position and detection.y_position:
+                    from ..models import Zone
+                    zones = db.query(Zone).all()
+                    for z in zones:
+                        if (z.x_min <= detection.x_position <= z.x_max and 
+                            z.y_min <= detection.y_position <= z.y_max):
+                            inventory_item.zone_id = z.id
+                            break
+        
+        # Store UWB measurements
+        for uwb in packet.uwb_measurements:
+            measurement = UWBMeasurement(
+                timestamp=timestamp,
+                mac_address=uwb.mac_address,
+                distance_cm=uwb.distance_cm,
+                status=uwb.status
+            )
+            db.add(measurement)
+            db.flush()
+            uwb_ids.append(measurement.id)
+        
+        db.commit()
+        
+        # Try to calculate position if we have enough data
+        try:
+            anchors = db.query(Anchor).filter(Anchor.is_active == True).all()
+            if len(anchors) >= 2 and len(packet.uwb_measurements) >= 2:
+                measurements = []
+                for uwb in packet.uwb_measurements:
+                    anchor = next((a for a in anchors if a.mac_address == uwb.mac_address), None)
+                    if anchor:
+                        measurements.append((
+                            anchor.x_position,
+                            anchor.y_position,
+                            uwb.distance_cm
+                        ))
+                
+                if len(measurements) >= 2:
+                    result = TriangulationService.calculate_position(measurements)
+                    if result:
+                        x, y, confidence = result
+                        position = TagPosition(
+                            timestamp=timestamp,
+                            tag_id="tag_0x42",
+                            x_position=x,
+                            y_position=y,
+                            confidence=confidence,
+                            num_anchors=len(measurements)
+                        )
+                        db.add(position)
+                        db.commit()
+                        position_calculated = True
+        except Exception as pos_error:
+            logger.warning(f"Position calculation failed: {pos_error}")
+        
+        return {
+            "status": "success",
+            "detections_stored": len(detection_ids),
+            "uwb_measurements_stored": len(uwb_ids),
+            "position_calculated": position_calculated
+        }
+    
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error storing data: {str(e)}")
+
+@router.get("/data/latest", response_model=LatestDataResponse)
+def get_latest_data(limit: int = 50, db: Session = Depends(get_db)):
+    """Get the most recent detections and UWB measurements"""
+    detections = db.query(Detection)\
+        .order_by(Detection.timestamp.desc())\
+        .limit(limit)\
+        .all()
+    
+    uwb_measurements = db.query(UWBMeasurement)\
+        .order_by(UWBMeasurement.timestamp.desc())\
+        .limit(limit)\
+        .all()
+    
+    return {
+        "detections": [DetectionResponse(
+            id=d.id,
+            timestamp=d.timestamp.isoformat(),
+            product_id=d.product_id,
+            product_name=d.product_name,
+            x_position=d.x_position,
+            y_position=d.y_position,
+            status=d.status
+        ) for d in detections],
+        "uwb_measurements": [UWBMeasurementResponse(
+            id=u.id,
+            timestamp=u.timestamp.isoformat(),
+            mac_address=u.mac_address,
+            distance_cm=u.distance_cm,
+            status=u.status
+        ) for u in uwb_measurements]
+    }
+
+@router.get("/data/items", response_model=List[DetectionResponse])
+def get_all_items(db: Session = Depends(get_db)):
+    """Get all items from inventory with their latest status"""
+    items = db.query(InventoryItem, Product)\
+        .join(Product, InventoryItem.product_id == Product.id)\
+        .all()
+    
+    return [DetectionResponse(
+        id=item.id,
+        timestamp=item.last_seen_at.isoformat() if item.last_seen_at else None,
+        product_id=item.rfid_tag,
+        product_name=product.name,
+        x_position=item.x_position,
+        y_position=item.y_position,
+        status=item.status
+    ) for item, product in items]
+
+@router.get("/data/missing", response_model=List[DetectionResponse])
+def get_missing_items(db: Session = Depends(get_db)):
+    """Get all missing items (status = 'missing')"""
+    missing_items = db.query(InventoryItem, Product)\
+        .join(Product, InventoryItem.product_id == Product.id)\
+        .filter(InventoryItem.status == 'missing')\
+        .all()
+    
+    return [DetectionResponse(
+        id=item.id,
+        timestamp=item.last_seen_at.isoformat() if item.last_seen_at else None,
+        product_id=item.rfid_tag,
+        product_name=product.name,
+        x_position=item.x_position,
+        y_position=item.y_position,
+        status=item.status
+    ) for item, product in missing_items]
+
+@router.delete("/data/clear")
+def clear_tracking_data(keep_hours: int = 0, db: Session = Depends(get_db)):
+    """
+    Clear old tracking data (positions, detections, UWB measurements, inventory)
+    
+    Args:
+        keep_hours: Keep data from the last N hours. Default 0 = clear everything
+    """
+    try:
+        inventory_deleted = 0
+        purchase_events_deleted = 0
+        location_history_deleted = 0
+        stock_levels_reset = 0
+        
+        if keep_hours > 0:
+            cutoff_time = datetime.utcnow() - timedelta(hours=keep_hours)
+
+            positions_deleted = db.query(TagPosition).filter(
+                TagPosition.timestamp < cutoff_time
+            ).delete()
+            
+            detections_deleted = db.query(Detection).filter(
+                Detection.timestamp < cutoff_time
+            ).delete()
+            
+            uwb_deleted = db.query(UWBMeasurement).filter(
+                UWBMeasurement.timestamp < cutoff_time
+            ).delete()
+            
+            inventory_deleted = db.query(InventoryItem).filter(
+                InventoryItem.last_seen_at < cutoff_time
+            ).delete()
+            
+            location_history_deleted = db.query(ProductLocationHistory).filter(
+                ProductLocationHistory.last_updated < cutoff_time
+            ).delete()
+        else:
+            positions_deleted = db.query(TagPosition).delete()
+            detections_deleted = db.query(Detection).delete()
+            uwb_deleted = db.query(UWBMeasurement).delete()
+            inventory_deleted = db.query(InventoryItem).delete()
+            purchase_events_deleted = db.query(PurchaseEvent).delete()
+            location_history_deleted = db.query(ProductLocationHistory).delete()
+            
+            stock_levels = db.query(StockLevel).all()
+            for stock_level in stock_levels:
+                stock_level.max_items_seen = 0
+            stock_levels_reset = len(stock_levels)
+        
+        db.commit()
+        
+        logger.info(f"Cleared data: {positions_deleted} positions, {detections_deleted} detections, {uwb_deleted} UWB")
+        
+        return {
+            "message": "Tracking data cleared successfully",
+            "positions_deleted": positions_deleted,
+            "detections_deleted": detections_deleted,
+            "uwb_measurements_deleted": uwb_deleted,
+            "inventory_items_deleted": inventory_deleted,
+            "purchase_events_deleted": purchase_events_deleted,
+            "location_history_deleted": location_history_deleted,
+            "stock_levels_reset": stock_levels_reset
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/search/items")
+def search_items(q: str, db: Session = Depends(get_db)):
+    """Search for items by name or RFID tag"""
+    from sqlalchemy import func, case
+    
+    search_term = f"%{q}%"
+    
+    subquery = db.query(
+        InventoryItem.product_id,
+        func.min(InventoryItem.id).label('first_item_id'),
+        func.count(InventoryItem.id).label('total_count'),
+        func.sum(case((InventoryItem.status == 'present', 1), else_=0)).label('present_count'),
+        func.sum(case((InventoryItem.status == 'missing', 1), else_=0)).label('missing_count')
+    )\
+    .group_by(InventoryItem.product_id)\
+    .subquery()
+    
+    results_query = db.query(
+        InventoryItem,
+        Product,
+        subquery.c.total_count,
+        subquery.c.present_count,
+        subquery.c.missing_count
+    )\
+    .join(Product, InventoryItem.product_id == Product.id)\
+    .join(subquery, InventoryItem.id == subquery.c.first_item_id)\
+    .filter(
+        (Product.name.ilike(search_term)) |
+        (InventoryItem.rfid_tag.ilike(search_term)) |
+        (Product.sku.ilike(search_term))
+    )\
+    .limit(50)\
+    .all()
+    
+    results = []
+    for item, product, total_count, present_count, missing_count in results_query:
+        results.append({
+            "rfid_tag": item.rfid_tag,
+            "product_id": product.id,
+            "name": product.name,
+            "sku": product.sku,
+            "category": product.category,
+            "x": item.x_position,
+            "y": item.y_position,
+            "status": "present" if present_count > 0 else "missing",
+            "last_seen": item.last_seen_at.isoformat() if item.last_seen_at else None,
+            "zone_id": item.zone_id,
+            "count": {
+                "total": total_count,
+                "present": present_count,
+                "missing": missing_count
+            }
+        })
+    
+    return {
+        "query": q,
+        "total_results": len(results),
+        "items": results
+    }
+
+@router.get("/stats")
+def get_stats(db: Session = Depends(get_db)):
+    """Get basic statistics about stored data"""
+    total_detections = db.query(Detection).count()
+    total_uwb = db.query(UWBMeasurement).count()
+    
+    unique_items = db.query(Detection.product_id).distinct().count()
+    missing_items = db.query(Detection.product_id)\
+        .filter(Detection.status == 'missing')\
+        .distinct().count()
+    
+    latest_detection = db.query(Detection).order_by(Detection.timestamp.desc()).first()
+    latest_uwb = db.query(UWBMeasurement).order_by(UWBMeasurement.timestamp.desc()).first()
+    
+    return {
+        "total_detections": total_detections,
+        "unique_items": unique_items,
+        "missing_items": missing_items,
+        "total_uwb_measurements": total_uwb,
+        "latest_detection_time": latest_detection.timestamp.isoformat() if latest_detection else None,
+        "latest_uwb_time": latest_uwb.timestamp.isoformat() if latest_uwb else None
+    }
+
+@router.get("/items/{rfid_tag}")
+def get_item_detail(rfid_tag: str, db: Session = Depends(get_db)):
+    """Get detailed information about a specific item by RFID tag"""
+    from ..models import Zone
+    
+    item = db.query(InventoryItem)\
+        .filter(InventoryItem.rfid_tag == rfid_tag)\
+        .first()
+    
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    product = db.query(Product).filter(Product.id == item.product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    same_name_count = db.query(InventoryItem)\
+        .filter(
+            InventoryItem.product_id == item.product_id,
+            InventoryItem.status == "present"
+        )\
+        .count()
+    
+    missing_count = db.query(InventoryItem)\
+        .filter(
+            InventoryItem.product_id == item.product_id,
+            InventoryItem.status == "missing"
+        )\
+        .count()
+    
+    zone_info = None
+    if item.zone_id:
+        zone = db.query(Zone).filter(Zone.id == item.zone_id).first()
+        if zone:
+            zone_info = zone.to_dict()
+    
+    return {
+        "rfid_tag": item.rfid_tag,
+        "product_id": product.id,
+        "name": product.name,
+        "x_position": item.x_position,
+        "y_position": item.y_position,
+        "status": item.status,
+        "last_seen": item.last_seen_at.isoformat() if item.last_seen_at else None,
+        "zone": zone_info,
+        "inventory_summary": {
+            "in_stock": same_name_count,
+            "missing": missing_count,
+            "total": same_name_count + missing_count
+        }
+    }

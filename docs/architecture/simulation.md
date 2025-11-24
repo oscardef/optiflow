@@ -1,9 +1,11 @@
-# OptiFlow Simulation System v2.0
+# OptiFlow Simulation System - Architecture
 
 ## Overview
-The OptiFlow simulation has been refactored into a modular, production-ready system with multiple simulation modes and inventory management capabilities.
+The OptiFlow simulation is a modular system that simulates employee movement, RFID detection, and UWB positioning in a retail store environment. This document details the technical architecture and design decisions.
 
-## Architecture
+> **Note**: For basic usage instructions, see the [main README](../../README.md). This document focuses on architectural details.
+
+## System Architecture
 
 ### Backend (Step 1 - ✅ Complete)
 - **Database Migration**: `backend/migrations/001_inventory_system.sql`
@@ -84,76 +86,23 @@ Enhanced UI in `frontend/app/`:
   - Conditional rendering based on viewMode
   - Heatmap overlay with color-coded zones
 
-## Usage
+## Simulation Modes
 
-### 1. Start Infrastructure
-```bash
-docker compose up -d
-```
+The system supports three modes optimized for different use cases:
 
-### 2. Run New Simulator
-```bash
-# Realistic mode (500 items, 5-10 duplicates per SKU)
-python3 -m simulation.main --mode realistic --speed 1.0
+| Mode | Items | Duplicates per SKU | Use Case |
+|------|-------|-------------------|----------|
+| **demo** | 100 | 1-2 | Quick testing, demos |
+| **realistic** | 500 | 5-10 | Development, realistic simulation |
+| **stress** | 1000 | 10-20 | Load testing, performance validation |
 
-# Demo mode (100 items, 1-2 duplicates per SKU)
-python3 -m simulation.main --mode demo --speed 2.0
-
-# Stress mode (1000 items, 10-20 duplicates per SKU)
-python3 -m simulation.main --mode stress --speed 0.5
-```
-
-### 3. View Dashboard
-Open http://localhost:3000 and switch between view modes:
-- **Live Tracking**: Watch employee movement and item detection in real-time
-- **Stock Heatmap**: See where items are concentrated
-- **Purchase Hotspots**: Identify high-traffic purchase zones
-- **Restock Queue**: Manage restocking priorities
-
-### 4. Manual Restocking
-Use the API to create restock tasks:
-```bash
-curl -X POST "http://localhost:8000/products/restock?product_id=1&quantity=10&requested_by=manual"
-```
-
-The simulator will automatically:
-1. Detect the restock task via `restock_listener.py`
-2. Spawn 10 new items for that product
-3. Distribute them across store shelves
-4. Update task status to "completed"
-
-## Key Features
-
-### Inventory Management
-- ✅ Product catalog with SKUs and categories
-- ✅ Individual RFID-tagged items
-- ✅ Stock level tracking with automatic updates
-- ✅ Priority-based restock queue
-- ✅ Zone-based analytics (stock density, purchase activity)
-
-### Simulation Modes
-- ✅ Demo: 100 items, 1-2 duplicates per SKU
-- ✅ Realistic: 500 items, 5-10 duplicates per SKU
-- ✅ Stress: 1000 items, 10-20 duplicates per SKU
-- ✅ Configurable speed multiplier (0.5x - 5.0x)
-
-### Manual Restocking
-- ✅ Create restock tasks via API
-- ✅ Automatic item spawning by simulator
-- ✅ Task status tracking (pending → in_progress → completed)
-- ✅ Priority calculation based on urgency, velocity, time, missing items
-
-### Frontend Views
-- ✅ Live Tracking: Real-time positions and detections
-- ✅ Stock Heatmap: Visual density map by zone
-- ✅ Purchase Hotspots: 24h purchase activity heatmap
-- ✅ Consistent white/royal blue theme
-- ✅ Sharp corners, no rounded borders
+### Speed Multiplier
+Configurable from 0.5x (slow motion) to 5.0x (fast forward) for testing different scenarios.
 
 ## Design Decisions
 
 ### Why Modular Simulator?
-The original `esp32_simulator.py` was monolithic (~650 lines). The new structure:
+The original monolithic simulator (~650 lines) was refactored into a modular structure:
 - Separates concerns (config, inventory, movement, scanning, restocking)
 - Makes it easy to add new simulation modes
 - Simplifies testing and maintenance
@@ -193,28 +142,22 @@ The original `esp32_simulator.py` was monolithic (~650 lines). The new structure
 
 ## Files Created/Modified
 
-### Created
-- `backend/migrations/001_inventory_system.sql`
-- `backend/app/prioritization.py`
-- `simulation/__init__.py`
-- `simulation/config.py`
-- `simulation/inventory.py`
-- `simulation/shopper.py`
-- `simulation/scanner.py`
-- `simulation/restock_listener.py`
-- `simulation/main.py`
-- `SIMULATION_README.md` (this file)
+## Component Overview
 
-### Modified
-- `backend/app/models.py` - Added 6 new models
-- `backend/app/main.py` - Added 15+ new endpoints
-- `frontend/app/page.tsx` - Added view modes and analytics fetching
-- `frontend/app/components/StoreMap.tsx` - Added heatmap rendering
+### Backend Components
+- `backend/migrations/001_inventory_system.sql` - Database schema
+- `backend/app/prioritization.py` - Priority calculation algorithm
+- `backend/app/models.py` - SQLAlchemy models (Products, InventoryItems, StockLevels, etc.)
+- `backend/app/main.py` - API endpoints for inventory and analytics
 
-## Summary
-All three major steps are complete:
-1. ✅ Backend data models and endpoints
-2. ✅ Modular simulator with restock listener
-3. ✅ Frontend multiple map views
+### Simulation Components
+- `simulation/main.py` - CLI entry point and orchestrator
+- `simulation/config.py` - Configuration management (modes, settings)
+- `simulation/inventory.py` - Product catalog and item generation
+- `simulation/shopper.py` - Employee movement simulation
+- `simulation/scanner.py` - RFID/UWB measurement simulation
+- `simulation/restock_listener.py` - Restock task handler
 
-The system is now production-ready for inventory management, analytics, and intelligent restocking!
+### Frontend Components
+- `frontend/app/page.tsx` - Main dashboard with view mode switching
+- `frontend/app/components/StoreMap.tsx` - Interactive store map canvas

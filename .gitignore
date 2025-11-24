@@ -1,3 +1,32 @@
 .DS_Store
-.DS_Store
 /frontend/node_modules
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Logs and output files
+*.log
+sim_output.txt
+rfid_data_log.csv
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

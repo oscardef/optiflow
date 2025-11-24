@@ -63,14 +63,16 @@ docker compose up -d
 ### Run Simulator
 
 ```bash
-# Terminal 1: Install dependencies (first time only)
+# Install dependencies (first time only)
 pip3 install -r requirements.txt
 
-# Terminal 2: Start simulator (auto-loads anchors from backend)
-python3 esp32_simulator.py
+# Start simulator (auto-loads anchors from backend)
+python3 -m simulation.main --mode realistic
 
-# Simulator will automatically start tracking
-# No need for manual START command anymore!
+# Other modes available:
+# --mode demo      # 100 items for quick testing
+# --mode stress    # 1000 items for load testing
+# --speed 2.0      # 2x speed (default 1.0)
 ```
 
 ### Step 4: Watch Magic Happen ✨
@@ -201,18 +203,18 @@ curl -X DELETE http://localhost:8000/data/clear
 
 ```bash
 # Custom MQTT broker
-python3 esp32_simulator.py --broker 192.168.1.100
+python3 -m simulation.main --broker 192.168.1.100
 
-# Custom update interval
-python3 esp32_simulator.py --interval 0.2
+# Custom mode and speed
+python3 -m simulation.main --mode stress --speed 0.5
 
 # Custom backend API
-python3 esp32_simulator.py --api http://192.168.1.100:8000
+python3 -m simulation.main --api http://192.168.1.100:8000
 ```
 
 ### Customize Store Layout
 
-Edit `esp32_simulator.py`:
+Edit `simulation/config.py`:
 ```python
 STORE_WIDTH = 1000       # Store width in cm
 STORE_HEIGHT = 800       # Store height in cm
@@ -242,14 +244,30 @@ optiflow/
 ├── mqtt_bridge/                # MQTT → HTTP bridge
 │   ├── mqtt_to_api.py
 │   └── Dockerfile
+├── simulation/                  # Modular simulator
+│   ├── main.py                # CLI entry point
+│   ├── config.py              # Configuration
+│   ├── inventory.py           # Item generation
+│   ├── shopper.py             # Movement simulation
+│   └── scanner.py             # RFID/UWB scanning
 ├── firmware/                    # ESP32 hardware docs (optional)
 │   ├── UWB_TEST/              # UWB setup guides
 │   └── RFID_TEST/             # RFID integration
-├── esp32_simulator.py          # Hardware simulator
+├── docs/                        # Technical documentation
+│   ├── architecture/          # System architecture
+│   ├── implementation/        # Implementation guides
+│   └── reference/             # Reference materials
 ├── docker-compose.yml          # Service orchestration
 ├── requirements.txt            # Python dependencies
 └── README.md                   # This file
 ```
+
+## 📚 Documentation
+
+For detailed technical documentation, see the [docs/](docs/) directory:
+- [Simulation Architecture](docs/architecture/simulation.md) - Modular simulation system design
+- [Heatmap Implementation](docs/implementation/heatmap.md) - Stock depletion heatmap details
+- [Color Reference](docs/reference/colors.md) - Visual design and color system
 
 ---
 
@@ -272,7 +290,7 @@ This should be fixed! Items now persist regardless of pass count. If still happe
 # Clear old data and restart
 curl -X DELETE http://localhost:8000/data/clear
 docker compose restart backend frontend
-python3 esp32_simulator.py
+python3 -m simulation.main --mode realistic
 ```
 
 ### Services won't start
