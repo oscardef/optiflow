@@ -28,7 +28,7 @@ interface Item {
   status: string; // "present", "missing", "unknown"
 }
 
-type ViewMode = 'live' | 'stock-heatmap' | 'purchase-heatmap' | 'restock-queue';
+type ViewMode = 'live' | 'stock-heatmap' | 'restock-queue';
 
 interface StoreMapProps {
   anchors: Anchor[];
@@ -37,7 +37,6 @@ interface StoreMapProps {
   setupMode: boolean;
   viewMode?: ViewMode;
   stockHeatmap?: any[];
-  purchaseHeatmap?: any[];
   restockQueue?: any[];
   highlightedItem?: string | null;
   onAnchorPlace?: (x: number, y: number, anchorIndex: number) => void;
@@ -55,7 +54,6 @@ export default function StoreMap({
   setupMode,
   viewMode = 'live',
   stockHeatmap = [],
-  purchaseHeatmap = [],
   restockQueue = [],
   highlightedItem = null,
   onAnchorPlace,
@@ -423,8 +421,6 @@ export default function StoreMap({
     if (viewMode === 'stock-heatmap') {
       // Use smooth gradient heatmap based on depletion percentage
       drawSmoothHeatmap(ctx, canvas, stockHeatmap);
-    } else if (viewMode === 'purchase-heatmap') {
-      drawHeatmap(ctx, canvas, purchaseHeatmap, 'purchase');
     }
 
     // Draw items on the map (only in live mode)
@@ -642,7 +638,7 @@ export default function StoreMap({
   useEffect(() => {
     drawMap();
     // Removed drawMissingItemsAlert - now shown in sidebar instead
-  }, [anchors, positions, items, setupMode, hoveredAnchor, draggedAnchor, canvasSize, viewMode, stockHeatmap, purchaseHeatmap]);
+  }, [anchors, positions, items, setupMode, hoveredAnchor, draggedAnchor, canvasSize, viewMode, stockHeatmap]);
 
   // Removed auto-pulsing animation for missing items alert (now shown in sidebar)
 
@@ -790,27 +786,7 @@ export default function StoreMap({
           Drag existing anchors to reposition
         </div>
       )}
-      
 
-      {viewMode === 'purchase-heatmap' && (
-        <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm border-2 border-gray-300 px-4 py-3 shadow-lg">
-          <div className="text-sm font-bold text-gray-900 mb-2">Purchase Activity</div>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-4 bg-gradient-to-r from-blue-400 to-blue-500" style={{borderRadius: '2px'}}></div>
-              <span className="text-xs text-gray-700">Low Activity</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-4 bg-gradient-to-r from-yellow-400 to-yellow-500" style={{borderRadius: '2px'}}></div>
-              <span className="text-xs text-gray-700">Medium Activity</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-4 bg-gradient-to-r from-red-500 to-red-600" style={{borderRadius: '2px'}}></div>
-              <span className="text-xs text-gray-700">High Activity</span>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

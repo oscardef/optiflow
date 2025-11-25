@@ -33,7 +33,7 @@ interface Item {
   timestamp?: string;
 }
 
-type ViewMode = 'live' | 'stock-heatmap' | 'purchase-heatmap';
+type ViewMode = 'live' | 'stock-heatmap';
 
 export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>('live');
@@ -48,7 +48,6 @@ export default function Home() {
   const [activePanel, setActivePanel] = useState<'missing' | 'anchors' | 'positions' | null>('missing');
   const [products, setProducts] = useState<any[]>([]);
   const [stockHeatmap, setStockHeatmap] = useState<any[]>([]);
-  const [purchaseHeatmap, setPurchaseHeatmap] = useState<any[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -133,15 +132,7 @@ export default function Home() {
     }
   };
 
-  const fetchPurchaseHeatmap = async () => {
-    try {
-      const response = await fetch(`${API_URL}/analytics/purchase-heatmap?hours=24`);
-      const data = await response.json();
-      setPurchaseHeatmap(data);
-    } catch (error) {
-      console.error('Error fetching purchase heatmap:', error);
-    }
-  };
+
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
@@ -196,7 +187,6 @@ export default function Home() {
       if (viewMode !== 'live') {
         fetchProducts();
         if (viewMode === 'stock-heatmap') fetchStockHeatmap();
-        if (viewMode === 'purchase-heatmap') fetchPurchaseHeatmap();
       }
     }, 200);
     
@@ -205,7 +195,6 @@ export default function Home() {
 
   useEffect(() => {
     if (viewMode === 'stock-heatmap') fetchStockHeatmap();
-    else if (viewMode === 'purchase-heatmap') fetchPurchaseHeatmap();
   }, [viewMode]);
 
   const handleAnchorPlace = async (x: number, y: number, index: number) => {
@@ -272,14 +261,12 @@ export default function Home() {
       setItems([]);
       setMissingItems([]);
       setStockHeatmap([]);
-      setPurchaseHeatmap([]);
       
       // Force immediate refetch from backend to ensure cleared state
       await Promise.all([
         fetchItems(),
         fetchMissingItems(),
-        viewMode === 'stock-heatmap' ? fetchStockHeatmap() : Promise.resolve(),
-        viewMode === 'purchase-heatmap' ? fetchPurchaseHeatmap() : Promise.resolve()
+        viewMode === 'stock-heatmap' ? fetchStockHeatmap() : Promise.resolve()
       ]);
     } catch (error) {
       console.error('Failed to clear data:', error);
@@ -391,31 +378,42 @@ export default function Home() {
             </div>
           </div>
 
-          {!setupMode && (
-            <div className="flex gap-2 mt-3 border-t border-gray-200 pt-3">
-              {[
-                { id: 'live', label: 'Live Tracking' },
-                { id: 'stock-heatmap', label: 'Stock Heatmap' },
-                { id: 'purchase-heatmap', label: 'Purchase Hotspots' },
-              ].map((view) => (
-                <button
-                  key={view.id}
-                  onClick={() => setViewMode(view.id as ViewMode)}
-                  className={`px-4 py-2 text-sm font-medium transition-colors border ${
-                    viewMode === view.id
-                      ? 'bg-[#0055A4] text-white border-[#0055A4]'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  {view.label}
-                </button>
-              ))}
-            </div>
-          )}
+
         </div>
       </header>
 
       <div className="flex h-[calc(100vh-160px)] overflow-hidden">
+        {!setupMode && (
+          <div className="flex flex-col gap-2 p-2 bg-white border-r border-gray-200">
+            <button
+              onClick={() => setViewMode('live')}
+              className={`p-3 transition-colors border-2 ${
+                viewMode === 'live'
+                  ? 'bg-[#0055A4] text-white border-[#0055A4]'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+              title="Live Tracking"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setViewMode('stock-heatmap')}
+              className={`p-3 transition-colors border-2 ${
+                viewMode === 'stock-heatmap'
+                  ? 'bg-[#0055A4] text-white border-[#0055A4]'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+              title="Stock Heatmap"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </button>
+          </div>
+        )}
         <div className="flex-1 p-4 min-h-0">
           <div className="h-full flex flex-col">
             <div className="flex-1 min-h-0">
@@ -426,7 +424,6 @@ export default function Home() {
                 setupMode={setupMode}
                 viewMode={viewMode}
                 stockHeatmap={stockHeatmap}
-                purchaseHeatmap={purchaseHeatmap}
                 highlightedItem={highlightedItem}
                 onAnchorPlace={handleAnchorPlace}
                 onAnchorUpdate={handleAnchorUpdate}
