@@ -12,7 +12,7 @@ class Detection(Base):
     product_name = Column(String)
     x_position = Column(Float, nullable=True)  # Item location
     y_position = Column(Float, nullable=True)
-    status = Column(String, default="present")  # present, missing, unknown
+    status = Column(String, default="present")  # present, not present
     
     def to_dict(self):
         return {
@@ -100,7 +100,7 @@ class Product(Base):
     name = Column(String(255), nullable=False)
     category = Column(String(100), index=True)
     unit_price = Column(Numeric(10, 2))
-    reorder_threshold = Column(Integer, default=10)
+    reorder_threshold = Column(Integer, nullable=True, default=None)
     optimal_stock_level = Column(Integer, default=50)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -160,7 +160,7 @@ class InventoryItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     rfid_tag = Column(String(50), unique=True, nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
-    status = Column(String(20), default="present", index=True)  # present, sold, missing, restocking
+    status = Column(String(20), default="present", index=True)  # present, not present
     x_position = Column(Float)
     y_position = Column(Float)
     zone_id = Column(Integer, ForeignKey("zones.id", ondelete="SET NULL"), index=True)
@@ -269,4 +269,21 @@ class PurchaseEvent(Base):
             "y_position": self.y_position,
             "zone_id": self.zone_id,
             "purchased_at": self.purchased_at.isoformat()
+        }
+
+class Configuration(Base):
+    """System configuration (singleton table - should only have one row)"""
+    __tablename__ = "configuration"
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_width = Column(Integer, default=1000)  # cm
+    store_height = Column(Integer, default=800)  # cm
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "store_width": self.store_width,
+            "store_height": self.store_height,
+            "updated_at": self.updated_at.isoformat()
         }

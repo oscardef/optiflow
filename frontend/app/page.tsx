@@ -53,6 +53,8 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [highlightedItem, setHighlightedItem] = useState<string | null>(null);
+  const [currentMode, setCurrentMode] = useState<'SIMULATION' | 'REAL'>('SIMULATION');
+  const [simulationRunning, setSimulationRunning] = useState(false);
 
   const fetchAnchors = async () => {
     try {
@@ -132,6 +134,47 @@ export default function Home() {
     }
   };
 
+  const fetchMode = async () => {
+    try {
+      const response = await fetch(`${API_URL}/config/mode`);
+      const data = await response.json();
+      setCurrentMode(data.mode);
+      setSimulationRunning(data.simulation_running);
+    } catch (error) {
+      console.error('Error fetching mode:', error);
+    }
+  };
+
+  const startSimulation = async () => {
+    try {
+      const response = await fetch(`${API_URL}/simulation/start`, { method: 'POST' });
+      const data = await response.json();
+      if (data.success) {
+        alert('Simulation started successfully');
+        await fetchMode();
+      } else {
+        alert(data.message || 'Failed to start simulation');
+      }
+    } catch (error) {
+      alert('Failed to start simulation');
+    }
+  };
+
+  const stopSimulation = async () => {
+    try {
+      const response = await fetch(`${API_URL}/simulation/stop`, { method: 'POST' });
+      const data = await response.json();
+      if (data.success) {
+        alert('Simulation stopped successfully');
+        await fetchMode();
+      } else {
+        alert(data.message || 'Failed to stop simulation');
+      }
+    } catch (error) {
+      alert('Failed to stop simulation');
+    }
+  };
+
 
 
   const handleSearch = async (query: string) => {
@@ -171,6 +214,7 @@ export default function Home() {
       await fetchItems();
       await fetchMissingItems();
       await fetchProducts();
+      await fetchMode();
       setLoading(false);
     };
     init();
@@ -183,6 +227,7 @@ export default function Home() {
       fetchPositions();
       fetchItems();
       fetchMissingItems();
+      fetchMode();
       
       if (viewMode !== 'live') {
         fetchProducts();
@@ -300,15 +345,22 @@ export default function Home() {
             
             <div className="flex items-center gap-4">
               {!setupMode && (
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Search items..."
-                    value={searchQuery}
-                    onChange={(e) => handleSearch(e.target.value)}
-                    className="px-4 py-2 border border-gray-300 focus:outline-none focus:border-[#0055A4] w-64 text-sm"
-                  />
-                  {searchResults.length > 0 && (
+                <>
+                  <a
+                    href="/admin"
+                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors"
+                  >
+                    Admin Panel
+                  </a>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search items..."
+                      value={searchQuery}
+                      onChange={(e) => handleSearch(e.target.value)}
+                      className="px-4 py-2 border border-gray-300 focus:outline-none focus:border-[#0055A4] w-64 text-sm"
+                    />
+                    {searchResults.length > 0 && (
                     <div className="absolute top-full mt-1 w-full bg-white border border-gray-200 shadow-lg max-h-96 overflow-y-auto z-50">
                       {searchResults.map((result) => (
                         <button
@@ -325,8 +377,9 @@ export default function Home() {
                         </button>
                       ))}
                     </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                </>
               )}
               
               <div className={`flex items-center gap-2 px-3 py-1.5 border ${
@@ -365,6 +418,23 @@ export default function Home() {
                 <button onClick={handleClearData} className="btn-secondary">
                   Clear Data
                 </button>
+                {currentMode === 'SIMULATION' && (
+                  simulationRunning ? (
+                    <button 
+                      onClick={stopSimulation}
+                      className="btn-primary bg-red-600 hover:bg-red-700"
+                    >
+                      Stop Simulation
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={startSimulation}
+                      className="btn-primary bg-purple-600 hover:bg-purple-700"
+                    >
+                      Start Simulation
+                    </button>
+                  )
+                )}
               </>
             )}
 

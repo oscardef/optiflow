@@ -213,7 +213,7 @@ def get_missing_items(db: Session = Depends(get_db)):
     """Get all missing items (status = 'missing')"""
     missing_items = db.query(InventoryItem, Product)\
         .join(Product, InventoryItem.product_id == Product.id)\
-        .filter(InventoryItem.status == 'missing')\
+        .filter(InventoryItem.status == 'not present')\
         .all()
     
     return [DetectionResponse(
@@ -337,7 +337,7 @@ def search_items(q: str, db: Session = Depends(get_db)):
             "category": product.category,
             "x": item.x_position,
             "y": item.y_position,
-            "status": "present" if present_count > 0 else "missing",
+            "status": "present" if present_count > 0 else "not present",
             "last_seen": item.last_seen_at.isoformat() if item.last_seen_at else None,
             "zone_id": item.zone_id,
             "count": {

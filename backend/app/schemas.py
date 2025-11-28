@@ -91,7 +91,7 @@ class ProductCreate(BaseModel):
     name: str
     category: str
     unit_price: Optional[float] = None
-    reorder_threshold: int = 10
+    reorder_threshold: Optional[int] = None
     optimal_stock_level: int = 50
 
 class ProductResponse(BaseModel):

@@ -1,34 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-
-interface Anchor {
-  id: number;
-  mac_address: string;
-  name: string;
-  x_position: number;
-  y_position: number;
-  is_active: boolean;
-}
-
-interface Position {
-  id: number;
-  tag_id: string;
-  x_position: number;
-  y_position: number;
-  confidence: number;
-  timestamp: string;
-}
-
-interface Item {
-  product_id: string;
-  product_name: string;
-  x_position: number;
-  y_position: number;
-  status: string; // "present", "missing", "unknown"
-}
-
-type ViewMode = 'live' | 'stock-heatmap' | 'restock-queue';
+import type { Anchor, Position, Item, ViewMode, ConfigMode } from '@/src/types';
 
 interface StoreMapProps {
   anchors: Anchor[];
@@ -44,8 +17,7 @@ interface StoreMapProps {
   onItemClick?: (item: Item) => void;
 }
 
-const STORE_WIDTH = 1000;  // 10 meters in cm
-const STORE_HEIGHT = 800;  // 8 meters in cm
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function StoreMap({ 
   anchors, 
@@ -66,11 +38,28 @@ export default function StoreMap({
   const [hoveredAnchor, setHoveredAnchor] = useState<number | null>(null);
   const [nextAnchorIndex, setNextAnchorIndex] = useState(0);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 640 });
+  
+  // Dynamic configuration from backend
+  const [storeWidth, setStoreWidth] = useState(1000);
+  const [storeHeight, setStoreHeight] = useState(800);
+  const [currentMode, setCurrentMode] = useState<ConfigMode>('SIMULATION');
+
+  // Fetch store configuration on mount
+  useEffect(() => {
+    fetch(`${API_URL}/config/store`)
+      .then(res => res.json())
+      .then(data => {
+        setStoreWidth(data.store_width);
+        setStoreHeight(data.store_height);
+        setCurrentMode(data.mode);
+      })
+      .catch(err => console.error('Failed to fetch store config:', err));
+  }, []);
 
   // Convert store coordinates (cm) to canvas coordinates (pixels)
   const toCanvasCoords = (x: number, y: number, canvas: HTMLCanvasElement) => {
-    const scaleX = canvas.width / STORE_WIDTH;
-    const scaleY = canvas.height / STORE_HEIGHT;
+    const scaleX = canvas.width / storeWidth;
+    const scaleY = canvas.height / storeHeight;
     return {
       x: x * scaleX,
       y: y * scaleY
@@ -79,8 +68,8 @@ export default function StoreMap({
 
   // Convert canvas coordinates to store coordinates
   const toStoreCoords = (x: number, y: number, canvas: HTMLCanvasElement) => {
-    const scaleX = STORE_WIDTH / canvas.width;
-    const scaleY = STORE_HEIGHT / canvas.height;
+    const scaleX = storeWidth / canvas.width;
+    const scaleY = storeHeight / canvas.height;
     return {
       x: x * scaleX,
       y: y * scaleY
@@ -350,14 +339,14 @@ export default function StoreMap({
     ctx.strokeStyle = '#e5e7eb';
     ctx.lineWidth = 2;
     const gridSize = 100; // 1 meter grid
-    for (let x = 0; x < STORE_WIDTH; x += gridSize) {
+    for (let x = 0; x < storeWidth; x += gridSize) {
       const canvasX = toCanvasCoords(x, 0, canvas).x;
       ctx.beginPath();
       ctx.moveTo(canvasX, 0);
       ctx.lineTo(canvasX, canvas.height);
       ctx.stroke();
     }
-    for (let y = 0; y < STORE_HEIGHT; y += gridSize) {
+    for (let y = 0; y < storeHeight; y += gridSize) {
       const canvasY = toCanvasCoords(0, y, canvas).y;
       ctx.beginPath();
       ctx.moveTo(0, canvasY);
@@ -370,52 +359,55 @@ export default function StoreMap({
     ctx.lineWidth = 4;
     ctx.strokeRect(0, 0, canvas.width, canvas.height);
 
-    // Draw aisles (4 vertical aisles at x=200, 400, 600, 800)
-    const aisleX = [200, 400, 600, 800];
-    const aisleStartY = 150;
-    const aisleEndY = 700;
-    const aisleWidth = 80; // 80cm wide aisles
-    
-    aisleX.forEach((x, index) => {
-      const leftEdge = toCanvasCoords(x - aisleWidth / 2, aisleStartY, canvas);
-      const rightEdge = toCanvasCoords(x + aisleWidth / 2, aisleStartY, canvas);
-      const bottomY = toCanvasCoords(x, aisleEndY, canvas).y;
+    // Draw aisles only in SIMULATION mode
+    if (currentMode === 'SIMULATION') {
+      // Draw aisles (4 vertical aisles at x=200, 400, 600, 800)
+      const aisleX = [200, 400, 600, 800];
+      const aisleStartY = 150;
+      const aisleEndY = 700;
+      const aisleWidth = 80; // 80cm wide aisles
       
-      // Draw aisle background
-      ctx.fillStyle = 'rgba(243, 244, 246, 0.8)';
-      ctx.fillRect(leftEdge.x, leftEdge.y, rightEdge.x - leftEdge.x, bottomY - leftEdge.y);
+      aisleX.forEach((x, index) => {
+        const leftEdge = toCanvasCoords(x - aisleWidth / 2, aisleStartY, canvas);
+        const rightEdge = toCanvasCoords(x + aisleWidth / 2, aisleStartY, canvas);
+        const bottomY = toCanvasCoords(x, aisleEndY, canvas).y;
+        
+        // Draw aisle background
+        ctx.fillStyle = 'rgba(243, 244, 246, 0.8)';
+        ctx.fillRect(leftEdge.x, leftEdge.y, rightEdge.x - leftEdge.x, bottomY - leftEdge.y);
+        
+        // Draw aisle borders (shelving edges)
+        ctx.strokeStyle = '#9ca3af';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(leftEdge.x, leftEdge.y);
+        ctx.lineTo(leftEdge.x, bottomY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(rightEdge.x, leftEdge.y);
+        ctx.lineTo(rightEdge.x, bottomY);
+        ctx.stroke();
+        
+        // Draw aisle label
+        ctx.fillStyle = '#6b7280';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        const labelPos = toCanvasCoords(x, aisleStartY - 30, canvas);
+        ctx.fillText(`Aisle ${index + 1}`, labelPos.x, labelPos.y);
+      });
       
-      // Draw aisle borders (shelving edges)
-      ctx.strokeStyle = '#9ca3af';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(leftEdge.x, leftEdge.y);
-      ctx.lineTo(leftEdge.x, bottomY);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(rightEdge.x, leftEdge.y);
-      ctx.lineTo(rightEdge.x, bottomY);
-      ctx.stroke();
+      // Draw cross aisle (horizontal at y=400)
+      const crossAisleY = 400;
+      const crossAisleHeight = 80;
+      const crossLeftEdge = toCanvasCoords(0, crossAisleY - crossAisleHeight / 2, canvas);
+      const crossRightEdge = toCanvasCoords(storeWidth, crossAisleY + crossAisleHeight / 2, canvas);
       
-      // Draw aisle label
-      ctx.fillStyle = '#6b7280';
-      ctx.font = 'bold 28px sans-serif';
-      ctx.textAlign = 'center';
-      const labelPos = toCanvasCoords(x, aisleStartY - 30, canvas);
-      ctx.fillText(`Aisle ${index + 1}`, labelPos.x, labelPos.y);
-    });
-    
-    // Draw cross aisle (horizontal at y=400)
-    const crossAisleY = 400;
-    const crossAisleHeight = 80;
-    const crossLeftEdge = toCanvasCoords(0, crossAisleY - crossAisleHeight / 2, canvas);
-    const crossRightEdge = toCanvasCoords(STORE_WIDTH, crossAisleY + crossAisleHeight / 2, canvas);
-    
-    ctx.fillStyle = 'rgba(243, 244, 246, 0.6)';
-    ctx.fillRect(0, crossLeftEdge.y, canvas.width, crossRightEdge.y - crossLeftEdge.y);
-    ctx.strokeStyle = '#d1d5db';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(0, crossLeftEdge.y, canvas.width, crossRightEdge.y - crossLeftEdge.y);
+      ctx.fillStyle = 'rgba(243, 244, 246, 0.6)';
+      ctx.fillRect(0, crossLeftEdge.y, canvas.width, crossRightEdge.y - crossLeftEdge.y);
+      ctx.strokeStyle = '#d1d5db';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(0, crossLeftEdge.y, canvas.width, crossRightEdge.y - crossLeftEdge.y);
+    }
 
     // Draw heatmap overlays for non-live modes
     if (viewMode === 'stock-heatmap') {
@@ -491,7 +483,7 @@ export default function StoreMap({
           Math.pow(recentPos.y_position - anchor.y_position, 2)
         );
         
-        const radiusPx = distance * (canvas.width / STORE_WIDTH);
+        const radiusPx = distance * (canvas.width / storeWidth);
         
         ctx.beginPath();
         ctx.arc(anchorCanvas.x, anchorCanvas.y, radiusPx, 0, 2 * Math.PI);
@@ -553,7 +545,7 @@ export default function StoreMap({
       ctx.lineWidth = 4;
       ctx.setLineDash([16, 8]);
       const radiusCm = 150; // 1.5 meters RFID range
-      const radiusPx = radiusCm * (canvas.width / STORE_WIDTH);
+      const radiusPx = radiusCm * (canvas.width / storeWidth);
       ctx.beginPath();
       ctx.arc(canvasPos.x, canvasPos.y, radiusPx, 0, 2 * Math.PI);
       ctx.stroke();
@@ -609,8 +601,8 @@ export default function StoreMap({
       const containerWidth = container.clientWidth;
       const containerHeight = container.clientHeight;
       
-      // Maintain aspect ratio of STORE_WIDTH:STORE_HEIGHT (1000:800 = 1.25:1)
-      const aspectRatio = STORE_WIDTH / STORE_HEIGHT;
+      // Maintain aspect ratio based on store dimensions
+      const aspectRatio = storeWidth / storeHeight;
       
       let width = containerWidth;
       let height = width / aspectRatio;
@@ -632,13 +624,13 @@ export default function StoreMap({
     window.addEventListener('resize', updateCanvasSize);
     
     return () => window.removeEventListener('resize', updateCanvasSize);
-  }, []);
+  }, [storeWidth, storeHeight]);
 
   // Redraw when data changes
   useEffect(() => {
     drawMap();
     // Removed drawMissingItemsAlert - now shown in sidebar instead
-  }, [anchors, positions, items, setupMode, hoveredAnchor, draggedAnchor, canvasSize, viewMode, stockHeatmap]);
+  }, [anchors, positions, items, setupMode, hoveredAnchor, draggedAnchor, canvasSize, viewMode, stockHeatmap, storeWidth, storeHeight, currentMode]);
 
   // Removed auto-pulsing animation for missing items alert (now shown in sidebar)
 
@@ -680,7 +672,7 @@ export default function StoreMap({
         );
         
         // Convert distance to canvas pixels for comparison
-        const distancePx = distance * (canvas.width / STORE_WIDTH);
+        const distancePx = distance * (canvas.width / storeWidth);
         
         if (distancePx < clickRadius) {
           onItemClick(item);
