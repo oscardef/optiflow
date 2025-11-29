@@ -1,52 +1,24 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import type {
+  WSPosition,
+  WSItem,
+  WSItemStats,
+  WSPositionMessage,
+  WSItemMessage,
+  WSCombinedMessage,
+  WSMessage
+} from '../../src/types';
 
-// Types for WebSocket messages
-export interface PositionUpdate {
-  id: number;
-  tag_id: string;
-  x: number;
-  y: number;
-  confidence: number;
-  num_anchors: number;
-  timestamp: string;
-}
-
-export interface ItemUpdate {
-  rfid_tag: string;
-  name: string;
-  x: number;
-  y: number;
-  status: 'present' | 'not present';
-  last_seen?: string;
-}
-
-export interface ItemStats {
-  total: number;
-  present: number;
-  missing: number;
-}
-
-export interface PositionMessage {
-  type: 'position_update';
-  timestamp: string;
-  positions: PositionUpdate[];
-}
-
-export interface ItemMessage {
-  type: 'item_update';
-  timestamp: string;
-  items: ItemUpdate[];
-  stats: ItemStats;
-}
-
-export interface CombinedMessage {
-  timestamp: string;
-  updates: (PositionMessage | ItemMessage)[];
-}
-
-export type WebSocketMessage = PositionMessage | ItemMessage | CombinedMessage;
+// Re-export types for convenience
+export type PositionUpdate = WSPosition;
+export type ItemUpdate = WSItem;
+export type ItemStats = WSItemStats;
+export type PositionMessage = WSPositionMessage;
+export type ItemMessage = WSItemMessage;
+export type CombinedMessage = WSCombinedMessage;
+export type WebSocketMessage = WSMessage;
 
 export interface UseWebSocketOptions {
   url: string;

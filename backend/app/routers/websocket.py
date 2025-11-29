@@ -1,13 +1,14 @@
 """WebSocket router for real-time updates"""
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List, Set
 import asyncio
 import json
 from datetime import datetime
 
 from ..database import get_db, SessionLocal_simulation, SessionLocal_real
-from ..models import TagPosition, Detection, InventoryItem
+from ..models import TagPosition, Detection, InventoryItem, Product, Zone
 from ..config import config_state, ConfigMode
 from ..core import logger
 
@@ -158,14 +159,17 @@ async def websocket_items(websocket: WebSocket):
         while True:
             db = get_session()
             try:
-                # Get items updated since last check
+                # Get items updated since last check (handle null last_seen_at)
                 updated_items = db.query(InventoryItem)\
-                    .filter(InventoryItem.last_seen_at > last_check_time)\
+                    .filter(
+                        or_(
+                            InventoryItem.last_seen_at > last_check_time,
+                            InventoryItem.last_seen_at.is_(None)
+                        )
+                    )\
                     .all()
                 
                 if updated_items:
-                    # Get product names for updated items
-                    from ..models import Product
                     items_data = []
                     for item in updated_items:
                         product = db.query(Product).filter(Product.id == item.product_id).first()
@@ -250,10 +254,14 @@ async def websocket_combined(websocket: WebSocket):
                         ]
                     })
                 
-                # Check for item updates (less frequently)
-                from ..models import Product
+                # Check for item updates (handle null last_seen_at)
                 updated_items = db.query(InventoryItem)\
-                    .filter(InventoryItem.last_seen_at > last_item_check)\
+                    .filter(
+                        or_(
+                            InventoryItem.last_seen_at > last_item_check,
+                            InventoryItem.last_seen_at.is_(None)
+                        )
+                    )\
                     .all()
                 
                 if updated_items:

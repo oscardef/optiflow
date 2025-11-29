@@ -56,6 +56,27 @@ export interface WSItemStats {
   missing: number;
 }
 
+// WebSocket message types
+export interface WSPositionMessage {
+  type: 'position_update';
+  timestamp: string;
+  positions: WSPosition[];
+}
+
+export interface WSItemMessage {
+  type: 'item_update';
+  timestamp: string;
+  items: WSItem[];
+  stats: WSItemStats;
+}
+
+export interface WSCombinedMessage {
+  timestamp: string;
+  updates: (WSPositionMessage | WSItemMessage)[];
+}
+
+export type WSMessage = WSPositionMessage | WSItemMessage | WSCombinedMessage;
+
 export interface Product {
   id: number;
   sku: string;
