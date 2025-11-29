@@ -19,6 +19,8 @@ export default function AdminPanel() {
   const [changedProducts, setChangedProducts] = useState<Map<number, any>>(new Map());
   const [expandedProducts, setExpandedProducts] = useState<Set<number>>(new Set());
   const [productItems, setProductItems] = useState<Map<number, any[]>>(new Map());
+  const [simSpeedMultiplier, setSimSpeedMultiplier] = useState<number>(1.0);
+  const [simMode, setSimMode] = useState<string>('REALISTIC');
 
   // Fetch initial data
   useEffect(() => {
@@ -298,11 +300,18 @@ export default function AdminPanel() {
   const startSimulation = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/simulation/start`, { method: 'POST' });
+      const res = await fetch(`${API_URL}/simulation/start`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          speed_multiplier: simSpeedMultiplier,
+          mode: simMode
+        })
+      });
       const data = await res.json();
       
       if (res.ok && data.success) {
-        showMessage('success', 'Simulation started successfully');
+        showMessage('success', `Simulation started (${simMode} mode, ${simSpeedMultiplier}x speed)`);
         await fetchSimulationStatus();
       } else {
         showMessage('error', data.message || data.detail || 'Failed to start simulation');
@@ -458,7 +467,7 @@ export default function AdminPanel() {
                   onClick={() => setActiveTab(tab.id as any)}
                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600'
+                      ? 'border-[#0055A4] text-[#0055A4]'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
@@ -475,33 +484,120 @@ export default function AdminPanel() {
                 <div>
                   <h2 className="text-xl font-semibold mb-4">Operating Mode</h2>
                   <div className="flex items-center gap-4 mb-6">
-                    <span className="text-gray-700">Current Mode:</span>
-                    <span className={`px-4 py-2 rounded-full font-semibold ${
+                    <span className="text-sm text-gray-600 font-medium">Current Mode:</span>
+                    <span className={`px-4 py-2 rounded-lg font-semibold text-sm ${
                       mode?.mode === 'SIMULATION' 
-                        ? 'bg-purple-100 text-purple-800' 
-                        : 'bg-green-100 text-green-800'
+                        ? 'bg-blue-100 text-blue-800 border border-blue-200' 
+                        : 'bg-green-100 text-green-800 border border-green-200'
                     }`}>
                       {mode?.mode || 'Loading...'}
                     </span>
                   </div>
 
-                  <div className="flex gap-4">
+                  <div className="flex gap-3">
                     <button
                       onClick={() => switchMode('SIMULATION')}
                       disabled={mode?.mode === 'SIMULATION' || loading}
-                      className="px-6 py-3 bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      className="px-6 py-2.5 text-sm font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                     >
                       Switch to Simulation
                     </button>
                     <button
                       onClick={() => switchMode('REAL')}
                       disabled={mode?.mode === 'REAL' || loading}
-                      className="px-6 py-3 bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      className="px-6 py-2.5 text-sm font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                     >
-                      Switch to Real
+                      Switch to Real Hardware
                     </button>
                   </div>
                 </div>
+
+                {mode?.mode === 'SIMULATION' && (
+                  <div className="border-t pt-6">
+                    <h2 className="text-xl font-semibold mb-4">Simulation Control</h2>
+                    
+                    <div className="grid grid-cols-2 gap-6 mb-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Simulation Mode
+                        </label>
+                        <select
+                          value={simMode}
+                          onChange={(e) => setSimMode(e.target.value)}
+                          disabled={simulationStatus?.running || loading}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        >
+                          <option value="DEMO">Demo (100 items, 1-2 per SKU)</option>
+                          <option value="REALISTIC">Realistic (1000 items, 5-10 per SKU)</option>
+                          <option value="STRESS">Stress Test (2000 items, 10-20 per SKU)</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Controls the number of items and density in the simulation
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Speed Multiplier: {simSpeedMultiplier}x
+                        </label>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="5"
+                          step="0.5"
+                          value={simSpeedMultiplier}
+                          onChange={(e) => setSimSpeedMultiplier(parseFloat(e.target.value))}
+                          disabled={simulationStatus?.running || loading}
+                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#0055A4] disabled:cursor-not-allowed"
+                        />
+                        <div className="relative h-4 text-xs text-gray-500 mt-1">
+                          <span className="absolute left-0">0.5x</span>
+                          <span className="absolute" style={{ left: '11.1%' }}>1x</span>
+                          <span className="absolute" style={{ left: '33.3%' }}>2x</span>
+                          <span className="absolute" style={{ left: '55.6%' }}>3x</span>
+                          <span className="absolute" style={{ left: '77.8%' }}>4x</span>
+                          <span className="absolute right-0">5x</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Controls how fast shoppers move and items are scanned
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 mb-4">
+                      <button
+                        onClick={startSimulation}
+                        disabled={simulationStatus?.running || loading}
+                        className="px-6 py-2.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Start Simulation
+                      </button>
+                      <button
+                        onClick={stopSimulation}
+                        disabled={!simulationStatus?.running || loading}
+                        className="px-6 py-2.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Stop Simulation
+                      </button>
+                      {simulationStatus?.running && (
+                        <div className="flex items-center gap-2 ml-4">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                          <span className="text-sm text-gray-600 font-medium">Simulation Running</span>
+                          {simulationStatus.pid && (
+                            <span className="text-xs text-gray-500">(PID: {simulationStatus.pid})</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <p className="text-sm text-gray-600 leading-relaxed">
+                        <strong>Note:</strong> Simulation parameters can only be changed when the simulation is stopped. 
+                        The simulation generates synthetic RFID and UWB data to test the system without physical hardware.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {mode?.mode === 'REAL' && (
                   <div className="border-t pt-6">
@@ -509,7 +605,7 @@ export default function AdminPanel() {
                     <button
                       onClick={validateAnchors}
                       disabled={loading}
-                      className="px-6 py-3 bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 transition-colors mb-4"
+                      className="px-6 py-2.5 text-sm font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 transition-colors mb-4"
                     >
                       Validate Anchors
                     </button>
@@ -521,7 +617,7 @@ export default function AdminPanel() {
                         <p className="font-medium mb-2">{validation.message}</p>
                         {validation.warnings.length > 0 && (
                           <ul className="list-disc list-inside space-y-1 text-sm">
-                            {validation.warnings.map((warning, i) => (
+                            {validation.warnings.map((warning: string, i: number) => (
                               <li key={i}>{warning}</li>
                             ))}
                           </ul>
@@ -839,25 +935,102 @@ export default function AdminPanel() {
             {/* System Info Tab */}
             {activeTab === 'system' && (
               <div>
-                <h2 className="text-xl font-semibold mb-4">System Information</h2>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-purple-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Current Mode</p>
-                    <p className="text-2xl font-bold text-purple-600">{mode?.mode || 'N/A'}</p>
+                <h2 className="text-xl font-semibold mb-6">System Information</h2>
+                
+                <div className="space-y-6">
+                  {/* Operating Status */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase mb-3">Operating Status</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Current Mode</p>
+                        <p className={`text-2xl font-bold ${
+                          mode?.mode === 'SIMULATION' ? 'text-blue-600' : 'text-green-600'
+                        }`}>
+                          {mode?.mode || 'N/A'}
+                        </p>
+                      </div>
+                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Simulation Status</p>
+                        <p className={`text-2xl font-bold ${
+                          simulationStatus?.running ? 'text-green-600' : 'text-gray-400'
+                        }`}>
+                          {simulationStatus?.running ? 'Running' : 'Stopped'}
+                        </p>
+                        {simulationStatus?.pid && (
+                          <p className="text-xs text-gray-500 mt-1">PID: {simulationStatus.pid}</p>
+                        )}
+                      </div>
+                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Store Size</p>
+                        <p className="text-2xl font-bold text-[#0055A4]">
+                          {storeConfig ? `${(storeConfig.store_width / 100).toFixed(1)}m × ${(storeConfig.store_height / 100).toFixed(1)}m` : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-4 bg-blue-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Simulation Status</p>
-                    <p className="text-2xl font-bold text-blue-600">
-                      {simulationStatus?.running ? 'Running' : 'Stopped'}
-                    </p>
+
+                  {/* Inventory Overview */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase mb-3">Inventory Overview</h3>
+                    <div className="grid grid-cols-4 gap-4">
+                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Products</p>
+                        <p className="text-2xl font-bold text-gray-900">{products.length}</p>
+                        <p className="text-xs text-gray-500 mt-1">Unique SKUs</p>
+                      </div>
+                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Total Items</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {products.reduce((sum, p) => sum + (p.max_detected || 0), 0)}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">All RFID tags</p>
+                      </div>
+                      <div className="p-4 bg-white border-2 border-green-200 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">In Stock</p>
+                        <p className="text-2xl font-bold text-green-600">
+                          {products.reduce((sum, p) => sum + (p.current_stock || 0), 0)}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Present now</p>
+                      </div>
+                      <div className="p-4 bg-white border-2 border-red-200 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Needs Restock</p>
+                        <p className="text-2xl font-bold text-red-600">
+                          {products.filter(p => 
+                            p.reorder_threshold !== null && (p.current_stock || 0) < p.reorder_threshold
+                          ).length}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Below threshold</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-4 bg-green-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Configured Anchors</p>
-                    <p className="text-2xl font-bold text-green-600">{anchors.length}</p>
-                  </div>
-                  <div className="p-4 bg-yellow-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Total Products</p>
-                    <p className="text-2xl font-bold text-yellow-600">{products.length}</p>
+
+                  {/* Hardware Configuration */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase mb-3">Hardware Configuration</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">UWB Anchors</p>
+                        <p className="text-2xl font-bold text-gray-900">{anchors.length}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {anchors.filter(a => a.is_active).length} active
+                        </p>
+                      </div>
+                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Product Categories</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {new Set(products.map(p => p.category)).size}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Unique categories</p>
+                      </div>
+                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Total Inventory Value</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          ${products.reduce((sum, p) => sum + ((p.current_stock || 0) * (p.unit_price || 0)), 0).toFixed(0)}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Current stock value</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
