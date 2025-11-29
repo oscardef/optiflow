@@ -159,8 +159,9 @@ async def websocket_items(websocket: WebSocket):
         while True:
             db = get_session()
             try:
-                # Get items updated since last check (handle null last_seen_at)
-                updated_items = db.query(InventoryItem)\
+                # Get items updated since last check with product info (handle null last_seen_at)
+                updated_items = db.query(InventoryItem, Product)\
+                    .join(Product, InventoryItem.product_id == Product.id)\
                     .filter(
                         or_(
                             InventoryItem.last_seen_at > last_check_time,
@@ -170,17 +171,17 @@ async def websocket_items(websocket: WebSocket):
                     .all()
                 
                 if updated_items:
-                    items_data = []
-                    for item in updated_items:
-                        product = db.query(Product).filter(Product.id == item.product_id).first()
-                        items_data.append({
+                    items_data = [
+                        {
                             "rfid_tag": item.rfid_tag,
                             "name": product.name if product else "Unknown",
                             "x": item.x_position,
                             "y": item.y_position,
                             "status": item.status,
                             "last_seen": item.last_seen_at.isoformat() if item.last_seen_at else None
-                        })
+                        }
+                        for item, product in updated_items
+                    ]
                     
                     # Get overall stats
                     total = db.query(InventoryItem).count()
@@ -254,8 +255,9 @@ async def websocket_combined(websocket: WebSocket):
                         ]
                     })
                 
-                # Check for item updates (handle null last_seen_at)
-                updated_items = db.query(InventoryItem)\
+                # Check for item updates with product info (handle null last_seen_at)
+                updated_items = db.query(InventoryItem, Product)\
+                    .join(Product, InventoryItem.product_id == Product.id)\
                     .filter(
                         or_(
                             InventoryItem.last_seen_at > last_item_check,
@@ -265,16 +267,17 @@ async def websocket_combined(websocket: WebSocket):
                     .all()
                 
                 if updated_items:
-                    items_data = []
-                    for item in updated_items:
-                        product = db.query(Product).filter(Product.id == item.product_id).first()
-                        items_data.append({
+                    items_data = [
+                        {
                             "rfid_tag": item.rfid_tag,
                             "name": product.name if product else "Unknown",
                             "x": item.x_position,
                             "y": item.y_position,
-                            "status": item.status
-                        })
+                            "status": item.status,
+                            "last_seen": item.last_seen_at.isoformat() if item.last_seen_at else None
+                        }
+                        for item, product in updated_items
+                    ]
                     
                     total = db.query(InventoryItem).count()
                     present = db.query(InventoryItem).filter(InventoryItem.status == 'present').count()
