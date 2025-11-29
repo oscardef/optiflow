@@ -2,17 +2,13 @@
 OptiFlow Backend API
 Main application entry point with FastAPI
 """
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from sqlalchemy.exc import SQLAlchemyError
 
 from .database import init_db, SessionLocal_simulation, SessionLocal_real
 from .models import Zone, Configuration
 from .config import config_state, ConfigMode
 from .core import logger
-from .exceptions import OptiFlowException
 from .routers import (
     anchors_router,
     positions_router,
@@ -27,84 +23,10 @@ from .routers import (
 
 app = FastAPI(title="OptiFlow API", version="1.0.0")
 
-
-# Global Exception Handlers
-@app.exception_handler(OptiFlowException)
-async def optiflow_exception_handler(request: Request, exc: OptiFlowException):
-    """Handle custom OptiFlow exceptions."""
-    logger.error(f"OptiFlow exception: {exc.error_code} - {exc.message}", exc_info=True)
-    
-    # Map exception types to HTTP status codes
-    status_code_map = {
-        "VALIDATION_ERROR": status.HTTP_400_BAD_REQUEST,
-        "NOT_FOUND": status.HTTP_404_NOT_FOUND,
-        "CONFLICT": status.HTTP_409_CONFLICT,
-        "AUTHENTICATION_ERROR": status.HTTP_401_UNAUTHORIZED,
-        "AUTHORIZATION_ERROR": status.HTTP_403_FORBIDDEN,
-        "SERVICE_UNAVAILABLE": status.HTTP_503_SERVICE_UNAVAILABLE,
-        "DATABASE_ERROR": status.HTTP_500_INTERNAL_SERVER_ERROR,
-        "EXTERNAL_SERVICE_ERROR": status.HTTP_502_BAD_GATEWAY,
-        "CONFIGURATION_ERROR": status.HTTP_500_INTERNAL_SERVER_ERROR,
-        "SIMULATION_ERROR": status.HTTP_500_INTERNAL_SERVER_ERROR,
-    }
-    
-    status_code = status_code_map.get(exc.error_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-    return JSONResponse(
-        status_code=status_code,
-        content=exc.to_dict()
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle Pydantic validation errors."""
-    logger.error(f"Validation error: {exc}", exc_info=True)
-    
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "error": "VALIDATION_ERROR",
-            "message": "Request validation failed",
-            "details": exc.errors()
-        }
-    )
-
-
-@app.exception_handler(SQLAlchemyError)
-async def database_exception_handler(request: Request, exc: SQLAlchemyError):
-    """Handle database errors."""
-    logger.error(f"Database error: {exc}", exc_info=True)
-    
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": "DATABASE_ERROR",
-            "message": "Database operation failed",
-            "details": {}
-        }
-    )
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """Handle all other unhandled exceptions."""
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": "INTERNAL_SERVER_ERROR",
-            "message": "An unexpected error occurred",
-            "details": {}
-        }
-    )
-
-
 # CORS middleware to allow frontend requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Specific origin for security
+    allow_origins=["*"],  # In production, specify your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
