@@ -204,11 +204,16 @@ def start_simulation(params: Optional[SimulationParams] = None):
     try:
         # Start simulation as subprocess
         # Set cwd to parent of simulation dir so Python can import it as a module
+        # Redirect output to file to prevent buffer overflow
+        output_file = simulation_dir.parent / "sim_output.txt"
+        with open(output_file, "w") as f:
+            f.write(f"=== Simulation started at {datetime.now()} ===\n")
+        
         _simulation_process = subprocess.Popen(
             cmd,
             cwd=str(simulation_dir.parent),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=open(output_file, "a"),
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout
             text=True
         )
         
@@ -246,21 +251,26 @@ def get_simulation_logs():
     # Check if process is still running
     poll = _simulation_process.poll()
     
-    # Try to read any available output (non-blocking)
-    stdout = ""
-    stderr = ""
-    
+    # Read from output file
+    output = ""
     try:
-        if _simulation_process.stdout:
-            stdout = _simulation_process.stdout.read()
-        if _simulation_process.stderr:
-            stderr = _simulation_process.stderr.read()
+        backend_dir = Path(__file__).parent.parent.parent.parent
+        simulation_dir = backend_dir / "simulation"
+        if not simulation_dir.exists():
+            simulation_dir = Path("/simulation")
+        
+        output_file = simulation_dir.parent / "sim_output.txt"
+        if output_file.exists():
+            # Read last 1000 lines
+            with open(output_file, "r") as f:
+                lines = f.readlines()
+                output = "".join(lines[-1000:])
     except Exception as e:
-        stderr += f"\nError reading logs: {e}"
+        output = f"Error reading logs: {e}"
     
     return {
-        "stdout": stdout,
-        "stderr": stderr,
+        "stdout": output,
+        "stderr": "",
         "running": poll is None,
         "exit_code": poll
     }
