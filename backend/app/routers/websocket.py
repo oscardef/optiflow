@@ -1,7 +1,7 @@
 """WebSocket router for real-time updates"""
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func, case
 from typing import List, Set
 import asyncio
 import json
@@ -154,23 +154,27 @@ async def websocket_items(websocket: WebSocket):
     """
     await manager.connect(websocket)
     last_check_time = datetime.utcnow()
+    sent_item_ids: set = set()  # Track items we've already sent
     
     try:
         while True:
             db = get_session()
             try:
-                # Get items updated since last check with product info (handle null last_seen_at)
-                updated_items = db.query(InventoryItem, Product)\
+                # Get items updated since last check with product info
+                # Filter out items we've already sent if they have null last_seen_at
+                query = db.query(InventoryItem, Product)\
                     .join(Product, InventoryItem.product_id == Product.id)\
-                    .filter(
-                        or_(
-                            InventoryItem.last_seen_at > last_check_time,
-                            InventoryItem.last_seen_at.is_(None)
-                        )
-                    )\
-                    .all()
+                    .filter(InventoryItem.last_seen_at > last_check_time)
                 
-                if updated_items:
+                updated_items = query.all()
+                
+                # Filter to only include items that are new or have changed
+                items_to_send = [
+                    (item, product) for item, product in updated_items
+                    if item.id not in sent_item_ids or item.last_seen_at is not None
+                ]
+                
+                if items_to_send:
                     items_data = [
                         {
                             "rfid_tag": item.rfid_tag,
@@ -180,25 +184,29 @@ async def websocket_items(websocket: WebSocket):
                             "status": item.status,
                             "last_seen": item.last_seen_at.isoformat() if item.last_seen_at else None
                         }
-                        for item, product in updated_items
+                        for item, product in items_to_send
                     ]
                     
-                    # Get overall stats
-                    total = db.query(InventoryItem).count()
-                    present = db.query(InventoryItem).filter(InventoryItem.status == 'present').count()
-                    missing = db.query(InventoryItem).filter(InventoryItem.status == 'not present').count()
+                    # Get overall stats using a single query with aggregation
+                    stats_result = db.query(
+                        func.count(InventoryItem.id).label('total'),
+                        func.sum(case((InventoryItem.status == 'present', 1), else_=0)).label('present'),
+                        func.sum(case((InventoryItem.status == 'not present', 1), else_=0)).label('missing')
+                    ).first()
                     
                     await websocket.send_json({
                         "type": "item_update",
                         "timestamp": datetime.utcnow().isoformat(),
                         "items": items_data,
                         "stats": {
-                            "total": total,
-                            "present": present,
-                            "missing": missing
+                            "total": stats_result.total or 0,
+                            "present": stats_result.present or 0,
+                            "missing": stats_result.missing or 0
                         }
                     })
                     
+                    # Track sent items and update check time
+                    sent_item_ids.update(item.id for item, _ in items_to_send)
                     last_check_time = datetime.utcnow()
             finally:
                 db.close()
@@ -223,6 +231,7 @@ async def websocket_combined(websocket: WebSocket):
     await manager.connect(websocket)
     last_position_id = 0
     last_item_check = datetime.utcnow()
+    sent_item_ids: set = set()  # Track items we've already sent
     
     try:
         while True:
@@ -255,18 +264,19 @@ async def websocket_combined(websocket: WebSocket):
                         ]
                     })
                 
-                # Check for item updates with product info (handle null last_seen_at)
+                # Check for item updates with product info
                 updated_items = db.query(InventoryItem, Product)\
                     .join(Product, InventoryItem.product_id == Product.id)\
-                    .filter(
-                        or_(
-                            InventoryItem.last_seen_at > last_item_check,
-                            InventoryItem.last_seen_at.is_(None)
-                        )
-                    )\
+                    .filter(InventoryItem.last_seen_at > last_item_check)\
                     .all()
                 
-                if updated_items:
+                # Filter to only include items that are new or have changed
+                items_to_send = [
+                    (item, product) for item, product in updated_items
+                    if item.id not in sent_item_ids or item.last_seen_at is not None
+                ]
+                
+                if items_to_send:
                     items_data = [
                         {
                             "rfid_tag": item.rfid_tag,
@@ -276,28 +286,34 @@ async def websocket_combined(websocket: WebSocket):
                             "status": item.status,
                             "last_seen": item.last_seen_at.isoformat() if item.last_seen_at else None
                         }
-                        for item, product in updated_items
+                        for item, product in items_to_send
                     ]
                     
-                    total = db.query(InventoryItem).count()
-                    present = db.query(InventoryItem).filter(InventoryItem.status == 'present').count()
-                    missing = db.query(InventoryItem).filter(InventoryItem.status == 'not present').count()
+                    # Get overall stats using a single query with aggregation
+                    stats_result = db.query(
+                        func.count(InventoryItem.id).label('total'),
+                        func.sum(case((InventoryItem.status == 'present', 1), else_=0)).label('present'),
+                        func.sum(case((InventoryItem.status == 'not present', 1), else_=0)).label('missing')
+                    ).first()
                     
                     messages.append({
                         "type": "item_update",
                         "items": items_data,
                         "stats": {
-                            "total": total,
-                            "present": present,
-                            "missing": missing
+                            "total": stats_result.total or 0,
+                            "present": stats_result.present or 0,
+                            "missing": stats_result.missing or 0
                         }
                     })
                     
+                    # Track sent items and update check time
+                    sent_item_ids.update(item.id for item, _ in items_to_send)
                     last_item_check = datetime.utcnow()
                 
                 # Send combined update if we have any messages
                 if messages:
                     await websocket.send_json({
+                        "type": "combined_update",
                         "timestamp": datetime.utcnow().isoformat(),
                         "updates": messages
                     })

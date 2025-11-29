@@ -71,6 +71,7 @@ export interface WSItemMessage {
 }
 
 export interface WSCombinedMessage {
+  type: 'combined_update';
   timestamp: string;
   updates: (WSPositionMessage | WSItemMessage)[];
 }

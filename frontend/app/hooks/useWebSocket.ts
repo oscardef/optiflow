@@ -113,17 +113,17 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
               setLatestItems(message.items);
               setItemStats(message.stats);
               onItemUpdate?.(message.items, message.stats);
-            }
-          } else if ('updates' in message) {
-            // Combined message
-            for (const update of message.updates) {
-              if (update.type === 'position_update') {
-                setLatestPositions(update.positions);
-                onPositionUpdate?.(update.positions);
-              } else if (update.type === 'item_update') {
-                setLatestItems(update.items);
-                setItemStats(update.stats);
-                onItemUpdate?.(update.items, update.stats);
+            } else if (message.type === 'combined_update') {
+              // Combined message with type field
+              for (const update of message.updates) {
+                if (update.type === 'position_update') {
+                  setLatestPositions(update.positions);
+                  onPositionUpdate?.(update.positions);
+                } else if (update.type === 'item_update') {
+                  setLatestItems(update.items);
+                  setItemStats(update.stats);
+                  onItemUpdate?.(update.items, update.stats);
+                }
               }
             }
           }
