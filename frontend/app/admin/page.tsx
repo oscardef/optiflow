@@ -21,6 +21,7 @@ export default function AdminPanel() {
   const [productItems, setProductItems] = useState<Map<number, any[]>>(new Map());
   const [simSpeedMultiplier, setSimSpeedMultiplier] = useState<number>(1.0);
   const [simMode, setSimMode] = useState<string>('REALISTIC');
+  const [simDisappearanceRate, setSimDisappearanceRate] = useState<number>(1.5);
   const [productSearch, setProductSearch] = useState<string>('');
   const [productFilter, setProductFilter] = useState<string>('all');
   const [productSort, setProductSort] = useState<string>('name');
@@ -345,7 +346,8 @@ export default function AdminPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           speed_multiplier: simSpeedMultiplier,
-          mode: simMode
+          mode: simMode,
+          disappearance_rate: simDisappearanceRate / 100  // Convert percentage to decimal
         })
       });
       const data = await res.json();
@@ -600,6 +602,34 @@ export default function AdminPanel() {
                         </div>
                         <p className="text-xs text-gray-500 mt-2">
                           Controls how fast shoppers move and items are scanned
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6 mb-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Disappearance Rate: {simDisappearanceRate}%
+                        </label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="10"
+                          step="0.5"
+                          value={simDisappearanceRate}
+                          onChange={(e) => setSimDisappearanceRate(parseFloat(e.target.value))}
+                          disabled={simulationStatus?.running || loading}
+                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#0055A4] disabled:cursor-not-allowed"
+                        />
+                        <div className="relative h-4 text-xs text-gray-500 mt-1">
+                          <span className="absolute left-0">0%</span>
+                          <span className="absolute" style={{ left: '25%' }}>2.5%</span>
+                          <span className="absolute" style={{ left: '50%' }}>5%</span>
+                          <span className="absolute" style={{ left: '75%' }}>7.5%</span>
+                          <span className="absolute right-0">10%</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Controls how quickly items go missing during simulation
                         </p>
                       </div>
                     </div>

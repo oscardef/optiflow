@@ -126,7 +126,7 @@ class ShopperSimulator:
         self.target_y = aisles[self.current_aisle]['y_start']
     
     def _check_for_missing_items(self):
-        """Randomly mark some items as missing (1-2% per pass)"""
+        """Randomly mark some items as missing based on disappearance_rate"""
         if not self.first_pass_complete:
             return
         
@@ -135,7 +135,10 @@ class ShopperSimulator:
             return
         
         import random
-        num_to_mark = int(len(detected_items) * random.uniform(0.01, 0.02))
+        # Use disappearance_rate from config (varies from rate/2 to rate*1.5)
+        rate_min = self.config.disappearance_rate * 0.5
+        rate_max = self.config.disappearance_rate * 1.5
+        num_to_mark = int(len(detected_items) * random.uniform(rate_min, rate_max))
         
         if num_to_mark > 0:
             import random
