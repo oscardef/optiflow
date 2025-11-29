@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db, SessionLocal_simulation, SessionLocal_real
 from .models import Zone, Configuration
 from .config import config_state, ConfigMode
-from .core import logger
+from .core import logger, settings
+from .core.exceptions import OptiFlowException
+from .core.handlers import optiflow_exception_handler
 from .routers import (
     anchors_router,
     positions_router,
@@ -21,15 +23,22 @@ from .routers import (
     items_router
 )
 
-app = FastAPI(title="OptiFlow API", version="1.0.0")
+app = FastAPI(
+    title=settings.app_name, 
+    version=settings.app_version,
+    description="Real-time store tracking system using UWB triangulation"
+)
+
+# Register exception handlers
+app.add_exception_handler(OptiFlowException, optiflow_exception_handler)
 
 # CORS middleware to allow frontend requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend URL
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.cors_origins,
+    allow_credentials=settings.cors_allow_credentials,
+    allow_methods=settings.cors_allow_methods,
+    allow_headers=settings.cors_allow_headers,
 )
 
 # Include routers
