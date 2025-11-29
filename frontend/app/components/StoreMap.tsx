@@ -417,8 +417,8 @@ export default function StoreMap({
 
     // Draw items on the map (only in live mode)
     if (viewMode === 'live') {
-      const missingItems = items.filter(item => item.status === 'missing');
-      const presentItems = items.filter(item => item.status !== 'missing');
+      const missingItems = items.filter(item => item.status === 'not present');
+      const presentItems = items.filter(item => item.status !== 'not present');
       
       // Draw present items first (so missing items are on top)
       presentItems.forEach((item) => {

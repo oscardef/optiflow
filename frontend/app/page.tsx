@@ -628,7 +628,7 @@ export default function Home() {
                         <div className="text-xs text-gray-500 uppercase">Status</div>
                         <div className={`text-sm font-bold ${
                           selectedItem.status === 'present' ? 'text-green-600' :
-                          selectedItem.status === 'missing' ? 'text-red-600' :
+                          selectedItem.status === 'not present' ? 'text-red-600' :
                           'text-gray-600'
                         }`}>
                           {selectedItem.status}
