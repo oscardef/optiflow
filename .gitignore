@@ -27,6 +27,9 @@ rfid_data_log.csv
 *.swp
 *.swo
 
+# TypeScript build info
+tsconfig.tsbuildinfo
+
 # OS
 .DS_Store
 Thumbs.db
