@@ -100,7 +100,7 @@ class ProductResponse(BaseModel):
     name: str
     category: str
     unit_price: Optional[float] = None
-    reorder_threshold: int
+    reorder_threshold: Optional[int] = None
     optimal_stock_level: int
     created_at: str
     updated_at: str
