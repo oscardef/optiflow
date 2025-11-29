@@ -330,7 +330,7 @@ export default function Home() {
   const stats = [
     { label: 'Anchors', value: `${anchors.filter(a => a.is_active).length}/${anchors.length}`, status: anchors.filter(a => a.is_active).length >= 2 ? 'good' : 'warning' },
     { label: 'Employees', value: new Set(positions.map(p => p.tag_id)).size, status: 'good' },
-    { label: 'Items', value: items.length + missingItems.length, status: 'good' },
+    { label: 'Items', value: items.length, status: 'good' },
     { label: 'Missing', value: missingItems.length, status: missingItems.length > 0 ? 'alert' : 'good' },
   ];
 
@@ -555,108 +555,75 @@ export default function Home() {
 
             <div className="flex-1 overflow-y-auto">
               {activePanel === 'missing' && (
-                <div className="p-4">
-                  {missingItems.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500">
-                      <div className="text-4xl mb-2">✓</div>
-                      <p className="text-sm">All items in stock</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {missingItems.map((item, index) => {
-                        const isExpanded = expandedRestockItems.has(item.product_id);
-                        return (
-                          <div
-                            key={item.product_id}
-                            className="border-l-4 border-red-500 bg-white hover:bg-gray-50 transition-colors"
-                          >
+                <>
+                  {!selectedItem ? (
+                    <div className="p-4">
+                      {missingItems.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500">
+                          <div className="text-4xl mb-2">✓</div>
+                          <p className="text-sm">All items in stock</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {missingItems.map((item, index) => (
                             <div
-                              className="p-3 cursor-pointer"
+                              key={item.product_id}
+                              className="border-l-4 border-red-500 bg-white hover:bg-gray-50 transition-colors cursor-pointer"
                               onClick={async () => {
-                                await handleItemClick(item.product_id);
+                                try {
+                                  const response = await fetch(`${API_URL}/items/${item.product_id}`);
+                                  const data = await response.json();
+                                  setSelectedItem(data);
+                                  setHighlightedItem(item.product_id);
+                                  // Keep activePanel='missing' so the restock panel stays active
+                                } catch (error) {
+                                  console.error('Error fetching item details:', error);
+                                }
                               }}
                             >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3 flex-1">
+                              <div className="p-3">
+                                <div className="flex items-center gap-3">
                                   <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded">HIGH</span>
                                   <span className="text-sm font-semibold text-gray-900">
                                     {item.product_name}
                                   </span>
                                 </div>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setExpandedRestockItems(prev => {
-                                      const next = new Set(prev);
-                                      if (next.has(item.product_id)) {
-                                        next.delete(item.product_id);
-                                      } else {
-                                        next.add(item.product_id);
-                                      }
-                                      return next;
-                                    });
-                                  }}
-                                  className="text-gray-400 hover:text-gray-600 p-1"
-                                >
-                                  <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                  </svg>
-                                </button>
                               </div>
                             </div>
-                            {isExpanded && (
-                              <div className="px-3 pb-3 pt-0 border-t border-gray-100 bg-gray-50">
-                                <div className="text-xs text-gray-600 space-y-1 mt-2">
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-500">RFID Tag:</span>
-                                    <span className="font-mono">{item.product_id}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-500">Last Location:</span>
-                                    <span>({Math.round(item.x_position)}, {Math.round(item.y_position)}) cm</span>
-                                  </div>
-                                  {item.timestamp && (
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-500">Last Seen:</span>
-                                      <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
-
-              {selectedItem && activePanel !== 'missing' && (
-                <div className="p-4 border-b border-gray-200 bg-white">
-                  <div className="flex items-start justify-between mb-4">
-                    <h3 className="text-xl font-bold text-gray-900">{selectedItem.name}</h3>
+                  ) : (
+                <div className="p-4">
+                  <div className="mb-3">
                     <button
                       onClick={() => {
                         setSelectedItem(null);
                         setHighlightedItem(null);
+                        setActivePanel('missing');
                       }}
-                      className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                      className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
                     >
-                      ×
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                      Back to List
                     </button>
                   </div>
                   
-                  <div className="space-y-4">
+                  <h3 className="text-xl font-bold text-gray-900 mb-3">{selectedItem.name}</h3>
+                  
+                  <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="border-2 border-gray-200 bg-white p-4 rounded-lg">
+                      <div className="border-2 border-gray-200 bg-white p-3 rounded-lg">
                         <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Currently In Stock</div>
                         <div className="text-2xl font-bold text-green-600">
                           {selectedItem.inventory_summary?.in_stock || 0}
                         </div>
                       </div>
                       
-                      <div className="border-2 border-gray-200 bg-white p-4 rounded-lg">
+                      <div className="border-2 border-gray-200 bg-white p-3 rounded-lg">
                         <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Max Detected</div>
                         <div className="text-2xl font-bold text-gray-900">
                           {selectedItem.inventory_summary?.max_detected || 0}
@@ -665,7 +632,7 @@ export default function Home() {
                     </div>
                     
                     {selectedItem.inventory_summary?.missing > 0 && (
-                      <div className="bg-red-50 border-2 border-red-200 p-4 rounded-lg">
+                      <div className="bg-red-50 border-2 border-red-200 p-3 rounded-lg">
                         <div className="text-center">
                           <div className="text-3xl font-bold text-red-600 mb-1">
                             {selectedItem.inventory_summary.missing}
@@ -677,8 +644,8 @@ export default function Home() {
                       </div>
                     )}
                     
-                    <div className="border border-gray-200 bg-gray-50 p-4 rounded-lg">
-                      <div className="text-xs text-gray-500 uppercase font-semibold mb-2">Last Known Location</div>
+                    <div className="border border-gray-200 bg-gray-50 p-3 rounded-lg">
+                      <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Last Known Location</div>
                       <div className="text-sm text-gray-900 space-y-1">
                         <div className="flex justify-between">
                           <span className="text-gray-500">X:</span>
@@ -692,15 +659,98 @@ export default function Home() {
                     </div>
                     
                     {selectedItem.last_seen && (
-                      <div className="border border-gray-200 bg-gray-50 p-4 rounded-lg">
-                        <div className="text-xs text-gray-500 uppercase font-semibold mb-2">Last Seen</div>
+                      <div className="border border-gray-200 bg-gray-50 p-3 rounded-lg">
+                        <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Last Seen</div>
                         <div className="text-sm text-gray-900">
                           {new Date(selectedItem.last_seen).toLocaleString()}
                         </div>
                       </div>
                     )}
                     
-                    <div className="pt-2">
+                    <div className="pt-1">
+                      <div className="text-xs text-gray-400 font-mono text-center">
+                        {selectedItem.rfid_tag}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                  )}
+                </>
+              )}
+
+              {selectedItem && activePanel !== 'missing' && (
+                <div className="p-4 border-b border-gray-200 bg-white">
+                  <div className="mb-3">
+                    <button
+                      onClick={() => {
+                        setSelectedItem(null);
+                        setHighlightedItem(null);
+                      }}
+                      className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                      Back
+                    </button>
+                  </div>
+                  
+                  <h3 className="text-xl font-bold text-gray-900 mb-3">{selectedItem.name}</h3>
+                  
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="border-2 border-gray-200 bg-white p-3 rounded-lg">
+                        <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Currently In Stock</div>
+                        <div className="text-2xl font-bold text-green-600">
+                          {selectedItem.inventory_summary?.in_stock || 0}
+                        </div>
+                      </div>
+                      
+                      <div className="border-2 border-gray-200 bg-white p-3 rounded-lg">
+                        <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Max Detected</div>
+                        <div className="text-2xl font-bold text-gray-900">
+                          {selectedItem.inventory_summary?.max_detected || 0}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {selectedItem.inventory_summary?.missing > 0 && (
+                      <div className="bg-red-50 border-2 border-red-200 p-3 rounded-lg">
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-red-600 mb-1">
+                            {selectedItem.inventory_summary.missing}
+                          </div>
+                          <div className="text-xs text-red-700 font-semibold uppercase">
+                            Items Need Restocking
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="border border-gray-200 bg-gray-50 p-3 rounded-lg">
+                      <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Last Known Location</div>
+                      <div className="text-sm text-gray-900 space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">X:</span>
+                          <span className="font-mono">{Math.round(selectedItem.x_position)} cm</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Y:</span>
+                          <span className="font-mono">{Math.round(selectedItem.y_position)} cm</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {selectedItem.last_seen && (
+                      <div className="border border-gray-200 bg-gray-50 p-3 rounded-lg">
+                        <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Last Seen</div>
+                        <div className="text-sm text-gray-900">
+                          {new Date(selectedItem.last_seen).toLocaleString()}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="pt-1">
                       <div className="text-xs text-gray-400 font-mono text-center">
                         {selectedItem.rfid_tag}
                       </div>
@@ -785,87 +835,6 @@ export default function Home() {
                   )}
                 </div>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* Floating Product Info Panel - appears when clicking restock item */}
-        {selectedItem && activePanel === 'missing' && (
-          <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-start justify-between">
-                <h3 className="text-xl font-bold text-gray-900">{selectedItem.name}</h3>
-                <button
-                  onClick={() => {
-                    setSelectedItem(null);
-                    setHighlightedItem(null);
-                    setActivePanel('missing');
-                  }}
-                  className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-                >
-                  ×
-                </button>
-              </div>
-              
-              <div className="p-6 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="border-2 border-gray-200 bg-white p-4 rounded-lg">
-                    <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Currently In Stock</div>
-                    <div className="text-2xl font-bold text-green-600">
-                      {selectedItem.inventory_summary?.in_stock || 0}
-                    </div>
-                  </div>
-                  
-                  <div className="border-2 border-gray-200 bg-white p-4 rounded-lg">
-                    <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Max Detected</div>
-                    <div className="text-2xl font-bold text-gray-900">
-                      {selectedItem.inventory_summary?.max_detected || 0}
-                    </div>
-                  </div>
-                </div>
-                
-                {selectedItem.inventory_summary?.missing > 0 && (
-                  <div className="bg-red-50 border-2 border-red-200 p-4 rounded-lg">
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-red-600 mb-1">
-                        {selectedItem.inventory_summary.missing}
-                      </div>
-                      <div className="text-xs text-red-700 font-semibold uppercase">
-                        Items Need Restocking
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                <div className="border border-gray-200 bg-gray-50 p-4 rounded-lg">
-                  <div className="text-xs text-gray-500 uppercase font-semibold mb-2">Last Known Location</div>
-                  <div className="text-sm text-gray-900 space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">X:</span>
-                      <span className="font-mono">{Math.round(selectedItem.x_position)} cm</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Y:</span>
-                      <span className="font-mono">{Math.round(selectedItem.y_position)} cm</span>
-                    </div>
-                  </div>
-                </div>
-                
-                {selectedItem.last_seen && (
-                  <div className="border border-gray-200 bg-gray-50 p-4 rounded-lg">
-                    <div className="text-xs text-gray-500 uppercase font-semibold mb-2">Last Seen</div>
-                    <div className="text-sm text-gray-900">
-                      {new Date(selectedItem.last_seen).toLocaleString()}
-                    </div>
-                  </div>
-                )}
-                
-                <div className="pt-2">
-                  <div className="text-xs text-gray-400 font-mono text-center">
-                    {selectedItem.rfid_tag}
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         )}
