@@ -8,6 +8,7 @@ from .zones import router as zones_router
 from .config import router as config_router
 from .simulation import router as simulation_router
 from .items import router as items_router
+from .websocket import router as websocket_router
 
 __all__ = [
     "anchors_router",
@@ -18,5 +19,6 @@ __all__ = [
     "zones_router",
     "config_router",
     "simulation_router",
-    "items_router"
+    "items_router",
+    "websocket_router"
 ]

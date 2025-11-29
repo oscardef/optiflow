@@ -18,7 +18,8 @@ from .routers import (
     zones_router,
     config_router,
     simulation_router,
-    items_router
+    items_router,
+    websocket_router
 )
 
 app = FastAPI(title="OptiFlow API", version="1.0.0")
@@ -42,6 +43,7 @@ app.include_router(zones_router)
 app.include_router(config_router)
 app.include_router(simulation_router)
 app.include_router(items_router)
+app.include_router(websocket_router)
 
 @app.get("/")
 def health_check():

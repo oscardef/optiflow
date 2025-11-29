@@ -199,6 +199,32 @@ curl http://localhost:8000/data/missing | jq
 curl -X DELETE http://localhost:8000/data/clear
 ```
 
+### WebSocket Endpoints
+
+The backend provides real-time updates via WebSocket connections:
+
+```javascript
+// Position updates (every 500ms)
+const ws = new WebSocket('ws://localhost:8000/ws/positions');
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  // data.type === 'position_update'
+  // data.positions = [{tag_id, x, y, confidence, num_anchors, timestamp}]
+};
+
+// Item status updates (every 1s)
+const ws = new WebSocket('ws://localhost:8000/ws/items');
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  // data.type === 'item_update'
+  // data.items = [{rfid_tag, name, x, y, status}]
+  // data.stats = {total, present, missing}
+};
+
+// Combined updates (positions + items)
+const ws = new WebSocket('ws://localhost:8000/ws/combined');
+```
+
 ### Simulator Options
 
 ```bash
@@ -382,9 +408,9 @@ For each DWM3001CDK anchor:
 - ESP32 simulator with realistic movement
 - Item tracking with missing item detection
 - Aisle-following navigation pattern
+- **WebSocket support for real-time updates**
 
 ### Future Enhancements 🚧
-- WebSocket for real-time updates (no polling)
 - RFID reader integration with ESP32
 - Heatmap visualization of movement patterns
 - Multi-store support

@@ -21,12 +21,39 @@ export interface Position {
   num_anchors: number;
 }
 
+// WebSocket position update (uses shortened field names)
+export interface WSPosition {
+  id: number;
+  tag_id: string;
+  x: number;
+  y: number;
+  confidence: number;
+  num_anchors: number;
+  timestamp: string;
+}
+
 export interface Item {
   product_id: string;
   product_name: string;
   x_position: number;
   y_position: number;
   status: string;
+}
+
+// WebSocket item update
+export interface WSItem {
+  rfid_tag: string;
+  name: string;
+  x: number;
+  y: number;
+  status: 'present' | 'not present';
+  last_seen?: string;
+}
+
+export interface WSItemStats {
+  total: number;
+  present: number;
+  missing: number;
 }
 
 export interface Product {
