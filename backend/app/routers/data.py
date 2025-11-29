@@ -31,13 +31,18 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
         
         # Store RFID detections
         for detection in packet.detections:
+            # Normalize status values from simulator ('missing') to internal label 'not present'
+            status_val = detection.status if detection.status else "present"
+            if status_val == 'missing':
+                status_val = 'not present'
+
             det = Detection(
                 timestamp=timestamp,
                 product_id=detection.product_id,
                 product_name=detection.product_name,
                 x_position=detection.x_position,
                 y_position=detection.y_position,
-                status=detection.status
+                status=status_val
             )
             db.add(det)
             db.flush()
@@ -78,7 +83,7 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                 inventory_item = InventoryItem(
                     rfid_tag=detection.product_id,
                     product_id=product.id,
-                    status=detection.status if detection.status else "present",
+                    status=status_val,
                     x_position=detection.x_position,
                     y_position=detection.y_position,
                     zone_id=zone.id if zone else None,
@@ -87,7 +92,7 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                 db.add(inventory_item)
             else:
                 # Update existing inventory item
-                inventory_item.status = detection.status if detection.status else "present"
+                inventory_item.status = status_val
                 inventory_item.x_position = detection.x_position
                 inventory_item.y_position = detection.y_position
                 inventory_item.last_seen_at = timestamp
@@ -305,7 +310,7 @@ def search_items(q: str, db: Session = Depends(get_db)):
         func.min(InventoryItem.id).label('first_item_id'),
         func.count(InventoryItem.id).label('total_count'),
         func.sum(case((InventoryItem.status == 'present', 1), else_=0)).label('present_count'),
-        func.sum(case((InventoryItem.status == 'missing', 1), else_=0)).label('missing_count')
+        func.sum(case((InventoryItem.status == 'not present', 1), else_=0)).label('missing_count')
     )\
     .group_by(InventoryItem.product_id)\
     .subquery()
@@ -361,7 +366,7 @@ def get_stats(db: Session = Depends(get_db)):
     
     unique_items = db.query(Detection.product_id).distinct().count()
     missing_items = db.query(Detection.product_id)\
-        .filter(Detection.status == 'missing')\
+        .filter(Detection.status == 'not present')\
         .distinct().count()
     
     latest_detection = db.query(Detection).order_by(Detection.timestamp.desc()).first()
@@ -402,7 +407,7 @@ def get_item_detail(rfid_tag: str, db: Session = Depends(get_db)):
     missing_count = db.query(InventoryItem)\
         .filter(
             InventoryItem.product_id == item.product_id,
-            InventoryItem.status == "missing"
+            InventoryItem.status == "not present"
         )\
         .count()
     
