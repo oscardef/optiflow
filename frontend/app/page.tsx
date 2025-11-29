@@ -46,6 +46,7 @@ export default function Home() {
   const [connected, setConnected] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [activePanel, setActivePanel] = useState<'missing' | 'anchors' | 'positions' | null>('missing');
+  const [expandedRestockItems, setExpandedRestockItems] = useState<Set<string>>(new Set());
   const [products, setProducts] = useState<any[]>([]);
   const [stockHeatmap, setStockHeatmap] = useState<any[]>([]);
 
@@ -525,7 +526,7 @@ export default function Home() {
             
             <div className="flex border-b border-gray-200">
               {[
-                { id: 'missing', label: 'Missing Items', count: missingItems.length },
+                { id: 'missing', label: 'Restock', count: missingItems.length },
                 { id: 'anchors', label: 'Anchors', count: anchors.length },
                 { id: 'positions', label: 'Positions', count: positions.length },
               ].map((tab) => (
@@ -558,126 +559,152 @@ export default function Home() {
                   {missingItems.length === 0 ? (
                     <div className="text-center py-12 text-gray-500">
                       <div className="text-4xl mb-2">✓</div>
-                      <p className="text-sm">All items accounted for</p>
+                      <p className="text-sm">All items in stock</p>
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {missingItems.map((item, index) => (
-                        <div
-                          key={item.product_id}
-                          className="border-l-4 border-red-500 bg-red-50 p-3 cursor-pointer hover:bg-red-100 transition-colors"
-                          onClick={() => {
-                            setSelectedItem(null);
-                            setHighlightedItem(item.product_id);
-                          }}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs font-bold text-red-700">#{index + 1}</span>
-                                <span className="text-sm font-semibold text-gray-900">
-                                  {item.product_name}
-                                </span>
-                              </div>
-                              <div className="text-xs text-gray-600 space-y-0.5">
-                                <div className="font-mono">{item.product_id}</div>
-                                <div>Last Location: ({Math.round(item.x_position)}, {Math.round(item.y_position)}) cm</div>
-                                {item.timestamp && (
-                                  <div>Last seen: {new Date(item.timestamp).toLocaleTimeString()}</div>
-                                )}
-                              </div>
-                              <div className="mt-2 text-xs font-semibold text-red-700">
-                                ⚠️ Needs restocking
+                      {missingItems.map((item, index) => {
+                        const isExpanded = expandedRestockItems.has(item.product_id);
+                        return (
+                          <div
+                            key={item.product_id}
+                            className="border-l-4 border-red-500 bg-white hover:bg-gray-50 transition-colors"
+                          >
+                            <div
+                              className="p-3 cursor-pointer"
+                              onClick={async () => {
+                                await handleItemClick(item.product_id);
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3 flex-1">
+                                  <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded">HIGH</span>
+                                  <span className="text-sm font-semibold text-gray-900">
+                                    {item.product_name}
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedRestockItems(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(item.product_id)) {
+                                        next.delete(item.product_id);
+                                      } else {
+                                        next.add(item.product_id);
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                  className="text-gray-400 hover:text-gray-600 p-1"
+                                >
+                                  <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                </button>
                               </div>
                             </div>
+                            {isExpanded && (
+                              <div className="px-3 pb-3 pt-0 border-t border-gray-100 bg-gray-50">
+                                <div className="text-xs text-gray-600 space-y-1 mt-2">
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-500">RFID Tag:</span>
+                                    <span className="font-mono">{item.product_id}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-500">Last Location:</span>
+                                    <span>({Math.round(item.x_position)}, {Math.round(item.y_position)}) cm</span>
+                                  </div>
+                                  {item.timestamp && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-500">Last Seen:</span>
+                                      <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
               )}
 
-              {selectedItem && (
-                <div className="p-4 border-b border-gray-200 bg-blue-50">
-                  <div className="flex items-start justify-between mb-3">
-                    <h3 className="text-lg font-bold text-gray-900">Item Details</h3>
+              {selectedItem && activePanel !== 'missing' && (
+                <div className="p-4 border-b border-gray-200 bg-white">
+                  <div className="flex items-start justify-between mb-4">
+                    <h3 className="text-xl font-bold text-gray-900">{selectedItem.name}</h3>
                     <button
                       onClick={() => {
                         setSelectedItem(null);
                         setHighlightedItem(null);
                       }}
-                      className="text-gray-500 hover:text-gray-700 text-xl"
+                      className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
                     >
                       ×
                     </button>
                   </div>
                   
-                  <div className="space-y-3">
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900 mb-1">
-                        {selectedItem.name}
-                      </div>
-                      <div className="text-xs text-gray-600 font-mono">
-                        {selectedItem.rfid_tag}
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="border border-gray-200 bg-white p-2">
-                        <div className="text-xs text-gray-500 uppercase">Status</div>
-                        <div className={`text-sm font-bold ${
-                          selectedItem.status === 'present' ? 'text-green-600' :
-                          selectedItem.status === 'not present' ? 'text-red-600' :
-                          'text-gray-600'
-                        }`}>
-                          {selectedItem.status}
-                        </div>
-                      </div>
-                      
-                      <div className="border border-gray-200 bg-white p-2">
-                        <div className="text-xs text-gray-500 uppercase">In Stock</div>
-                        <div className="text-sm font-bold text-gray-900">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="border-2 border-gray-200 bg-white p-4 rounded-lg">
+                        <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Currently In Stock</div>
+                        <div className="text-2xl font-bold text-green-600">
                           {selectedItem.inventory_summary?.in_stock || 0}
                         </div>
                       </div>
+                      
+                      <div className="border-2 border-gray-200 bg-white p-4 rounded-lg">
+                        <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Max Detected</div>
+                        <div className="text-2xl font-bold text-gray-900">
+                          {selectedItem.inventory_summary?.max_detected || 0}
+                        </div>
+                      </div>
                     </div>
                     
-                    {selectedItem.zone && (
-                      <div className="border border-gray-200 bg-white p-2">
-                        <div className="text-xs text-gray-500 uppercase mb-1">Zone</div>
-                        <div className="text-sm font-semibold text-gray-900">
-                          {selectedItem.zone.name}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          {selectedItem.zone.description}
+                    {selectedItem.inventory_summary?.missing > 0 && (
+                      <div className="bg-red-50 border-2 border-red-200 p-4 rounded-lg">
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-red-600 mb-1">
+                            {selectedItem.inventory_summary.missing}
+                          </div>
+                          <div className="text-xs text-red-700 font-semibold uppercase">
+                            Items Need Restocking
+                          </div>
                         </div>
                       </div>
                     )}
                     
-                    <div className="border border-gray-200 bg-white p-2">
-                      <div className="text-xs text-gray-500 uppercase mb-1">Location</div>
-                      <div className="text-sm text-gray-900">
-                        X: {Math.round(selectedItem.x_position)} cm, Y: {Math.round(selectedItem.y_position)} cm
+                    <div className="border border-gray-200 bg-gray-50 p-4 rounded-lg">
+                      <div className="text-xs text-gray-500 uppercase font-semibold mb-2">Last Known Location</div>
+                      <div className="text-sm text-gray-900 space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">X:</span>
+                          <span className="font-mono">{Math.round(selectedItem.x_position)} cm</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Y:</span>
+                          <span className="font-mono">{Math.round(selectedItem.y_position)} cm</span>
+                        </div>
                       </div>
                     </div>
                     
                     {selectedItem.last_seen && (
-                      <div className="border border-gray-200 bg-white p-2">
-                        <div className="text-xs text-gray-500 uppercase mb-1">Last Seen</div>
+                      <div className="border border-gray-200 bg-gray-50 p-4 rounded-lg">
+                        <div className="text-xs text-gray-500 uppercase font-semibold mb-2">Last Seen</div>
                         <div className="text-sm text-gray-900">
                           {new Date(selectedItem.last_seen).toLocaleString()}
                         </div>
                       </div>
                     )}
                     
-                    {selectedItem.inventory_summary?.missing > 0 && (
-                      <div className="border-l-4 border-red-500 bg-red-50 p-2">
-                        <div className="text-xs text-red-700 font-semibold">
-                          ⚠️ {selectedItem.inventory_summary.missing} items missing
-                        </div>
+                    <div className="pt-2">
+                      <div className="text-xs text-gray-400 font-mono text-center">
+                        {selectedItem.rfid_tag}
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -758,6 +785,87 @@ export default function Home() {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Floating Product Info Panel - appears when clicking restock item */}
+        {selectedItem && activePanel === 'missing' && (
+          <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-start justify-between">
+                <h3 className="text-xl font-bold text-gray-900">{selectedItem.name}</h3>
+                <button
+                  onClick={() => {
+                    setSelectedItem(null);
+                    setHighlightedItem(null);
+                    setActivePanel('missing');
+                  }}
+                  className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="border-2 border-gray-200 bg-white p-4 rounded-lg">
+                    <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Currently In Stock</div>
+                    <div className="text-2xl font-bold text-green-600">
+                      {selectedItem.inventory_summary?.in_stock || 0}
+                    </div>
+                  </div>
+                  
+                  <div className="border-2 border-gray-200 bg-white p-4 rounded-lg">
+                    <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Max Detected</div>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {selectedItem.inventory_summary?.max_detected || 0}
+                    </div>
+                  </div>
+                </div>
+                
+                {selectedItem.inventory_summary?.missing > 0 && (
+                  <div className="bg-red-50 border-2 border-red-200 p-4 rounded-lg">
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-red-600 mb-1">
+                        {selectedItem.inventory_summary.missing}
+                      </div>
+                      <div className="text-xs text-red-700 font-semibold uppercase">
+                        Items Need Restocking
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="border border-gray-200 bg-gray-50 p-4 rounded-lg">
+                  <div className="text-xs text-gray-500 uppercase font-semibold mb-2">Last Known Location</div>
+                  <div className="text-sm text-gray-900 space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">X:</span>
+                      <span className="font-mono">{Math.round(selectedItem.x_position)} cm</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Y:</span>
+                      <span className="font-mono">{Math.round(selectedItem.y_position)} cm</span>
+                    </div>
+                  </div>
+                </div>
+                
+                {selectedItem.last_seen && (
+                  <div className="border border-gray-200 bg-gray-50 p-4 rounded-lg">
+                    <div className="text-xs text-gray-500 uppercase font-semibold mb-2">Last Seen</div>
+                    <div className="text-sm text-gray-900">
+                      {new Date(selectedItem.last_seen).toLocaleString()}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="pt-2">
+                  <div className="text-xs text-gray-400 font-mono text-center">
+                    {selectedItem.rfid_tag}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}

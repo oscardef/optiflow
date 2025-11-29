@@ -411,6 +411,10 @@ def get_item_detail(rfid_tag: str, db: Session = Depends(get_db)):
         )\
         .count()
     
+    total_count = db.query(InventoryItem)\
+        .filter(InventoryItem.product_id == item.product_id)\
+        .count()
+    
     zone_info = None
     if item.zone_id:
         zone = db.query(Zone).filter(Zone.id == item.zone_id).first()
@@ -429,6 +433,7 @@ def get_item_detail(rfid_tag: str, db: Session = Depends(get_db)):
         "inventory_summary": {
             "in_stock": same_name_count,
             "missing": missing_count,
-            "total": same_name_count + missing_count
+            "total": total_count,
+            "max_detected": total_count
         }
     }
