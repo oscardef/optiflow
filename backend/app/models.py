@@ -101,7 +101,7 @@ class Product(Base):
     category = Column(String(100), index=True)
     unit_price = Column(Numeric(10, 2))
     reorder_threshold = Column(Integer, nullable=True, default=None)
-    optimal_stock_level = Column(Integer, default=50)
+    optimal_stock_level = Column(Integer, nullable=True, default=None)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

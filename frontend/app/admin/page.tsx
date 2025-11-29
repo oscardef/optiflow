@@ -1003,15 +1003,15 @@ export default function AdminPanel() {
                               <td className="px-4 py-3 text-sm">
                                 <input
                                   type="text"
-                                  defaultValue={product.reorder_threshold ?? 'None'}
+                                  defaultValue={product.reorder_threshold ?? ''}
                                   disabled={!editMode}
                                   onChange={(e) => {
                                     if (editMode) {
-                                      const val = e.target.value.toLowerCase() === 'none' || e.target.value === '' ? null : parseInt(e.target.value);
+                                      const val = e.target.value === '' ? null : parseInt(e.target.value);
                                       trackProductChange(product.id, 'reorder_threshold', val);
                                     }
                                   }}
-                                  placeholder="None"
+                                  placeholder=""
                                   className={`w-20 px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
                                     editMode ? 'border-gray-300 bg-white' : 'border-transparent bg-transparent cursor-default'
                                   }`}
