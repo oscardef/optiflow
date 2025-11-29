@@ -55,10 +55,19 @@ def fetch_anchors_from_backend(api_url: str):
 def on_connect(client, userdata, flags, rc):
     """MQTT connection callback"""
     if rc == 0:
-        print("✅ Connected to MQTT broker")
+        print(f"✅ Connected to MQTT broker at {userdata['config'].mqtt.broker}")
         client.subscribe(userdata['config'].mqtt.topic_control)
+        userdata['mqtt_connected'] = True
     else:
         print(f"❌ Connection failed with code {rc}")
+        userdata['mqtt_connected'] = False
+
+
+def on_disconnect(client, userdata, rc):
+    """MQTT disconnection callback"""
+    userdata['mqtt_connected'] = False
+    if rc != 0:
+        print(f"⚠️  Lost connection to MQTT broker. Will attempt to reconnect...")
 
 
 def on_message(client, userdata, msg):
@@ -180,27 +189,73 @@ def main():
 
     
     # Setup MQTT client
-    userdata = {'running': True, 'config': config}
+    userdata = {'running': True, 'config': config, 'mqtt_connected': False}
     client = mqtt.Client(userdata=userdata)
     client.on_connect = on_connect
     client.on_message = on_message
+    client.on_disconnect = on_disconnect
+    
+    # Enable automatic reconnection
+    client.reconnect_delay_set(min_delay=1, max_delay=10)
+    
+    # Try to connect with retries
+    max_retries = 5
+    retry_delay = 2
+    connected = False
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"\n🔌 Connecting to MQTT broker at {config.mqtt.broker}:{config.mqtt.port}... (Attempt {attempt}/{max_retries})")
+            client.connect(config.mqtt.broker, config.mqtt.port, 60)
+            client.loop_start()
+            
+            # Wait a bit to see if connection succeeds
+            time.sleep(1)
+            
+            if userdata.get('mqtt_connected', False):
+                connected = True
+                break
+            else:
+                print(f"⚠️  Connection attempt {attempt} failed. Retrying in {retry_delay}s...")
+                client.loop_stop()
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+        except Exception as e:
+            print(f"❌ Connection error: {e}")
+            if attempt < max_retries:
+                print(f"   Retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+    
+    if not connected:
+        print("\n❌ ERROR: Could not connect to MQTT broker after multiple attempts.")
+        print(f"   Please check:")
+        print(f"   1. MQTT broker is running at {config.mqtt.broker}:{config.mqtt.port}")
+        print(f"   2. You are connected to the correct WiFi network")
+        print(f"   3. Firewall allows connection to port {config.mqtt.port}")
+        print(f"\n   For iPhone hotspot users: Make sure you're connected to the hotspot network\n")
+        return 1
+    
+    print("\n✅ Simulation started!")
+    print(f"   View live tracking: http://localhost:3000")
+    print(f"   MQTT will automatically reconnect if connection is lost")
+    print(f"   Press Ctrl+C to quit\n")
+    
+    last_time = time.time()
+    packet_count = 0
+    mqtt_warn_shown = False
     
     try:
-        print(f"\n🔌 Connecting to MQTT broker...")
-        client.connect(config.mqtt.broker, config.mqtt.port, 60)
-        client.loop_start()
-        
-        print("\n✅ Simulation started!")
-        print(f"   View live tracking: http://localhost:3000")
-        print(f"   Send STOP/START to control: mosquitto_pub -h {config.mqtt.broker} -t {config.mqtt.topic_control} -m 'STOP'")
-        print(f"   Press Ctrl+C to quit\n")
-        
-        last_time = time.time()
-        packet_count = 0
-        
         while True:
             current_time = time.time()
             dt = current_time - last_time
+            
+            # Check MQTT connection status
+            if not userdata.get('mqtt_connected', False) and not mqtt_warn_shown:
+                print("⚠️  MQTT disconnected. Waiting for reconnection...")
+                mqtt_warn_shown = True
+            elif userdata.get('mqtt_connected', False) and mqtt_warn_shown:
+                print("✅ MQTT reconnected successfully!")
+                mqtt_warn_shown = False
             
             if userdata['running']:
                 # Update shopper position
@@ -213,7 +268,7 @@ def main():
                 detections = scanner.get_rfid_detections(x, y)
                 uwb_measurements = scanner.measure_distances(x, y, anchor_macs)
                 
-                # Build MQTT packet
+                # Build MQTT packet (only send if connected)
                 packet = {
                     "timestamp": datetime.utcnow().isoformat() + "Z",
                     "detections": detections,

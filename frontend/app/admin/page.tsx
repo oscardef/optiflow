@@ -21,6 +21,11 @@ export default function AdminPanel() {
   const [productItems, setProductItems] = useState<Map<number, any[]>>(new Map());
   const [simSpeedMultiplier, setSimSpeedMultiplier] = useState<number>(1.0);
   const [simMode, setSimMode] = useState<string>('REALISTIC');
+  const [productSearch, setProductSearch] = useState<string>('');
+  const [productFilter, setProductFilter] = useState<string>('all');
+  const [productSort, setProductSort] = useState<string>('name');
+  const [connectionStatus, setConnectionStatus] = useState<any>(null);
+  const [checkingConnection, setCheckingConnection] = useState(false);
 
   // Fetch initial data
   useEffect(() => {
@@ -221,6 +226,21 @@ export default function AdminPanel() {
     }
   };
 
+  const checkConnectionStatus = async () => {
+    setCheckingConnection(true);
+    try {
+      const res = await fetch(`${API_URL}/simulation/connection-status`);
+      const data = await res.json();
+      setConnectionStatus(data);
+      return data;
+    } catch (error) {
+      console.error('Failed to check connection status:', error);
+      return null;
+    } finally {
+      setCheckingConnection(false);
+    }
+  };
+
   const saveAllChanges = async () => {
     if (changedProducts.size === 0) {
       showMessage('info', 'No changes to save');
@@ -299,7 +319,27 @@ export default function AdminPanel() {
 
   const startSimulation = async () => {
     setLoading(true);
+    
     try {
+      // Check connection status first
+      const status = await checkConnectionStatus();
+      
+      if (!status) {
+        showMessage('error', 'Failed to check connection status');
+        setLoading(false);
+        return;
+      }
+      
+      // Check MQTT connection
+      if (!status.mqtt_connected) {
+        const errorMsg = status.mqtt_error || `Cannot connect to MQTT broker at ${status.mqtt_broker}`;
+        const wifiInfo = status.wifi_ssid ? ` (Currently on WiFi: ${status.wifi_ssid})` : '';
+        showMessage('error', `MQTT Connection Failed: ${errorMsg}${wifiInfo}. Make sure you're connected to the correct network (e.g., 'Oscar' hotspot) and the MQTT broker is running.`);
+        setLoading(false);
+        return;
+      }
+      
+      // All checks passed, start simulation
       const res = await fetch(`${API_URL}/simulation/start`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -567,10 +607,10 @@ export default function AdminPanel() {
                     <div className="flex items-center gap-3 mb-4">
                       <button
                         onClick={startSimulation}
-                        disabled={simulationStatus?.running || loading}
+                        disabled={simulationStatus?.running || loading || checkingConnection}
                         className="px-6 py-2.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                       >
-                        Start Simulation
+                        {checkingConnection ? 'Checking Connection...' : 'Start Simulation'}
                       </button>
                       <button
                         onClick={stopSimulation}
@@ -578,6 +618,13 @@ export default function AdminPanel() {
                         className="px-6 py-2.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                       >
                         Stop Simulation
+                      </button>
+                      <button
+                        onClick={checkConnectionStatus}
+                        disabled={loading || checkingConnection}
+                        className="px-6 py-2.5 text-sm font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Test Connection
                       </button>
                       {simulationStatus?.running && (
                         <div className="flex items-center gap-2 ml-4">
@@ -590,10 +637,48 @@ export default function AdminPanel() {
                       )}
                     </div>
 
+                    {connectionStatus && (
+                      <div className={`mb-4 p-4 rounded-lg border ${
+                        connectionStatus.mqtt_connected
+                          ? 'bg-green-50 border-green-200'
+                          : 'bg-red-50 border-red-200'
+                      }`}>
+                        <h4 className="text-sm font-semibold mb-2">Connection Status</h4>
+                        <div className="space-y-1 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${connectionStatus.mqtt_connected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                            <span className="font-medium">MQTT Broker:</span>
+                            <span className="text-gray-700">{connectionStatus.mqtt_broker}</span>
+                            <span className={connectionStatus.mqtt_connected ? 'text-green-600' : 'text-red-600'}>
+                              {connectionStatus.mqtt_connected ? '✓ Connected' : '✗ Disconnected'}
+                            </span>
+                          </div>
+                          {connectionStatus.mqtt_error && (
+                            <div className="text-red-600 text-xs ml-4">{connectionStatus.mqtt_error}</div>
+                          )}
+                          {connectionStatus.wifi_ssid && (
+                            <div className="flex items-center gap-2 text-gray-600">
+                              <span className="w-2 h-2 rounded-full bg-gray-400"></span>
+                              <span className="font-medium">WiFi Network:</span>
+                              <span className="text-gray-700">{connectionStatus.wifi_ssid}</span>
+                              <span className="text-xs text-gray-500">(Info only)</span>
+                            </div>
+                          )}
+                          {!connectionStatus.mqtt_connected && (
+                            <div className="text-xs text-gray-600 ml-4 mt-2 bg-white p-2 rounded border border-gray-200">
+                              💡 Tip: The MQTT broker at {connectionStatus.mqtt_broker} requires connection to a specific network (e.g., 'Oscar' hotspot). 
+                              Make sure you're connected to the correct WiFi network.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                       <p className="text-sm text-gray-600 leading-relaxed">
                         <strong>Note:</strong> Simulation parameters can only be changed when the simulation is stopped. 
                         The simulation generates synthetic RFID and UWB data to test the system without physical hardware.
+                        Connection checks are performed automatically when starting the simulation.
                       </p>
                     </div>
                   </div>
@@ -683,7 +768,7 @@ export default function AdminPanel() {
                   <button
                     onClick={() => editMode ? saveAllChanges() : setEditMode(true)}
                     disabled={loading}
-                    className={`px-6 py-2 text-white rounded-lg transition-colors ${
+                    className={`px-6 py-2 text-sm font-medium text-white rounded-lg transition-colors ${
                       editMode 
                         ? 'bg-green-600 hover:bg-green-700' 
                         : 'bg-[#0055A4] hover:bg-[#003d7a]'
@@ -692,11 +777,59 @@ export default function AdminPanel() {
                     {editMode ? `Save Changes ${changedProducts.size > 0 ? `(${changedProducts.size})` : ''}` : 'Edit Products'}
                   </button>
                 </div>
+
+                {/* Search, Filter, Sort Controls */}
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Search</label>
+                    <input
+                      type="text"
+                      value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      placeholder="Search by name, SKU, or category..."
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Filter</label>
+                    <select
+                      value={productFilter}
+                      onChange={(e) => setProductFilter(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent"
+                    >
+                      <option value="all">All Products</option>
+                      <option value="in-stock">In Stock</option>
+                      <option value="low-stock">Low Stock (Below Restock)</option>
+                      <option value="out-of-stock">Out of Stock</option>
+                      <option value="has-restock">Has Restock Threshold</option>
+                      <option value="no-restock">No Restock Threshold</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Sort By</label>
+                    <select
+                      value={productSort}
+                      onChange={(e) => setProductSort(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent"
+                    >
+                      <option value="name">Name (A-Z)</option>
+                      <option value="name-desc">Name (Z-A)</option>
+                      <option value="sku">SKU (A-Z)</option>
+                      <option value="sku-desc">SKU (Z-A)</option>
+                      <option value="category">Category</option>
+                      <option value="stock-low">Stock (Low to High)</option>
+                      <option value="stock-high">Stock (High to Low)</option>
+                      <option value="price-low">Price (Low to High)</option>
+                      <option value="price-high">Price (High to Low)</option>
+                    </select>
+                  </div>
+                </div>
+
                 <p className="text-sm text-gray-600 mb-4">
                   Click ▶ to expand and view individual RFID-tagged items (EPCs) for each product. 
                   Stock counts are calculated from the number of unique EPCs.
                 </p>
-                <div className="overflow-auto max-h-[600px] border border-gray-200 rounded-lg">
+                <div className="overflow-auto max-h-[calc(110vh-500px)] border border-gray-200 rounded-lg mb-6">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50 sticky top-0">
                       <tr>
@@ -706,13 +839,65 @@ export default function AdminPanel() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Present</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price ($)</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price (CHF)</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Restock At</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Optimal Level</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {products.map((product) => {
+                      {products
+                        .filter(product => {
+                          // Search filter
+                          if (productSearch) {
+                            const search = productSearch.toLowerCase();
+                            const matchesSearch = 
+                              product.name.toLowerCase().includes(search) ||
+                              product.sku.toLowerCase().includes(search) ||
+                              product.category.toLowerCase().includes(search);
+                            if (!matchesSearch) return false;
+                          }
+                          
+                          // Category filter
+                          if (productFilter === 'in-stock') {
+                            return (product.current_stock || 0) > 0;
+                          } else if (productFilter === 'low-stock') {
+                            return product.reorder_threshold !== null && 
+                                   (product.current_stock || 0) < product.reorder_threshold;
+                          } else if (productFilter === 'out-of-stock') {
+                            return (product.current_stock || 0) === 0;
+                          } else if (productFilter === 'has-restock') {
+                            return product.reorder_threshold !== null;
+                          } else if (productFilter === 'no-restock') {
+                            return product.reorder_threshold === null;
+                          }
+                          
+                          return true;
+                        })
+                        .sort((a, b) => {
+                          switch (productSort) {
+                            case 'name':
+                              return a.name.localeCompare(b.name);
+                            case 'name-desc':
+                              return b.name.localeCompare(a.name);
+                            case 'sku':
+                              return a.sku.localeCompare(b.sku);
+                            case 'sku-desc':
+                              return b.sku.localeCompare(a.sku);
+                            case 'category':
+                              return a.category.localeCompare(b.category);
+                            case 'stock-low':
+                              return (a.current_stock || 0) - (b.current_stock || 0);
+                            case 'stock-high':
+                              return (b.current_stock || 0) - (a.current_stock || 0);
+                            case 'price-low':
+                              return (a.unit_price || 0) - (b.unit_price || 0);
+                            case 'price-high':
+                              return (b.unit_price || 0) - (a.unit_price || 0);
+                            default:
+                              return 0;
+                          }
+                        })
+                        .map((product) => {
                         const isExpanded = expandedProducts.has(product.id);
                         const items = productItems.get(product.id) || [];
                         

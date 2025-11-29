@@ -6,6 +6,7 @@ import subprocess
 import signal
 import os
 import sys
+import socket
 from pathlib import Path
 from datetime import datetime
 
@@ -27,6 +28,70 @@ class SimulationParams(BaseModel):
     speed_multiplier: Optional[float] = 1.0
     mode: Optional[str] = "DEMO"  # DEMO, REALISTIC, STRESS
     api_url: Optional[str] = None
+
+class ConnectionStatus(BaseModel):
+    mqtt_connected: bool
+    mqtt_broker: str
+    mqtt_error: Optional[str] = None
+    wifi_ssid: Optional[str] = None
+    required_wifi_ssid: Optional[str] = None
+    wifi_connected: bool
+    wifi_warning: Optional[str] = None
+
+def check_mqtt_connection(broker: str, port: int, timeout: int = 3) -> tuple[bool, Optional[str]]:
+    """Check if MQTT broker is reachable"""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((broker, port))
+        sock.close()
+        if result == 0:
+            return True, None
+        else:
+            return False, f"Cannot connect to MQTT broker at {broker}:{port}"
+    except socket.gaierror:
+        return False, f"Cannot resolve MQTT broker hostname: {broker}"
+    except Exception as e:
+        return False, f"MQTT connection error: {str(e)}"
+
+def get_wifi_ssid() -> Optional[str]:
+    """Get current WiFi SSID (macOS specific)"""
+    try:
+        result = subprocess.run(
+            ["/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport", "-I"],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        for line in result.stdout.split('\n'):
+            if ' SSID:' in line:
+                return line.split('SSID:')[1].strip()
+    except Exception as e:
+        logger.warning(f"Could not get WiFi SSID: {e}")
+    return None
+
+@router.get("/connection-status", response_model=ConnectionStatus)
+def get_connection_status():
+    """Check MQTT connectivity status"""
+    # Get MQTT broker from config (default from simulation config)
+    mqtt_broker = os.getenv("MQTT_BROKER", "172.20.10.3")
+    mqtt_port = int(os.getenv("MQTT_PORT", "1883"))
+    
+    # Check MQTT connection
+    mqtt_connected, mqtt_error = check_mqtt_connection(mqtt_broker, mqtt_port)
+    
+    # Optionally get WiFi info for informational purposes
+    current_ssid = get_wifi_ssid()
+    
+    return {
+        "mqtt_connected": mqtt_connected,
+        "mqtt_broker": mqtt_broker,
+        "mqtt_error": mqtt_error,
+        "wifi_ssid": current_ssid,
+        "required_wifi_ssid": None,
+        "wifi_connected": True,  # Don't block based on WiFi
+        "wifi_warning": None
+    }
 
 def stop_simulation_process():
     """Stop the running simulation process"""
