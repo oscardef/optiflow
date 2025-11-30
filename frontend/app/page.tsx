@@ -348,6 +348,12 @@ export default function Home() {
               {!setupMode && (
                 <>
                   <a
+                    href="/analytics"
+                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors"
+                  >
+                    Analytics
+                  </a>
+                  <a
                     href="/admin"
                     className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors"
                   >

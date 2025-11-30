@@ -287,3 +287,45 @@ class Configuration(Base):
             "store_height": self.store_height,
             "updated_at": self.updated_at.isoformat()
         }
+
+class StockSnapshot(Base):
+    """Periodic snapshots of stock levels for time-series analytics"""
+    __tablename__ = "stock_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    present_count = Column(Integer, default=0)
+    missing_count = Column(Integer, default=0)
+    zone_id = Column(Integer, ForeignKey("zones.id", ondelete="SET NULL"), index=True)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "product_id": self.product_id,
+            "timestamp": self.timestamp.isoformat(),
+            "present_count": self.present_count,
+            "missing_count": self.missing_count,
+            "zone_id": self.zone_id
+        }
+
+class StockMovement(Base):
+    """Track individual stock movements for detailed analytics"""
+    __tablename__ = "stock_movements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    movement_type = Column(String(20), nullable=False, index=True)  # sale, restock, loss, adjustment
+    quantity = Column(Integer, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    notes = Column(Text, nullable=True)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "product_id": self.product_id,
+            "movement_type": self.movement_type,
+            "quantity": self.quantity,
+            "timestamp": self.timestamp.isoformat(),
+            "notes": self.notes
+        }

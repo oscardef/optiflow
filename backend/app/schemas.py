@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 class UWBMeasurementInput(BaseModel):
@@ -107,3 +107,84 @@ class ProductResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# Analytics schemas
+class AnalyticsOverviewResponse(BaseModel):
+    total_products: int
+    total_stock_value: float
+    items_needing_restock: int
+    sales_today: int
+    sales_last_7_days: int
+    sales_last_30_days: int
+    low_stock_products: List[Dict]
+    timestamp: str
+
+class ProductVelocityResponse(BaseModel):
+    product_id: int
+    sku: str
+    name: str
+    category: str
+    current_stock: int
+    sales_7_days: int
+    sales_30_days: int
+    velocity_daily: float
+    turnover_rate: float
+    days_until_stockout: Optional[float]
+    abc_class: Optional[str] = None
+
+class CategoryPerformanceResponse(BaseModel):
+    category: str
+    product_count: int
+    total_stock: int
+    sales_30_days: int
+    total_revenue: float
+    avg_velocity: float
+
+class StockTrendPoint(BaseModel):
+    timestamp: str
+    present_count: int
+    missing_count: int
+
+class ProductStockTrendResponse(BaseModel):
+    product_id: int
+    sku: str
+    name: str
+    data_points: List[StockTrendPoint]
+
+class AIClusterResponse(BaseModel):
+    cluster_id: int
+    size: int
+    avg_velocity: float
+    avg_stock: float
+    products: List[Dict]
+
+class DemandForecastResponse(BaseModel):
+    product_id: int
+    forecast: List[float]
+    average_daily_sales: float
+    confidence: str
+    historical_variance: float
+
+class AnomalyResponse(BaseModel):
+    product_id: int
+    sku: str
+    name: str
+    anomaly_type: str
+    severity: str
+    z_score: float
+    recent_sales: int
+    expected_sales: float
+    detected_at: str
+
+class ProductAffinityResponse(BaseModel):
+    product1_id: int
+    product1_name: str
+    product2_id: int
+    product2_name: str
+    frequency: int
+    support: float
+    confidence: float
+
+class ABCAnalysisResponse(BaseModel):
+    classification: str
+    products: List[Dict]
