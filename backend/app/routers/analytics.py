@@ -1,10 +1,15 @@
 """Analytics and heatmap router"""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
 from collections import defaultdict
 from statistics import mean
+from pydantic import BaseModel
+import subprocess
+import sys
+from pathlib import Path
+from typing import Optional
 
 from ..database import get_db
 from ..models import (
@@ -13,7 +18,14 @@ from ..models import (
 )
 from ..core import logger
 
-router = APIRouter(prefix="/analytics", tags=["analytics"])
+router = APIRouter(
+    prefix="/analytics",
+    tags=["Analytics"],
+    responses={
+        404: {"description": "Resource not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 
 @router.get("/stock-heatmap")
 def get_stock_heatmap(db: Session = Depends(get_db)):
@@ -150,7 +162,50 @@ def get_purchase_heatmap(hours: int = 24, db: Session = Depends(get_db)):
         for zone, count in results
     ]
 
-@router.get("/overview")
+@router.get(
+    "/overview",
+    summary="Get Analytics Overview",
+    description="""
+    Retrieve high-level analytics metrics including:
+    - Total products and stock value
+    - Items needing restock
+    - Sales statistics (today, 7 days, 30 days)
+    - Low stock products prioritized by urgency
+    
+    **Use Case**: Dashboard summary, executive reporting
+    
+    **Update Frequency**: Real-time (query on-demand)
+    """,
+    response_description="Analytics overview with key performance metrics",
+    responses={
+        200: {
+            "description": "Successful response",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "total_products": 133,
+                        "total_stock_value": 45280.50,
+                        "items_needing_restock": 12,
+                        "sales_today": 8,
+                        "sales_last_7_days": 118,
+                        "sales_last_30_days": 1153,
+                        "low_stock_products": [
+                            {
+                                "product_id": 42,
+                                "sku": "FOT-015",
+                                "name": "Tennis Shoes - Size 10",
+                                "current_stock": 2,
+                                "reorder_threshold": 5,
+                                "priority_score": 0.85
+                            }
+                        ],
+                        "timestamp": "2025-11-30T10:30:00.000Z"
+                    }
+                }
+            }
+        }
+    }
+)
 def get_analytics_overview(db: Session = Depends(get_db)):
     """
     Get high-level analytics overview with key metrics
@@ -217,7 +272,44 @@ def get_analytics_overview(db: Session = Depends(get_db)):
         'timestamp': datetime.utcnow().isoformat()
     }
 
-@router.get("/product-velocity")
+@router.get(
+    "/product-velocity",
+    summary="Get Product Velocity",
+    description="""
+    Calculate product movement velocity and turnover rates.
+    
+    **Metrics Calculated**:
+    - `velocity_daily`: Average items sold per day
+    - `total_sold`: Total items sold in period
+    - `days_active`: Number of days with sales data
+    
+    **Use Case**: Identify fast/slow-moving products, inventory planning
+    
+    **Parameters**:
+    - `days`: Analysis period (default: 7 days)
+    """,
+    response_description="List of products with velocity metrics",
+    responses={
+        200: {
+            "description": "Successful response",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "product_id": 15,
+                            "sku": "SPT-003",
+                            "name": "Tennis Ball",
+                            "category": "Sports",
+                            "velocity_daily": 2.5,
+                            "total_sold": 18,
+                            "days_active": 7
+                        }
+                    ]
+                }
+            }
+        }
+    }
+)
 def get_product_velocity(days: int = 7, db: Session = Depends(get_db)):
     """
     Calculate product velocity (turnover rate) for all products
@@ -423,7 +515,28 @@ def get_stock_trends(product_id: int, days: int = 7, db: Session = Depends(get_d
         ]
     }
 
-@router.get("/ai/clusters")
+@router.get(
+    "/ai/clusters",
+    summary="AI Product Clustering",
+    description="""
+    K-means clustering analysis to group products by similarity.
+    
+    **Algorithm**: K-means clustering with scikit-learn
+    
+    **Features Used**:
+    - Sales velocity (normalized)
+    - Current stock level (normalized)
+    - Category encoding
+    
+    **Output**: Products grouped into N clusters with centroids
+    
+    **Use Case**: Inventory segmentation, merchandising strategy
+    
+    **Parameters**:
+    - `n_clusters`: Number of clusters (default: 4)
+    """,
+    response_description="Product clusters with centroids and member products"
+)
 def get_ai_clusters(n_clusters: int = 4, db: Session = Depends(get_db)):
     """
     Get AI-powered product clustering analysis
@@ -440,7 +553,19 @@ def get_ai_clusters(n_clusters: int = 4, db: Session = Depends(get_db)):
         'timestamp': datetime.utcnow().isoformat()
     }
 
-@router.get("/ai/forecast/{product_id}")
+@router.get(
+    "/ai/forecast/{product_id}",
+    summary="AI Demand Forecasting",
+    description="""
+    Predict future demand using exponential smoothing.
+    
+    **Algorithm**: Exponential smoothing time-series forecasting
+    **Input**: Historical stock snapshots (30+ days recommended)
+    **Output**: Predicted stock levels for next N days
+    **Use Case**: Inventory planning, reorder optimization
+    """,
+    response_description="Demand forecast with predicted values"
+)
 def get_demand_forecast(product_id: int, days_ahead: int = 7, db: Session = Depends(get_db)):
     """
     Get AI-powered demand forecast for a specific product
@@ -453,7 +578,19 @@ def get_demand_forecast(product_id: int, days_ahead: int = 7, db: Session = Depe
     
     return forecast
 
-@router.get("/ai/anomalies")
+@router.get(
+    "/ai/anomalies",
+    summary="AI Anomaly Detection",
+    description="""
+    Detect unusual stock patterns using Z-score analysis.
+    
+    **Algorithm**: Statistical Z-score anomaly detection
+    **Threshold**: |Z-score| > 2.0 (>95% confidence)
+    **Detects**: Unexpectedly high/low stock, outliers
+    **Use Case**: Identify inventory issues, theft detection, data quality
+    """,
+    response_description="List of products with anomalous stock levels"
+)
 def get_anomaly_detection(lookback_days: int = 7, db: Session = Depends(get_db)):
     """
     Detect unusual stock movements and sales patterns using Z-score analysis
@@ -541,7 +678,44 @@ def get_slow_movers(velocity_threshold: float = 0.1, days: int = 30, db: Session
     
     return sorted(slow_movers, key=lambda x: x['current_stock'], reverse=True)
 
-@router.post("/bulk/purchases")
+@router.post(
+    "/bulk/purchases",
+    summary="Bulk Insert Purchase Events",
+    description="""
+    Insert multiple purchase events for historical data backfill or batch processing.
+    
+    **Expected Format**:
+    ```json
+    [
+        {
+            "product_id": 42,
+            "purchased_at": "2025-11-29T15:30:00Z"
+        }
+    ]
+    ```
+    
+    **Notes**:
+    - Creates dummy InventoryItem records automatically
+    - Zone fields (zone_id, x_position, y_position) are optional
+    - Processes in batches for efficiency
+    
+    **Use Case**: Historical data generation, testing, migration
+    """,
+    response_description="Status of bulk insert operation",
+    responses={
+        200: {
+            "description": "Successful bulk insert",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "inserted": 500
+                    }
+                }
+            }
+        }
+    }
+)
 def bulk_insert_purchases(purchases: list[dict], db: Session = Depends(get_db)):
     """
     Bulk insert historical purchase events for analytics backfill
@@ -585,7 +759,46 @@ def bulk_insert_purchases(purchases: list[dict], db: Session = Depends(get_db)):
         logger.error(f"Error bulk inserting purchases: {e}")
         return {"status": "error", "message": str(e)}
 
-@router.post("/bulk/snapshots")
+@router.post(
+    "/bulk/snapshots",
+    summary="Bulk Insert Stock Snapshots",
+    description="""
+    Insert multiple stock snapshots for time-series analytics.
+    
+    **Expected Format**:
+    ```json
+    [
+        {
+            "product_id": 42,
+            "timestamp": "2025-11-29T12:00:00Z",
+            "present_count": 15,
+            "missing_count": 2
+        }
+    ]
+    ```
+    
+    **Notes**:
+    - Processes in batches of 1000 for efficiency
+    - Zone_id is optional (for zone-specific snapshots)
+    - Timestamps should be in ISO 8601 format
+    
+    **Use Case**: Historical data generation, periodic backups
+    """,
+    response_description="Status of bulk insert operation",
+    responses={
+        200: {
+            "description": "Successful bulk insert",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "inserted": 7448
+                    }
+                }
+            }
+        }
+    }
+)
 def bulk_insert_snapshots(snapshots: list[dict], db: Session = Depends(get_db)):
     """
     Bulk insert historical stock snapshots for analytics backfill
@@ -619,3 +832,174 @@ def bulk_insert_snapshots(snapshots: list[dict], db: Session = Depends(get_db)):
         db.rollback()
         logger.error(f"Error bulk inserting snapshots: {e}")
         return {"status": "error", "message": str(e)}
+
+
+class BackfillParams(BaseModel):
+    density: Optional[str] = "normal"  # sparse, normal, dense, extreme
+    days: Optional[int] = 30
+
+_backfill_process: Optional[subprocess.Popen] = None
+_backfill_status = {"running": False, "message": "", "records": 0}
+
+@router.post(
+    "/backfill",
+    summary="Generate historical analytics data",
+    description="Triggers the backfill script to generate historical purchase events and stock snapshots. Uses fast-forward mode for instant data generation.",
+    response_description="Status of backfill operation"
+)
+def trigger_backfill(params: BackfillParams, background_tasks: BackgroundTasks):
+    """
+    Trigger historical data generation (backfill) for analytics
+    
+    This endpoint runs the backfill_history.py script to generate historical
+    purchase events and stock snapshots. The data is generated instantly using
+    the fast-forward mode with configurable density presets.
+    
+    Parameters:
+    - density: Data density (sparse/normal/dense/extreme) - affects frequency of events
+    - days: Number of historical days to generate (default 30)
+    
+    Returns status information about the backfill operation.
+    """
+    global _backfill_process, _backfill_status
+    
+    # Check if already running
+    if _backfill_status["running"]:
+        return {
+            "status": "running",
+            "message": _backfill_status["message"],
+            "records": _backfill_status["records"]
+        }
+    
+    # Validate density
+    valid_densities = ["sparse", "normal", "dense", "extreme"]
+    if params.density not in valid_densities:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid density. Must be one of: {', '.join(valid_densities)}"
+        )
+    
+    # Find simulation directory
+    backend_dir = Path(__file__).parent.parent.parent.parent
+    simulation_dir = backend_dir / "simulation"
+    
+    if not simulation_dir.exists():
+        # Try container path
+        simulation_dir = Path("/simulation")
+        if not simulation_dir.exists():
+            raise HTTPException(
+                status_code=500,
+                detail=f"Simulation directory not found. Checked: {backend_dir / 'simulation'} and /simulation"
+            )
+    
+    backfill_script = simulation_dir / "backfill_history.py"
+    if not backfill_script.exists():
+        raise HTTPException(
+            status_code=500,
+            detail=f"Backfill script not found at {backfill_script}"
+        )
+    
+    # Build command
+    cmd = [
+        sys.executable,
+        str(backfill_script),
+        "--days", str(params.days),
+        "--density", params.density
+    ]
+    
+    try:
+        # Reset status
+        _backfill_status = {
+            "running": True,
+            "message": f"Generating {params.days} days of {params.density} density data...",
+            "records": 0
+        }
+        
+        # Run backfill script synchronously (it's fast with fast-forward mode)
+        result = subprocess.run(
+            cmd,
+            cwd=str(simulation_dir.parent),
+            capture_output=True,
+            text=True,
+            timeout=120  # 2 minute timeout
+        )
+        
+        if result.returncode == 0:
+            # Parse output for record counts
+            output = result.stdout
+            records = 0
+            if "Generated" in output:
+                # Try to extract record count from output
+                for line in output.split('\n'):
+                    if "purchase events" in line.lower() or "snapshots" in line.lower():
+                        try:
+                            records += int(''.join(filter(str.isdigit, line.split()[0])))
+                        except:
+                            pass
+            
+            _backfill_status = {
+                "running": False,
+                "message": f"Successfully generated {params.days} days of data",
+                "records": records
+            }
+            
+            logger.info(f"Backfill completed: {params.days} days, {params.density} density")
+            return {
+                "status": "success",
+                "message": _backfill_status["message"],
+                "records": records,
+                "density": params.density,
+                "days": params.days
+            }
+        else:
+            _backfill_status = {
+                "running": False,
+                "message": f"Backfill failed: {result.stderr}",
+                "records": 0
+            }
+            logger.error(f"Backfill failed: {result.stderr}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Backfill script failed: {result.stderr}"
+            )
+    
+    except subprocess.TimeoutExpired:
+        _backfill_status = {
+            "running": False,
+            "message": "Backfill timed out after 2 minutes",
+            "records": 0
+        }
+        raise HTTPException(
+            status_code=500,
+            detail="Backfill operation timed out"
+        )
+    except Exception as e:
+        _backfill_status = {
+            "running": False,
+            "message": f"Error: {str(e)}",
+            "records": 0
+        }
+        logger.error(f"Backfill error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to run backfill: {str(e)}"
+        )
+
+@router.get(
+    "/backfill/status",
+    summary="Get backfill operation status",
+    description="Check the current status of any running backfill operation",
+    response_description="Current backfill status including progress"
+)
+def get_backfill_status():
+    """
+    Get the current status of backfill operation
+    
+    Returns information about whether a backfill is currently running,
+    and the results of the last backfill operation.
+    """
+    return {
+        "running": _backfill_status["running"],
+        "message": _backfill_status["message"],
+        "records": _backfill_status["records"]
+    }

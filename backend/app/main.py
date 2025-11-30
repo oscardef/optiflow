@@ -21,7 +21,44 @@ from .routers import (
     items_router
 )
 
-app = FastAPI(title="OptiFlow API", version="1.0.0")
+app = FastAPI(
+    title="OptiFlow API",
+    version="1.0.0",
+    description="""
+# OptiFlow Real-Time Inventory Tracking System
+
+A comprehensive UWB-based inventory tracking system with real-time analytics.
+
+## Features
+
+- **Real-time Position Tracking**: UWB triangulation for precise 2D positioning
+- **RFID Item Detection**: Track item presence/absence in real-time
+- **Analytics Dashboard**: Product velocity, trends, and AI-powered insights
+- **Historical Data**: Time-series analytics with purchase events and stock snapshots
+
+## Quick Start
+
+1. Configure anchors via `/anchors` endpoint
+2. Start simulation or connect hardware
+3. View live data at `/positions` and `/items`
+4. Access analytics at `/analytics/*` endpoints
+
+## Analytics Endpoints
+
+The analytics API provides:
+- **Overview metrics** (sales, stock value, low stock alerts)
+- **Product performance** (velocity, turnover, top products)
+- **AI insights** (clustering, forecasting, anomaly detection)
+- **Historical data** (bulk upload for testing/backfill)
+    """,
+    contact={
+        "name": "OptiFlow Team",
+        "url": "https://github.com/oscardef/optiflow"
+    },
+    license_info={
+        "name": "MIT"
+    }
+)
 
 # CORS middleware to allow frontend requests
 app.add_middleware(

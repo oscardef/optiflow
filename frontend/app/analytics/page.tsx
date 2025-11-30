@@ -12,11 +12,17 @@ import AnomalyAlerts from '../components/AnomalyAlerts';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-type TabType = 'overview' | 'products' | 'ai-insights';
+interface BackfillStatus {
+  running: boolean;
+  message: string;
+  records: number;
+}
+
+type TabType = 'kpis' | 'overview' | 'products' | 'ai-insights';
 
 export default function AnalyticsPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeTab, setActiveTab] = useState<TabType>('kpis');
   const [loading, setLoading] = useState(true);
   const [analyticsOverview, setAnalyticsOverview] = useState<any>(null);
   const [productVelocity, setProductVelocity] = useState<any[]>([]);
@@ -26,6 +32,13 @@ export default function AnalyticsPage() {
   const [anomalies, setAnomalies] = useState<any>(null);
   const [selectedProductForForecast, setSelectedProductForForecast] = useState<number | null>(null);
   const [demandForecast, setDemandForecast] = useState<any>(null);
+
+  // Backfill controls
+  const [showBackfill, setShowBackfill] = useState(false);
+  const [backfillDensity, setBackfillDensity] = useState('normal');
+  const [backfillDays, setBackfillDays] = useState(30);
+  const [backfillStatus, setBackfillStatus] = useState<BackfillStatus | null>(null);
+  const [isBackfilling, setIsBackfilling] = useState(false);
 
   const fetchAnalyticsData = async () => {
     try {
@@ -71,9 +84,42 @@ export default function AnalyticsPage() {
     }
   };
 
+  const triggerBackfill = async () => {
+    setIsBackfilling(true);
+    try {
+      const response = await fetch(`${API_URL}/analytics/backfill`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          density: backfillDensity,
+          days: backfillDays
+        })
+      });
+      
+      const result = await response.json();
+      setBackfillStatus(result);
+      
+      if (result.status === 'success') {
+        // Refresh analytics data after backfill
+        setTimeout(() => {
+          fetchAnalyticsData();
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('Error triggering backfill:', error);
+      setBackfillStatus({
+        running: false,
+        message: 'Failed to trigger backfill',
+        records: 0
+      });
+    } finally {
+      setIsBackfilling(false);
+    }
+  };
+
   useEffect(() => {
     fetchAnalyticsData();
-    const interval = setInterval(fetchAnalyticsData, 30000); // Refresh every 30s
+    const interval = setInterval(fetchAnalyticsData, 5000); // Refresh every 5s
     return () => clearInterval(interval);
   }, []);
 
@@ -100,18 +146,78 @@ export default function AnalyticsPage() {
             <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
             <p className="text-gray-600 mt-1">AI-powered insights and performance metrics</p>
           </div>
-          <button
-            onClick={() => router.push('/')}
-            className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors flex items-center gap-2"
-          >
-            ← Back to Dashboard
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowBackfill(!showBackfill)}
+              className="px-4 py-2 text-sm font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] rounded-lg transition-colors"
+            >
+              {showBackfill ? 'Hide' : 'Generate Data'}
+            </button>
+            <button
+              onClick={() => router.push('/')}
+              className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors flex items-center gap-2"
+            >
+              ← Back to Dashboard
+            </button>
+          </div>
         </div>
 
-        {/* Overview KPIs */}
-        <div className="max-w-7xl mx-auto">
-          <AnalyticsOverview data={analyticsOverview} />
-        </div>
+        {/* Backfill Controls */}
+        {showBackfill && (
+          <div className="max-w-7xl mx-auto mb-4 bg-white rounded-lg shadow p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Generate Historical Data</h3>
+            <div className="grid grid-cols-4 gap-4 items-end">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Density
+                </label>
+                <select
+                  value={backfillDensity}
+                  onChange={(e) => setBackfillDensity(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
+                  disabled={isBackfilling}
+                >
+                  <option value="sparse">Sparse (few events)</option>
+                  <option value="normal">Normal</option>
+                  <option value="dense">Dense</option>
+                  <option value="extreme">Extreme (max events)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Days
+                </label>
+                <input
+                  type="number"
+                  value={backfillDays}
+                  onChange={(e) => setBackfillDays(parseInt(e.target.value) || 30)}
+                  min="1"
+                  max="365"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
+                  disabled={isBackfilling}
+                />
+              </div>
+              <div>
+                <button
+                  onClick={triggerBackfill}
+                  disabled={isBackfilling}
+                  className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 rounded-lg transition-colors"
+                >
+                  {isBackfilling ? 'Generating...' : 'Generate'}
+                </button>
+              </div>
+              <div>
+                {backfillStatus && (
+                  <div className={`text-sm ${backfillStatus.running ? 'text-blue-600' : backfillStatus.records > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {backfillStatus.message}
+                    {backfillStatus.records > 0 && ` (${backfillStatus.records} records)`}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Main Content Area with Tabs */}
@@ -122,6 +228,7 @@ export default function AnalyticsPage() {
             <div className="flex-shrink-0 border-b border-gray-200">
               <nav className="flex -mb-px">
                 {[
+                  { id: 'kpis', label: 'KPIs' },
                   { id: 'overview', label: 'Performance' },
                   { id: 'products', label: 'Products' },
                   { id: 'ai-insights', label: 'AI Insights' },
@@ -143,6 +250,13 @@ export default function AnalyticsPage() {
 
             {/* Tab Content */}
             <div className="flex-1 p-6 overflow-auto">
+              {/* KPIs Tab */}
+              {activeTab === 'kpis' && (
+                <div className="h-full">
+                  <AnalyticsOverview data={analyticsOverview} />
+                </div>
+              )}
+
               {/* Performance Overview Tab */}
               {activeTab === 'overview' && (
                 <div className="h-full grid grid-cols-2 gap-6">

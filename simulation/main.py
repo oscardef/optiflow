@@ -20,6 +20,7 @@ from .config import SimulationConfig, SimulationMode
 from .inventory import InventoryGenerator, PRODUCT_CATALOG
 from .shopper import ShopperSimulator
 from .scanner import ScannerSimulator
+from .analytics_tracker import AnalyticsTracker
 
 
 def fetch_anchors_from_backend(api_url: str):
@@ -135,6 +136,10 @@ def main():
                        help="Update interval in seconds")
     parser.add_argument("--disappearance", type=float, default=0.015, 
                        help="Item disappearance rate (default: 0.015 = 1.5%%)")
+    parser.add_argument("--analytics", action="store_true", 
+                       help="Enable real-time analytics tracking")
+    parser.add_argument("--snapshot-interval", type=int, default=3600, 
+                       help="Seconds between snapshots (default: 3600 = 1 hour)")
     
     args = parser.parse_args()
     
@@ -190,7 +195,12 @@ def main():
     shopper = ShopperSimulator(config, items)
     scanner = ScannerSimulator(config, items, anchor_positions)
     
-
+    # Initialize analytics tracker if enabled
+    analytics_tracker = None
+    if args.analytics:
+        print("\n📊 Enabling real-time analytics tracking...")
+        analytics_tracker = AnalyticsTracker(config.api_url, items, args.snapshot_interval)
+        analytics_tracker.start()
     
     # Setup MQTT client
     userdata = {'running': True, 'config': config, 'mqtt_connected': False}
@@ -314,6 +324,10 @@ def main():
         traceback.print_exc()
         return 1
     finally:
+        # Stop analytics tracker if running
+        if analytics_tracker:
+            analytics_tracker.stop()
+        
         client.loop_stop()
         client.disconnect()
         print("👋 Disconnected\n")

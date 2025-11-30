@@ -5,12 +5,45 @@ Run: python -m simulation.backfill_history --days 30 --api http://localhost:8000
 """
 import argparse
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import requests
 from typing import List, Dict
 
 # Match the simulation's product catalog structure
 CATEGORIES = ['Sports', 'Footwear', 'Fitness', 'Accessories']
+
+# Density presets for fast-forward mode
+DENSITY_PRESETS = {
+    'sparse': {
+        'daily_purchases': 20,
+        'snapshot_interval': 6,  # Every 6 hours
+        'description': 'Low traffic - 20 purchases/day, 4 snapshots/day'
+    },
+    'normal': {
+        'daily_purchases': 50,
+        'snapshot_interval': 3,  # Every 3 hours
+        'description': 'Normal traffic - 50 purchases/day, 8 snapshots/day'
+    },
+    'dense': {
+        'daily_purchases': 100,
+        'snapshot_interval': 1,  # Every hour
+        'description': 'High traffic - 100 purchases/day, 24 snapshots/day'
+    },
+    'extreme': {
+        'daily_purchases': 200,
+        'snapshot_interval': 1,
+        'description': 'Very high traffic - 200 purchases/day, 24 snapshots/day'
+    }
+}
+
+def print_progress_bar(current: int, total: int, prefix: str = '', bar_length: int = 40):
+    """Display progress bar for batch uploads"""
+    filled = int(bar_length * current / total)
+    bar = '█' * filled + '░' * (bar_length - filled)
+    percent = 100 * (current / total)
+    print(f'\r{prefix} |{bar}| {percent:.1f}% ({current}/{total})', end='', flush=True)
+    if current == total:
+        print()  # New line on completion
 
 def fetch_products_from_backend(api_url: str) -> List[Dict]:
     """Fetch all products from backend"""
@@ -27,20 +60,7 @@ def fetch_products_from_backend(api_url: str) -> List[Dict]:
         print(f"❌ Error fetching products: {e}")
         return []
 
-def fetch_zones_from_backend(api_url: str) -> List[Dict]:
-    """Fetch all zones from backend"""
-    try:
-        response = requests.get(f"{api_url}/zones", timeout=5)
-        if response.status_code == 200:
-            zones = response.json()
-            print(f"✅ Loaded {len(zones)} zones from backend")
-            return zones
-        else:
-            print(f"❌ Failed to fetch zones: {response.status_code}")
-            return []
-    except Exception as e:
-        print(f"❌ Error fetching zones: {e}")
-        return []
+
 
 def generate_hourly_activity_pattern() -> List[float]:
     """Generate realistic hourly activity multipliers (0-1) for a day"""
@@ -81,12 +101,19 @@ def generate_product_popularity(products: List[Dict]) -> Dict[int, float]:
 def generate_historical_purchases(
     api_url: str,
     products: List[Dict],
-    zones: List[Dict],
     days: int,
-    base_daily_rate: float = 50
+    base_daily_rate: float = 50,
+    fast_forward: bool = True
 ):
-    """Generate realistic historical purchase events"""
+    """Generate realistic historical purchase events
+    
+    Args:
+        fast_forward: If True, generates all data instantly in memory.
+                     If False, uses the old day-by-day approach.
+    """
     print(f"\n📊 Generating {days} days of historical purchase data...")
+    if fast_forward:
+        print("⚡ Fast-forward mode: Generating all data instantly...")
     
     # Assign popularity to products
     popularity = generate_product_popularity(products)
@@ -95,7 +122,7 @@ def generate_historical_purchases(
     all_purchases = []
     
     # Simulate day by day
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
     
     current_date = start_date
@@ -125,9 +152,6 @@ def generate_historical_purchases(
                 # Select product based on popularity
                 product = random.choices(products, weights=[popularity[p['id']] for p in products])[0]
                 
-                # Random zone
-                zone = random.choice(zones) if zones else None
-                
                 # Timestamp within this hour
                 minute = random.randint(0, 59)
                 second = random.randint(0, 59)
@@ -136,22 +160,29 @@ def generate_historical_purchases(
                 # Create purchase event
                 purchase_data = {
                     'product_id': product['id'],
-                    'zone_id': zone['id'] if zone else None,
-                    'x_position': random.uniform(100, 900) if zone else None,
-                    'y_position': random.uniform(100, 700) if zone else None,
                     'purchased_at': timestamp.isoformat()
                 }
                 all_purchases.append(purchase_data)
         
         current_date += timedelta(days=1)
-        print(f"  Generated day {(current_date - start_date).days}/{days} - {len(all_purchases)} purchases so far", end='\r')
+        if fast_forward:
+            # Show progress every 10% in fast-forward mode
+            progress = (current_date - start_date).days
+            if progress % max(1, days // 10) == 0 or progress == days:
+                print_progress_bar(progress, days, '  Progress')
+        else:
+            print(f"  Generated day {(current_date - start_date).days}/{days} - {len(all_purchases)} purchases so far", end='\r')
     
-    print(f"\n✅ Generated {len(all_purchases)} total purchase events")
+    if not fast_forward:
+        print()  # New line if not using progress bar
+    print(f"✅ Generated {len(all_purchases)} total purchase events")
     
     # Upload in batches
-    print("📤 Uploading purchases to backend...")
+    print("\n📤 Uploading purchases to backend...")
     batch_size = 500
     uploaded = 0
+    total_batches = (len(all_purchases) + batch_size - 1) // batch_size
+    
     for i in range(0, len(all_purchases), batch_size):
         batch = all_purchases[i:i + batch_size]
         try:
@@ -162,23 +193,27 @@ def generate_historical_purchases(
             )
             if response.status_code == 200:
                 uploaded += len(batch)
-                print(f"  Uploaded {uploaded}/{len(all_purchases)} purchases", end='\r')
+                current_batch = i // batch_size + 1
+                print_progress_bar(current_batch, total_batches, '  Upload')
             else:
                 print(f"\n⚠️  Error uploading batch: {response.status_code}")
         except Exception as e:
             print(f"\n⚠️  Error uploading batch: {e}")
     
-    print(f"\n✅ Uploaded {uploaded} purchase events")
+    print(f"✅ Uploaded {uploaded} purchase events")
     return uploaded
 
 def generate_stock_snapshots(
     api_url: str,
     products: List[Dict],
     days: int,
-    snapshot_interval_hours: int = 1
+    snapshot_interval_hours: int = 1,
+    fast_forward: bool = True
 ):
     """Generate hourly stock snapshots for time-series analysis"""
     print(f"\n📸 Generating stock snapshots (every {snapshot_interval_hours}h for {days} days)...")
+    if fast_forward:
+        print("⚡ Fast-forward mode: Generating all snapshots instantly...")
     
     # Initialize stock levels for each product
     product_stocks = {}
@@ -186,7 +221,7 @@ def generate_stock_snapshots(
         # Random initial stock (5-20 items per product)
         product_stocks[product['id']] = random.randint(8, 20)
     
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
     current_date = start_date
     
@@ -214,16 +249,20 @@ def generate_stock_snapshots(
                 'product_id': product['id'],
                 'timestamp': current_date.isoformat(),
                 'present_count': current_stock,
-                'missing_count': max(0, random.randint(0, 3)),  # Some items might be misplaced
-                'zone_id': None  # Simplified - could add zone-specific snapshots
+                'missing_count': max(0, random.randint(0, 3))  # Some items might be misplaced
             }
             snapshots.append(snapshot)
             snapshot_count += 1
         
         current_date += timedelta(hours=snapshot_interval_hours)
-        print(f"  Generated {snapshot_count} snapshots...", end='\r')
+        if not fast_forward and snapshot_count % 100 == 0:
+            print(f"  Generated {snapshot_count} snapshots...", end='\r')
     
-    print(f"\n✅ Generated {snapshot_count} stock snapshots")
+    if fast_forward:
+        print(f"  Generated {snapshot_count} snapshots")
+    else:
+        print()  # New line
+    print(f"✅ Generated {len(snapshots)} stock snapshots")
     
     # Batch insert snapshots via API
     print("📤 Uploading snapshots to backend...")
@@ -249,36 +288,76 @@ def generate_stock_snapshots(
     return uploaded
 
 def main():
-    parser = argparse.ArgumentParser(description="Backfill historical analytics data")
-    parser.add_argument("--days", type=int, default=30, help="Days of history to generate")
+    parser = argparse.ArgumentParser(
+        description="Backfill historical analytics data",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Density Presets:
+  sparse:  Low traffic (20 purchases/day, 4 snapshots/day)
+  normal:  Normal traffic (50 purchases/day, 8 snapshots/day) [default]
+  dense:   High traffic (100 purchases/day, 24 snapshots/day)
+  extreme: Very high traffic (200 purchases/day, 24 snapshots/day)
+
+Examples:
+  # Generate 7 days with normal density (fast)
+  python -m simulation.backfill_history --days 7
+  
+  # Generate 30 days with high density
+  python -m simulation.backfill_history --days 30 --density dense
+  
+  # Generate 90 days with sparse data quickly
+  python -m simulation.backfill_history --days 90 --density sparse
+        """
+    )
+    parser.add_argument("--days", type=int, default=7, help="Days of history to generate (default: 7)")
     parser.add_argument("--api", default="http://localhost:8000", help="Backend API URL")
-    parser.add_argument("--daily-purchases", type=float, default=50, help="Average daily purchase rate")
-    parser.add_argument("--snapshot-interval", type=int, default=1, help="Hours between snapshots")
+    parser.add_argument("--density", choices=['sparse', 'normal', 'dense', 'extreme'], 
+                       default='normal', help="Data density preset (default: normal)")
+    parser.add_argument("--daily-purchases", type=float, help="Override: Average daily purchase rate")
+    parser.add_argument("--snapshot-interval", type=int, help="Override: Hours between snapshots")
+    parser.add_argument("--no-fast-forward", action='store_true', 
+                       help="Disable fast-forward mode (slower, shows day-by-day progress)")
     
     args = parser.parse_args()
+    
+    # Apply density preset
+    preset = DENSITY_PRESETS[args.density]
+    daily_purchases = args.daily_purchases if args.daily_purchases else preset['daily_purchases']
+    snapshot_interval = args.snapshot_interval if args.snapshot_interval else preset['snapshot_interval']
+    fast_forward = not args.no_fast_forward
+    
+    # Calculate estimates
+    estimated_purchases = int(args.days * daily_purchases)
+    estimated_snapshots = int(args.days * (24 / snapshot_interval))
     
     print(f"""
 ╔══════════════════════════════════════════════════════════╗
 ║     OptiFlow Historical Data Backfill                    ║
-║     Generating {args.days} days of analytics data                ║
+║     Mode: {'Fast-Forward ⚡' if fast_forward else 'Standard'}                               ║
 ╚══════════════════════════════════════════════════════════╝
+
+Configuration:
+  Days: {args.days}
+  Density: {args.density} - {preset['description']}
+  Estimated purchases: ~{estimated_purchases:,}
+  Estimated snapshots: ~{estimated_snapshots:,} (per product)
     """)
     
-    # Fetch current products and zones
+    # Fetch current products
     products = fetch_products_from_backend(args.api)
-    zones = fetch_zones_from_backend(args.api)
     
     if not products:
         print("❌ No products found. Please run the simulation first to create products.")
         return
     
+    start_time = datetime.now()
+    
     # Generate historical purchases
     total_purchases = generate_historical_purchases(
         args.api,
         products,
-        zones,
         args.days,
-        args.daily_purchases
+        daily_purchases,
+        fast_forward
     )
     
     # Generate stock snapshots
@@ -286,22 +365,29 @@ def main():
         args.api,
         products,
         args.days,
-        args.snapshot_interval
+        snapshot_interval,
+        fast_forward
     )
     
+    elapsed = (datetime.now() - start_time).total_seconds()
+    
     print(f"""
-✅ Backfill complete!
+╔══════════════════════════════════════════════════════════╗
+║     ✅ Backfill Complete!                                ║
+╚══════════════════════════════════════════════════════════╝
 
 Summary:
+  - Time elapsed: {elapsed:.1f}s
   - Days generated: {args.days}
+  - Density: {args.density}
   - Products: {len(products)}
-  - Zones: {len(zones)}
-  - Purchases uploaded: {total_purchases}
-  - Snapshots uploaded: {total_snapshots}
+  - Purchases uploaded: {total_purchases:,}
+  - Snapshots uploaded: {total_snapshots:,}
+  - Rate: {(total_purchases + total_snapshots) / elapsed:.0f} records/sec
 
 Next steps:
   1. View analytics at http://localhost:3000/analytics
-  2. Verify data in database
+  2. Verify data: docker compose exec postgres-simulation psql -U optiflow -d optiflow_simulation
   3. Start simulation to generate real-time data
     """)
 

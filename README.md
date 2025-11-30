@@ -202,6 +202,12 @@ curl -X DELETE http://localhost:8000/data/clear
 ### Simulator Options
 
 ```bash
+# Enable real-time analytics tracking (recommended)
+python3 -m simulation.main --analytics
+
+# Custom snapshot interval (default: 3600s = 1 hour)
+python3 -m simulation.main --analytics --snapshot-interval 1800
+
 # Custom MQTT broker
 python3 -m simulation.main --broker 192.168.1.100
 
@@ -210,6 +216,30 @@ python3 -m simulation.main --mode stress --speed 0.5
 
 # Custom backend API
 python3 -m simulation.main --api http://192.168.1.100:8000
+
+# Full example with analytics
+python3 -m simulation.main --mode realistic --speed 2.0 --analytics --snapshot-interval 600
+```
+
+### Analytics Features
+
+The simulation now includes **real-time analytics tracking**:
+
+- **Stock Snapshots**: Periodic captures of inventory levels (configurable interval)
+- **Purchase Events**: Automatic recording when items go missing (simulating purchases)
+- **Background Thread**: Non-blocking analytics collection during simulation
+- **Batch Uploads**: Efficient API calls with queued data
+
+**Usage:**
+```bash
+# Run simulation with analytics enabled
+python3 -m simulation.main --analytics
+
+# Generate historical data for testing
+python3 -m simulation.backfill_history --days 30 --density normal
+
+# View analytics dashboard
+open http://localhost:3000/analytics
 ```
 
 ### Customize Store Layout
