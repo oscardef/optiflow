@@ -184,7 +184,8 @@ def start_simulation(params: Optional[SimulationParams] = None):
             )
     
     # Build command - run as module to support relative imports
-    cmd = [sys.executable, "-m", "simulation.main"]
+    # Use -u for unbuffered output so logs appear in real time
+    cmd = [sys.executable, "-u", "-m", "simulation.main"]
     
     # Add parameters
     if params:
@@ -209,12 +210,20 @@ def start_simulation(params: Optional[SimulationParams] = None):
         with open(output_file, "w") as f:
             f.write(f"=== Simulation started at {datetime.now()} ===\n")
         
+        # Set up environment with PYTHONPATH including the simulation parent directory
+        env = os.environ.copy()
+        pythonpath = str(simulation_dir.parent)
+        if 'PYTHONPATH' in env:
+            pythonpath = f"{pythonpath}:{env['PYTHONPATH']}"
+        env['PYTHONPATH'] = pythonpath
+        
         _simulation_process = subprocess.Popen(
             cmd,
             cwd=str(simulation_dir.parent),
             stdout=open(output_file, "a"),
             stderr=subprocess.STDOUT,  # Merge stderr into stdout
-            text=True
+            text=True,
+            env=env
         )
         
         config_state.simulation_running = True

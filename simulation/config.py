@@ -54,8 +54,8 @@ class MQTTConfig:
 class TagConfig:
     """Tag movement and detection configuration"""
     tag_id: str = "tag_0x42"
-    speed: float = 150.0  # cm/s
-    rfid_detection_range: float = 150.0  # cm (1.5 meters)
+    speed: float = 100.0  # cm/s (slower for more realistic effect)
+    rfid_detection_range: float = 80.0  # cm (0.8 meters - more realistic RFID range)
     update_interval: float = 0.15  # seconds between updates
 
 
