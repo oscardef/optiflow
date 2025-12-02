@@ -135,6 +135,9 @@ def fetch_inventory_from_backend(api_url: str):
             )
             
             # Create Item dataclass
+            # Items always start as NOT missing in simulation
+            # The simulation will detect them as "present" first, then they can go missing
+            # based on the disappearance rate after the first pass
             item = Item(
                 rfid_tag=item_data['rfid_tag'],
                 product=product,
@@ -142,7 +145,7 @@ def fetch_inventory_from_backend(api_url: str):
                 y=item_data.get('y_position', 0.0),
                 detected=False,
                 last_seen=None,
-                missing=(item_data['status'] == 'not present'),
+                missing=False,  # Always start as not missing - will be detected as present first
                 reported_status=None
             )
             simulation_items.append(item)

@@ -95,7 +95,9 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                 inventory_item.status = status_val
                 inventory_item.x_position = detection.x_position
                 inventory_item.y_position = detection.y_position
-                inventory_item.last_seen_at = timestamp
+                # Only update last_seen_at when item is present (detected)
+                if status_val == 'present':
+                    inventory_item.last_seen_at = timestamp
                 
                 # Update zone if position changed
                 if detection.x_position and detection.y_position:
@@ -215,10 +217,15 @@ def get_all_items(db: Session = Depends(get_db)):
 
 @router.get("/data/missing", response_model=List[DetectionResponse])
 def get_missing_items(db: Session = Depends(get_db)):
-    """Get all missing items (status = 'missing')"""
+    """Get all missing items (status = 'not present' AND was previously seen)
+    
+    Only returns items that were previously detected by the simulation but are now missing.
+    Items that have never been seen (last_seen_at is NULL) are not returned.
+    """
     missing_items = db.query(InventoryItem, Product)\
         .join(Product, InventoryItem.product_id == Product.id)\
         .filter(InventoryItem.status == 'not present')\
+        .filter(InventoryItem.last_seen_at.isnot(None))\
         .all()
     
     return [DetectionResponse(
@@ -271,13 +278,19 @@ def clear_tracking_data(keep_hours: int = 0, db: Session = Depends(get_db)):
             positions_deleted = db.query(TagPosition).delete()
             detections_deleted = db.query(Detection).delete()
             uwb_deleted = db.query(UWBMeasurement).delete()
-            # Do NOT delete inventory items or products
-            inventory_deleted = 0
+            # Reset inventory items to initial state (not visible on map until simulation runs)
+            items_reset = db.query(InventoryItem).update({
+                InventoryItem.status: 'not present',
+                InventoryItem.last_seen_at: None
+            })
+            inventory_deleted = 0  # Items not deleted, just reset
             purchase_events_deleted = db.query(PurchaseEvent).delete()
             location_history_deleted = db.query(ProductLocationHistory).delete()
             stock_levels = db.query(StockLevel).all()
             for stock_level in stock_levels:
                 stock_level.max_items_seen = 0
+                stock_level.current_count = 0
+                stock_level.missing_count = 0
             stock_levels_reset = len(stock_levels)
         
         db.commit()
@@ -478,7 +491,10 @@ def receive_bulk_detections(data: dict, db: Session = Depends(get_db)):
                 inventory_item.status = status_val
                 inventory_item.x_position = detection.get("x_position")
                 inventory_item.y_position = detection.get("y_position")
-                inventory_item.last_seen_at = timestamp
+                # Only update last_seen_at when item is present (detected)
+                # This ensures "missing" items only show up if they were previously seen
+                if status_val == 'present':
+                    inventory_item.last_seen_at = timestamp
             
             processed += 1
         

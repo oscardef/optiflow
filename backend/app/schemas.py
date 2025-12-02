@@ -21,7 +21,7 @@ class DataPacket(BaseModel):
 
 class DetectionResponse(BaseModel):
     id: int
-    timestamp: str
+    timestamp: Optional[str] = None
     product_id: str
     product_name: str
     x_position: Optional[float] = None
