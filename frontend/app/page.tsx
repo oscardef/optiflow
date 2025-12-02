@@ -153,6 +153,7 @@ export default function Home() {
     try {
       const response = await fetch(`${API_URL}/analytics/stock-heatmap`);
       const data = await response.json();
+      console.log('Stock heatmap data:', data);
       setStockHeatmap(data);
     } catch (error) {
       console.error('Error fetching stock heatmap:', error);

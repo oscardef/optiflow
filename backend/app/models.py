@@ -223,7 +223,7 @@ class ProductLocationHistory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
-    zone_id = Column(Integer, ForeignKey("zones.id", ondelete="CASCADE"), nullable=False, index=True)
+    zone_id = Column(Integer, ForeignKey("zones.id", ondelete="CASCADE"), nullable=True, index=True)  # Nullable for items without zone
     x_center = Column(Float)  # Center of location cluster
     y_center = Column(Float)
     max_items_seen = Column(Integer, default=0)

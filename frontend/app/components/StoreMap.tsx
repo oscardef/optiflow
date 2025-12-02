@@ -76,125 +76,206 @@ export default function StoreMap({
     };
   };
 
-  // Create smooth gradient heatmap based on depletion percentage
-  // Green (0% depleted) → Yellow → Orange → Red (100% depleted)
+  // Create smooth gradient heatmap based on item presence/absence
+  // Shows individual items: Green = present, Red = missing
+  // Creates density effect showing where missing items cluster
   const drawSmoothHeatmap = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, heatmapData: any[]) => {
-    if (!heatmapData || heatmapData.length === 0) return;
+    if (!heatmapData || heatmapData.length === 0) {
+      // Show message when no data available
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.font = 'bold 24px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('No items detected yet', canvas.width / 2, canvas.height / 2 - 20);
+      ctx.font = '16px sans-serif';
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillText('Run the simulation to detect items', canvas.width / 2, canvas.height / 2 + 15);
+      return;
+    }
     
-    // Create a separate canvas for heatmap processing
-    const heatCanvas = document.createElement('canvas');
-    heatCanvas.width = canvas.width;
-    heatCanvas.height = canvas.height;
-    const heatCtx = heatCanvas.getContext('2d');
-    if (!heatCtx) return;
+    // First, draw a subtle base layer showing all item positions
+    // Then overlay with color based on status
     
-    // Parameters for smooth gradient heatmap
-    const baseRadius = 50; // Base radius of influence for each location
-    const blur = 20;       // Blur for smooth gradients
+    // Parameters for heat effect
+    const itemRadius = 18;      // Size of each item dot
+    const glowRadius = 40;      // Glow/heat effect radius
     
-    // Create intensity map for depletion
-    const intensityData = heatCtx.createImageData(canvas.width, canvas.height);
+    // Sort so missing items are drawn on top
+    const sortedData = [...heatmapData].sort((a, b) => {
+      const aDepletion = a.depletion_percentage || 0;
+      const bDepletion = b.depletion_percentage || 0;
+      return aDepletion - bDepletion; // Draw high depletion (red) on top
+    });
     
-    // Add depletion gradient for each location cluster
-    heatmapData.forEach(location => {
+    // Draw glow/density layer first (creates the "heat" effect)
+    sortedData.forEach(location => {
       const pos = toCanvasCoords(location.x, location.y, canvas);
-      const depletionPct = location.depletion_percentage / 100; // 0 to 1
+      const depletionPct = (location.depletion_percentage || 0) / 100; // 0 to 1
+      const itemsMissing = location.items_missing || 0;
       
-      // Increase radius for highly depleted areas to make them more prominent
-      const radius = depletionPct > 0.75 ? baseRadius * 1.3 : baseRadius;
+      // Create radial gradient for heat effect
+      const gradient = ctx.createRadialGradient(
+        pos.x, pos.y, 0,
+        pos.x, pos.y, glowRadius
+      );
       
-      for (let y = Math.max(0, Math.floor(pos.y - radius)); y < Math.min(canvas.height, Math.ceil(pos.y + radius)); y++) {
-        for (let x = Math.max(0, Math.floor(pos.x - radius)); x < Math.min(canvas.width, Math.ceil(pos.x + radius)); x++) {
-          const distance = Math.sqrt(Math.pow(x - pos.x, 2) + Math.pow(y - pos.y, 2));
-          if (distance <= radius) {
-            // Gaussian falloff for smooth gradients
-            const falloff = Math.exp(-Math.pow(distance / (radius * 0.4), 2));
-            const index = (y * canvas.width + x) * 4;
-            
-            // Store depletion percentage (0-100) in red channel, intensity in alpha
-            // Use max to prioritize worse depletion areas
-            const currentDepletion = intensityData.data[index] / 2.55; // Convert back to percentage
-            const newDepletion = depletionPct * 100;
-            
-            if (newDepletion > currentDepletion || intensityData.data[index + 3] === 0) {
-              intensityData.data[index] = Math.floor(depletionPct * 255); // Store 0-1 as 0-255
-              intensityData.data[index + 3] = Math.floor(falloff * 255);
-            }
-          }
-        }
+      if (depletionPct === 0) {
+        // Fully stocked - subtle green glow
+        gradient.addColorStop(0, 'rgba(34, 197, 94, 0.4)');
+        gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.15)');
+        gradient.addColorStop(1, 'rgba(34, 197, 94, 0)');
+      } else if (depletionPct < 0.5) {
+        // Some missing - yellow/orange glow
+        const intensity = 0.3 + depletionPct * 0.4;
+        gradient.addColorStop(0, `rgba(251, 191, 36, ${intensity})`);
+        gradient.addColorStop(0.5, `rgba(251, 191, 36, ${intensity * 0.4})`);
+        gradient.addColorStop(1, 'rgba(251, 191, 36, 0)');
+      } else {
+        // Many missing - red glow (more intense for worse depletion)
+        const intensity = 0.4 + (depletionPct - 0.5) * 0.6;
+        gradient.addColorStop(0, `rgba(239, 68, 68, ${intensity})`);
+        gradient.addColorStop(0.5, `rgba(239, 68, 68, ${intensity * 0.5})`);
+        gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
+      }
+      
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, glowRadius, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+    
+    // Draw solid item indicators on top
+    sortedData.forEach(location => {
+      const pos = toCanvasCoords(location.x, location.y, canvas);
+      const depletionPct = (location.depletion_percentage || 0) / 100;
+      const currentCount = location.current_count || 0;
+      const maxItems = location.max_items_seen || 1;
+      const itemsMissing = location.items_missing || 0;
+      
+      // Color based on depletion - smooth gradient
+      let r, g, b;
+      if (depletionPct === 0) {
+        // Perfect - bright green
+        r = 34; g = 197; b = 94;
+      } else if (depletionPct <= 0.25) {
+        // Light depletion - green to yellow-green
+        const t = depletionPct / 0.25;
+        r = Math.floor(34 + t * (180 - 34));
+        g = Math.floor(197 + t * (200 - 197));
+        b = Math.floor(94 - t * 70);
+      } else if (depletionPct <= 0.5) {
+        // Medium depletion - yellow to orange
+        const t = (depletionPct - 0.25) / 0.25;
+        r = Math.floor(180 + t * (251 - 180));
+        g = Math.floor(200 - t * (200 - 146));
+        b = Math.floor(24 + t * (36 - 24));
+      } else if (depletionPct <= 0.75) {
+        // High depletion - orange to red-orange
+        const t = (depletionPct - 0.5) / 0.25;
+        r = Math.floor(251 - t * (251 - 245));
+        g = Math.floor(146 - t * (146 - 90));
+        b = Math.floor(36 + t * (50 - 36));
+      } else {
+        // Critical - red
+        const t = (depletionPct - 0.75) / 0.25;
+        r = Math.floor(245 - t * (245 - 220));
+        g = Math.floor(90 - t * (90 - 38));
+        b = Math.floor(50 - t * (50 - 38));
+      }
+      
+      // Draw outer ring (shows severity)
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, itemRadius + 4, 0, 2 * Math.PI);
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
+      ctx.fill();
+      ctx.strokeStyle = `rgb(${Math.max(0, r - 30)}, ${Math.max(0, g - 30)}, ${Math.max(0, b - 30)})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Draw inner circle
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, itemRadius, 0, 2 * Math.PI);
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.fill();
+      
+      // Draw count text
+      ctx.fillStyle = depletionPct > 0.5 ? '#ffffff' : '#000000';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      if (itemsMissing > 0) {
+        // Show missing count
+        ctx.fillText(`-${itemsMissing}`, pos.x, pos.y);
+      } else {
+        // Show checkmark or count for fully stocked
+        ctx.fillText('✓', pos.x, pos.y);
       }
     });
     
-    // Apply blur for smooth gradients
-    heatCtx.putImageData(intensityData, 0, 0);
-    heatCtx.filter = `blur(${blur}px)`;
-    heatCtx.drawImage(heatCanvas, 0, 0);
-    const blurredData = heatCtx.getImageData(0, 0, canvas.width, canvas.height);
+    // Draw legend
+    drawHeatmapLegend(ctx, canvas);
+  };
+  
+  // Draw heatmap legend
+  const drawHeatmapLegend = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
+    const legendX = canvas.width - 180;
+    const legendY = 20;
+    const legendWidth = 160;
+    const legendHeight = 100;
+    const radius = 8;
     
-    // Create final colored heatmap with gradient
-    const colorData = ctx.createImageData(canvas.width, canvas.height);
+    // Background with rounded corners (manual implementation for compatibility)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(legendX + radius, legendY);
+    ctx.lineTo(legendX + legendWidth - radius, legendY);
+    ctx.quadraticCurveTo(legendX + legendWidth, legendY, legendX + legendWidth, legendY + radius);
+    ctx.lineTo(legendX + legendWidth, legendY + legendHeight - radius);
+    ctx.quadraticCurveTo(legendX + legendWidth, legendY + legendHeight, legendX + legendWidth - radius, legendY + legendHeight);
+    ctx.lineTo(legendX + radius, legendY + legendHeight);
+    ctx.quadraticCurveTo(legendX, legendY + legendHeight, legendX, legendY + legendHeight - radius);
+    ctx.lineTo(legendX, legendY + radius);
+    ctx.quadraticCurveTo(legendX, legendY, legendX + radius, legendY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
     
-    for (let i = 0; i < blurredData.data.length; i += 4) {
-      const alpha = blurredData.data[i + 3];
-      if (alpha > 10) { // Only render visible pixels
-        // Extract depletion percentage (0-1)
-        const depletionPct = blurredData.data[i] / 255;
-        const intensity = alpha / 255;
-        
-        let r, g, b;
-        
-        // More sensitive color gradient - starts changing immediately with any depletion
-        // Even 1/8 missing (12.5%) should show visible color shift
-        // Progressive transition: Green → Yellow-Green → Yellow → Orange → Red
-        
-        if (depletionPct === 0) {
-          // Perfect stock - pure green
-          r = 34;
-          g = 197;
-          b = 94;
-        } else if (depletionPct <= 0.125) {
-          // 1/8 missing - noticeable shift to yellow-green (12.5%)
-          const t = depletionPct / 0.125;
-          r = Math.floor(34 + t * (120 - 34));    // Start warming up
-          g = Math.floor(197 + t * (200 - 197));  // Stay bright
-          b = Math.floor(94 + t * (50 - 94));     // Reduce blue
-        } else if (depletionPct <= 0.25) {
-          // 2/8 missing - more yellow (25%)
-          const t = (depletionPct - 0.125) / 0.125;
-          r = Math.floor(120 + t * (200 - 120));
-          g = Math.floor(200 + t * (200 - 200));
-          b = Math.floor(50 + t * (20 - 50));
-        } else if (depletionPct <= 0.50) {
-          // 3-4/8 missing - yellow to orange (50%)
-          const t = (depletionPct - 0.25) / 0.25;
-          r = Math.floor(200 + t * (251 - 200));
-          g = Math.floor(200 + t * (146 - 200));
-          b = Math.floor(20 + t * (60 - 20));
-        } else if (depletionPct <= 0.75) {
-          // 5-6/8 missing - orange (75%)
-          const t = (depletionPct - 0.50) / 0.25;
-          r = Math.floor(251 + t * (245 - 251));
-          g = Math.floor(146 + t * (100 - 146));
-          b = Math.floor(60 + t * (65 - 60));
-        } else {
-          // 7/8 or more missing - red (87.5%+)
-          const t = (depletionPct - 0.75) / 0.25;
-          r = Math.floor(245 + t * (239 - 245));
-          g = Math.floor(100 + t * (68 - 100));
-          b = Math.floor(65 + t * (68 - 65));
-        }
-        
-        // Make high depletion areas more saturated and visible
-        const finalAlpha = Math.floor(Math.min(intensity * 200 + (depletionPct * 60), 240));
-        
-        colorData.data[i] = r;
-        colorData.data[i + 1] = g;
-        colorData.data[i + 2] = b;
-        colorData.data[i + 3] = finalAlpha;
-      }
-    }
+    // Title
+    ctx.fillStyle = '#374151';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Stock Status', legendX + 10, legendY + 10);
     
-    ctx.putImageData(colorData, 0, 0);
+    // Legend items
+    const items = [
+      { color: 'rgb(34, 197, 94)', label: 'All Present' },
+      { color: 'rgb(251, 191, 36)', label: 'Some Missing' },
+      { color: 'rgb(239, 68, 68)', label: 'Many Missing' },
+    ];
+    
+    items.forEach((item, index) => {
+      const y = legendY + 35 + index * 22;
+      
+      // Color dot
+      ctx.beginPath();
+      ctx.arc(legendX + 20, y, 8, 0, 2 * Math.PI);
+      ctx.fillStyle = item.color;
+      ctx.fill();
+      ctx.strokeStyle = '#00000033';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      
+      // Label
+      ctx.fillStyle = '#374151';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(item.label, legendX + 35, y);
+    });
   };
 
   // Draw heatmap overlay for zones (legacy zone-based view)
@@ -443,6 +524,7 @@ export default function StoreMap({
     // Draw heatmap overlays for non-live modes
     if (viewMode === 'stock-heatmap') {
       // Use smooth gradient heatmap based on depletion percentage
+      console.log('Drawing heatmap with data:', stockHeatmap);
       drawSmoothHeatmap(ctx, canvas, stockHeatmap);
     }
 
