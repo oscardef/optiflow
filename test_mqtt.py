@@ -1,22 +1,30 @@
 #!/usr/bin/env python3
 """
-MQTT Data Validator for OptiFlow
-=================================
-Subscribe to MQTT topics and validate incoming data from real hardware.
+MQTT Data Validator for OptiFlow ESP32 Hardware
+================================================
+Subscribe to MQTT topics and validate incoming data from ESP32-S3 RFID+UWB hardware.
+
+Validates data format from: rfid_uwb_mqtt.ino
+- RFID: JRD-100 UHF RFID reader (EPC, RSSI, PC fields)
+- UWB: DWM3001CDK positioning (MAC address, average distance, measurement counts)
 
 Usage:
     python test_mqtt.py [--broker BROKER] [--port PORT] [--topic TOPIC]
 
 Examples:
-    python test_mqtt.py                          # Use defaults
+    python test_mqtt.py                          # Use defaults (172.20.10.3)
     python test_mqtt.py --broker 192.168.1.100   # Custom broker
-    python test_mqtt.py --topic "store/#"        # Subscribe to all store topics
+    python test_mqtt.py --topic "store/aisle1"   # Specific aisle
+    
+To start ESP32 publishing, send:
+    mosquitto_pub -h 172.20.10.3 -t store/control -m 'START'
 """
 
 import argparse
 import json
 import sys
 from datetime import datetime
+from typing import Dict, List, Tuple
 
 try:
     import paho.mqtt.client as mqtt
@@ -25,30 +33,33 @@ except ImportError:
     sys.exit(1)
 
 
-# Expected hardware data format
+# Expected hardware data format from ESP32 rfid_uwb_mqtt.ino
 EXPECTED_HARDWARE_FORMAT = """
-Expected Hardware JSON Format:
+╔══════════════════════════════════════════════════════════════╗
+║  ESP32-S3 RFID + UWB JSON Format (rfid_uwb_mqtt.ino)        ║
+╚══════════════════════════════════════════════════════════════╝
+
 {
-  "polling_cycle": 1,
-  "timestamp": 123456,
+  "polling_cycle": 1,                    // uint32_t - cycle counter
+  "timestamp": 123456,                   // unsigned long - millis() since boot
   "uwb": {
-    "n_anchors": 2,
+    "n_anchors": 2,                      // Count of valid anchors (with readings)
     "anchors": [
       {
-        "mac_address": "0xABCD",
-        "average_distance_cm": 150.5,
-        "measurements": 3,
-        "total_sessions": 5
+        "mac_address": "0xABCD",         // String "0x" + 4 hex chars
+        "average_distance_cm": 150.5,    // float - averaged distance
+        "measurements": 3,               // uint32_t - successful readings
+        "total_sessions": 5              // uint32_t - total attempts
       }
     ]
   },
   "rfid": {
-    "tag_count": 2,
+    "tag_count": 2,                      // uint8_t - number of tags
     "tags": [
       {
-        "epc": "E200001234567890ABCD",
-        "rssi_dbm": -45,
-        "pc": "3000"
+        "epc": "E200001234567890ABCD",   // String - Electronic Product Code
+        "rssi_dbm": -45,                 // int8_t - signal strength
+        "pc": "3000"                     // String - Protocol Control word
       }
     ]
   }
@@ -64,6 +75,23 @@ class MQTTValidator:
         self.message_count = 0
         self.valid_count = 0
         self.invalid_count = 0
+        self.total_tags_seen = 0
+        self.total_anchors_seen = 0
+        self.unique_epcs = set()
+        self.unique_anchors = set()
+        
+    def get_signal_quality(self, rssi: int) -> str:
+        """Match ESP32 firmware getSignalQuality() function"""
+        if rssi >= -50:
+            return "🟢 Excellent"
+        elif rssi >= -60:
+            return "🟢 Good"
+        elif rssi >= -70:
+            return "🟡 Fair"
+        elif rssi >= -80:
+            return "🟠 Weak"
+        else:
+            return "🔴 Very Weak"
         
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
@@ -72,8 +100,10 @@ class MQTTValidator:
                 client.subscribe(topic)
                 print(f"📡 Subscribed to: {topic}")
             print("\n" + "="*60)
-            print("👂 Listening for messages... (Press Ctrl+C to stop)")
-            print("="*60 + "\n")
+            print("👂 Listening for ESP32 data... (Press Ctrl+C to stop)")
+            print("="*60)
+            print("\n💡 To start ESP32 publishing, run:")
+            print(f"   mosquitto_pub -h {self.broker} -t store/control -m 'START'\n")
         else:
             print(f"❌ Connection failed with code: {rc}")
             
@@ -136,14 +166,19 @@ class MQTTValidator:
                 print(f"   Tags detected:")
                 for i, tag in enumerate(tags[:10]):  # Show first 10
                     epc = tag.get("epc", "❓ MISSING")
-                    rssi = tag.get("rssi_dbm", "❓")
+                    rssi = tag.get("rssi_dbm", 0)
                     pc = tag.get("pc", "❓")
                     
-                    # Validate EPC format (should be hex string)
+                    # Track unique EPCs
+                    if isinstance(epc, str):
+                        self.unique_epcs.add(epc)
+                    
+                    # Validate EPC format (should be hex string, typically 24 chars for EPC-96)
                     epc_valid = "✅" if isinstance(epc, str) and len(epc) >= 8 else "⚠️"
+                    signal_quality = self.get_signal_quality(rssi) if isinstance(rssi, int) else "❓"
                     
                     print(f"      [{i+1}] {epc_valid} EPC: {epc}")
-                    print(f"          RSSI: {rssi} dBm, PC: {pc}")
+                    print(f"          RSSI: {rssi} dBm {signal_quality}, PC: {pc}")
                     
                     # Check for required fields
                     if "epc" not in tag:
@@ -151,8 +186,10 @@ class MQTTValidator:
                         
                 if len(tags) > 10:
                     print(f"      ... and {len(tags) - 10} more tags")
+                    
+                self.total_tags_seen += len(tags)
             else:
-                print("   ⚠️  No tags detected")
+                print("   ⚠️  No tags detected (polling cycle with no RFID reads)")
         else:
             issues.append("Missing 'rfid' section")
             print("   ❌ MISSING")
@@ -183,18 +220,35 @@ class MQTTValidator:
                         measurements = anchor.get("measurements", 0)
                         total_sessions = anchor.get("total_sessions", 0)
                         
+                        # Track unique anchors
+                        if isinstance(mac, str):
+                            self.unique_anchors.add(mac)
+                        
                         dist_str = f"{avg_dist:.1f} cm" if avg_dist is not None else "null"
                         success_rate = f"{(measurements/total_sessions*100):.0f}%" if total_sessions > 0 else "N/A"
                         
+                        # Distance quality indicator
+                        if avg_dist is not None:
+                            if avg_dist < 100:
+                                dist_quality = "🟢 Close"
+                            elif avg_dist < 300:
+                                dist_quality = "🟡 Medium"
+                            else:
+                                dist_quality = "🟠 Far"
+                        else:
+                            dist_quality = "❓"
+                        
                         print(f"      [{i+1}] Anchor {mac}")
-                        print(f"          Distance: {dist_str}")
-                        print(f"          Measurements: {measurements}/{total_sessions} ({success_rate})")
+                        print(f"          Distance: {dist_str} {dist_quality}")
+                        print(f"          Success: {measurements}/{total_sessions} ({success_rate})")
                         
                         # Check for required fields
                         if "mac_address" not in anchor:
                             issues.append(f"Anchor {i+1}: Missing 'mac_address' field")
+                            
+                    self.total_anchors_seen += len(anchors)
                 else:
-                    print("   ⚠️  No anchors detected")
+                    print("   ⚠️  No anchors with valid readings this cycle")
         else:
             issues.append("Missing 'uwb' section")
             print("   ❌ MISSING")
@@ -239,9 +293,15 @@ class MQTTValidator:
             print(f"\n\n{'='*60}")
             print("📊 Session Summary")
             print("="*60)
-            print(f"   Total messages: {self.message_count}")
+            print(f"   Total messages received: {self.message_count}")
             print(f"   Valid JSON: {self.valid_count}")
             print(f"   Invalid: {self.invalid_count}")
+            print(f"\n   Total RFID tag readings: {self.total_tags_seen}")
+            print(f"   Unique EPCs seen: {len(self.unique_epcs)}")
+            print(f"\n   Total UWB anchor readings: {self.total_anchors_seen}")
+            print(f"   Unique anchors seen: {len(self.unique_anchors)}")
+            if self.unique_anchors:
+                print(f"   Anchor MACs: {', '.join(sorted(self.unique_anchors))}")
             print("\n👋 Goodbye!")
         finally:
             client.disconnect()
@@ -249,7 +309,7 @@ class MQTTValidator:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="MQTT Data Validator for OptiFlow Hardware",
+        description="MQTT Data Validator for OptiFlow ESP32 Hardware",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=EXPECTED_HARDWARE_FORMAT
     )
@@ -259,6 +319,8 @@ def main():
                        help="MQTT broker port (default: 1883)")
     parser.add_argument("--topic", default="store/#",
                        help="MQTT topic to subscribe to (default: store/#)")
+    parser.add_argument("--start", action="store_true",
+                       help="Send START signal to ESP32 before listening")
     
     args = parser.parse_args()
     
@@ -266,10 +328,23 @@ def main():
     topics = [t.strip() for t in args.topic.split(",")]
     
     print("\n" + "="*60)
-    print("🔍 OptiFlow MQTT Hardware Validator")
+    print("🔍 OptiFlow ESP32 Hardware Validator")
     print("="*60)
-    print(f"\nBroker: {args.broker}:{args.port}")
+    print(f"\nTarget: ESP32-S3 RFID+UWB (rfid_uwb_mqtt.ino)")
+    print(f"Broker: {args.broker}:{args.port}")
     print(f"Topics: {', '.join(topics)}")
+    
+    # Optionally send START signal
+    if args.start:
+        try:
+            start_client = mqtt.Client()
+            start_client.connect(args.broker, args.port, 5)
+            start_client.publish("store/control", "START")
+            start_client.disconnect()
+            print("\n✅ Sent START signal to ESP32")
+        except Exception as e:
+            print(f"\n⚠️  Could not send START signal: {e}")
+    
     print(EXPECTED_HARDWARE_FORMAT)
     
     validator = MQTTValidator(args.broker, args.port, topics)
