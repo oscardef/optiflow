@@ -249,8 +249,8 @@ void loop() {
             DEBUG_PRINTLN(cmd);
         }
     }
-    //DEBUG_PRINT("Free heap: ");
-    //DEBUG_PRINTLN(ESP.getFreeHeap());
+    DEBUG_PRINT("Free heap: ");
+    DEBUG_PRINTLN(ESP.getFreeHeap());
     vTaskDelay(pdMS_TO_TICKS(200));  // Minimal work - loop() runs on Core 1 by default
 }
 
@@ -422,7 +422,6 @@ void initializeRFID() {
 /**
  * Print combined RFID + UWB data triggered by RFID polling cycle
  * Also publishes to MQTT if START signal received
- * JSON format matches RFID+UWB_TEST reference exactly
  */
 void combineDataFromPollingAndSend(uint32_t cycleCount) {
     unsigned long timestamp = millis();
@@ -447,106 +446,56 @@ void combineDataFromPollingAndSend(uint32_t cycleCount) {
         xSemaphoreGive(anchorStatsMutex);
     }
     
-    // Count only anchors with valid distance readings
-    uint32_t validAnchorCount = 0;
-    for (auto& pair : statsMap) {
-        if (pair.second.successCount > 0) {
-            validAnchorCount++;
-        }
-    }
-    
-    // Build and print complete JSON (matching RFID+UWB_TEST format exactly)
-    Serial.println("{");
-    Serial.printf("  \"polling_cycle\": %u,\n", cycleCount);
-    Serial.printf("  \"timestamp\": %lu,\n", timestamp);
-    
-    // UWB section with averaged distances per anchor (only anchors with valid readings)
-    Serial.println("  \"uwb\": {");
-    Serial.printf("    \"n_anchors\": %u,\n", validAnchorCount);
-    Serial.println("    \"anchors\": [");
-    
-    bool first = true;
-    for (auto& pair : statsMap) {
-        const AnchorStats& stats = pair.second;
-        
-        // Skip anchors with no successful measurements
-        if (stats.successCount == 0) continue;
-        
-        if (!first) Serial.println(",");
-        first = false;
-        
-        float avgDistance = stats.totalDistance / stats.successCount;
-        
-        Serial.println("      {");
-        Serial.printf("        \"mac_address\": \"0x%s\",\n", stats.macAddress.c_str());
-        Serial.printf("        \"average_distance_cm\": %.1f,\n", avgDistance);
-        Serial.printf("        \"measurements\": %u,\n", stats.successCount);
-        Serial.printf("        \"total_sessions\": %u\n", stats.totalCount);
-        Serial.print("      }");
-    }
-    if (validAnchorCount > 0) Serial.println();
-    
-    Serial.println("    ]");
-    Serial.println("  },");
-    
-    // RFID section
-    Serial.println("  \"rfid\": {");
-    Serial.printf("    \"tag_count\": %u,\n", tagCount);
-    Serial.println("    \"tags\": [");
-    
-    for (uint8_t i = 0; i < tagCount; i++) {
-        Serial.println("      {");
-        Serial.printf("        \"epc\": \"%s\",\n", tags[i].epc.c_str());
-        Serial.printf("        \"rssi_dbm\": %d,\n", tags[i].rssi);
-        Serial.printf("        \"pc\": \"%s\"\n", tags[i].pc.c_str());
-        Serial.print("      }");
-        if (i < tagCount - 1) Serial.println(",");
-        else Serial.println();
-    }
-    
-    Serial.println("    ]");
-    Serial.println("  }");
-    Serial.println("}\n");
-    
-    // Build JSON document for MQTT (using ArduinoJson for proper serialization)
+    // Build JSON document for MQTT
     StaticJsonDocument<4096> doc;
     
-    doc["polling_cycle"] = cycleCount;
-    doc["timestamp"] = timestamp;
+    // Create ISO-like timestamp
+    char timeStr[32];
+    sprintf(timeStr, "2024-11-21T%02lu:%02lu:%02lu", 
+            (timestamp / 3600000) % 24,
+            (timestamp / 60000) % 60, 
+            (timestamp / 1000) % 60);
+    doc["timestamp"] = timeStr;
     
-    // UWB section (only anchors with valid readings)
-    JsonObject uwb = doc.createNestedObject("uwb");
-    uwb["n_anchors"] = validAnchorCount;
-    JsonArray anchors = uwb.createNestedArray("anchors");
-    
-    for (auto& pair : statsMap) {
-        const AnchorStats& stats = pair.second;
-        
-        // Skip anchors with no successful measurements
-        if (stats.successCount == 0) continue;
-        
-        JsonObject anchor = anchors.createNestedObject();
-        anchor["mac_address"] = "0x" + stats.macAddress;
-        float avgDistance = stats.totalDistance / stats.successCount;
-        anchor["average_distance_cm"] = avgDistance;
-        anchor["measurements"] = stats.successCount;
-        anchor["total_sessions"] = stats.totalCount;
-    }
-    
-    // RFID section
-    JsonObject rfid_obj = doc.createNestedObject("rfid");
-    rfid_obj["tag_count"] = tagCount;
-    JsonArray tagsArray = rfid_obj.createNestedArray("tags");
-    
+    // RFID detections array (matches backend schema)
+    JsonArray detections = doc.createNestedArray("detections");
     for (uint8_t i = 0; i < tagCount; i++) {
-        JsonObject tag = tagsArray.createNestedObject();
+        JsonObject tag = detections.createNestedObject();
         tag["epc"] = tags[i].epc;
-        tag["rssi_dbm"] = tags[i].rssi;
+        tag["rssi"] = tags[i].rssi;
         tag["pc"] = tags[i].pc;
     }
     
+    // UWB measurements array (matches backend schema)
+    JsonArray measurements = doc.createNestedArray("uwb_measurements");
+    for (auto& pair : statsMap) {
+        const AnchorStats& stats = pair.second;
+        if (stats.successCount > 0) {
+            JsonObject meas = measurements.createNestedObject();
+            meas["mac_address"] = "0x" + stats.macAddress;
+            float avgDistance = stats.totalDistance / stats.successCount;
+            meas["distance_cm"] = avgDistance;
+            meas["status"] = "SUCCESS";
+        }
+    }
+    
+    // Print to Serial Monitor
+    DEBUG_PRINTLN("{");
+    DEBUG_PRINT("  \"polling_cycle\": ");
+    DEBUG_PRINT(cycleCount);
+    DEBUG_PRINTLN(",");
+    DEBUG_PRINT("  \"timestamp\": \"");
+    DEBUG_PRINT(timeStr);
+    DEBUG_PRINTLN("\",");
+    DEBUG_PRINT("  \"rfid_tags\": ");
+    DEBUG_PRINT(tagCount);
+    DEBUG_PRINTLN(",");
+    DEBUG_PRINT("  \"uwb_anchors\": ");
+    DEBUG_PRINTLN(measurements.size());
+    DEBUG_PRINTLN("}\n");
+    
     // Publish to MQTT if START signal received and we have data
-    if (startSignal && (tagCount > 0 || !statsMap.empty())) {
+    if (startSignal && (tagCount > 0 || measurements.size() > 0)) {
         String payload;
         serializeJson(doc, payload);
         
@@ -557,7 +506,7 @@ void combineDataFromPollingAndSend(uint32_t cycleCount) {
             DEBUG_PRINT(" (");
             DEBUG_PRINT(tagCount);
             DEBUG_PRINT(" tags, ");
-            DEBUG_PRINT(statsMap.size());
+            DEBUG_PRINT(measurements.size());
             DEBUG_PRINTLN(" UWB)");
         } else {
             DEBUG_PRINTLN("[MQTT] ✗ Publish failed!");
