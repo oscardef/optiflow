@@ -3,6 +3,7 @@ import os
 import time
 import requests
 import paho.mqtt.client as mqtt
+from datetime import datetime
 
 # Configuration from environment variables
 MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
@@ -15,12 +16,105 @@ print(f"   Broker: {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
 print(f"   Topic: {MQTT_TOPIC}")
 print(f"   API: {API_URL}")
 
+
+def transform_hardware_to_backend(hardware_data: dict) -> dict:
+    """
+    Transform hardware JSON format to backend API format.
+    
+    Hardware format:
+    {
+        "polling_cycle": 1,
+        "timestamp": 123456,  # milliseconds since boot
+        "uwb": {
+            "n_anchors": 2,
+            "anchors": [
+                {"mac_address": "0xABCD", "average_distance_cm": 150.5, "measurements": 3, "total_sessions": 5}
+            ]
+        },
+        "rfid": {
+            "tag_count": 2,
+            "tags": [
+                {"epc": "E200001234567890ABCD", "rssi_dbm": -45, "pc": "3000"}
+            ]
+        }
+    }
+    
+    Backend format:
+    {
+        "timestamp": "2025-12-02T13:00:00Z",
+        "detections": [
+            {"product_id": "RFID001", "product_name": "Unknown", "status": "present"}
+        ],
+        "uwb_measurements": [
+            {"mac_address": "0x0001", "distance_cm": 150.5, "status": "0x01"}
+        ]
+    }
+    """
+    # Generate ISO timestamp
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    
+    # Transform RFID tags to detections
+    detections = []
+    rfid_section = hardware_data.get("rfid", {})
+    tags = rfid_section.get("tags", [])
+    
+    for tag in tags:
+        epc = tag.get("epc", "")
+        rssi = tag.get("rssi_dbm", 0)
+        
+        # Use EPC as product_id (this is the RFID tag identifier)
+        detections.append({
+            "product_id": epc,
+            "product_name": f"Item-{epc[-8:]}" if epc else "Unknown",
+            "status": "present",
+            "x_position": None,  # Will be calculated by triangulation
+            "y_position": None,
+            "rssi_dbm": rssi  # Extra field for signal strength
+        })
+    
+    # Transform UWB anchors to measurements
+    uwb_measurements = []
+    uwb_section = hardware_data.get("uwb", {})
+    
+    # Handle case where UWB data is unavailable
+    if uwb_section.get("available") is False:
+        pass  # No UWB data
+    else:
+        anchors = uwb_section.get("anchors", [])
+        
+        for anchor in anchors:
+            mac = anchor.get("mac_address", "")
+            avg_distance = anchor.get("average_distance_cm")
+            measurements_count = anchor.get("measurements", 0)
+            
+            # Only include anchors with valid measurements
+            if avg_distance is not None and measurements_count > 0:
+                uwb_measurements.append({
+                    "mac_address": mac,
+                    "distance_cm": avg_distance,
+                    "status": "0x01"  # OK status
+                })
+    
+    return {
+        "timestamp": timestamp,
+        "detections": detections,
+        "uwb_measurements": uwb_measurements
+    }
+
+
+def is_hardware_format(data: dict) -> bool:
+    """Check if data is in hardware format (has rfid/uwb structure) vs simulation format"""
+    return "rfid" in data or ("uwb" in data and "anchors" in data.get("uwb", {}))
+
+
 def on_connect(client, userdata, flags, rc):
     """Callback when connected to MQTT broker"""
     if rc == 0:
         print(f"✅ Connected to MQTT broker")
         client.subscribe(MQTT_TOPIC)
+        client.subscribe("store/#")  # Also subscribe to all store topics
         print(f"📡 Subscribed to topic: {MQTT_TOPIC}")
+        print(f"📡 Subscribed to topic: store/#")
     else:
         print(f"❌ Failed to connect to MQTT broker. Return code: {rc}")
 
@@ -30,9 +124,27 @@ def on_message(client, userdata, msg):
         # Decode and parse the message
         payload = msg.payload.decode('utf-8')
         print(f"\n📥 Received message on {msg.topic}")
-        print(f"   Full Payload: {payload}")
         
         data = json.loads(payload)
+        
+        # Check if this is hardware format and transform if needed
+        if is_hardware_format(data):
+            print(f"   📟 Hardware format detected (polling_cycle: {data.get('polling_cycle', '?')})")
+            
+            # Log raw hardware data
+            rfid_count = data.get("rfid", {}).get("tag_count", 0)
+            uwb_section = data.get("uwb", {})
+            uwb_count = uwb_section.get("n_anchors", 0) if uwb_section.get("available", True) else 0
+            print(f"   🏷️  RFID tags: {rfid_count}")
+            print(f"   📏 UWB anchors: {uwb_count}")
+            
+            # Transform to backend format
+            data = transform_hardware_to_backend(data)
+            print(f"   ✅ Transformed to backend format")
+            print(f"      Detections: {len(data['detections'])}")
+            print(f"      UWB measurements: {len(data['uwb_measurements'])}")
+        else:
+            print(f"   📤 Simulation format detected")
         
         # Forward to FastAPI backend
         response = requests.post(
@@ -46,15 +158,21 @@ def on_message(client, userdata, msg):
             print(f"✅ Data forwarded successfully:")
             print(f"   Detections stored: {result.get('detections_stored', 0)}")
             print(f"   UWB measurements stored: {result.get('uwb_measurements_stored', 0)}")
+            if result.get('position_calculated'):
+                pos = result.get('calculated_position', {})
+                print(f"   📍 Position calculated: ({pos.get('x', '?')}, {pos.get('y', '?')})")
         else:
             print(f"⚠️  API returned status {response.status_code}: {response.text}")
     
     except json.JSONDecodeError as e:
         print(f"❌ Invalid JSON received: {e}")
+        print(f"   Raw payload: {msg.payload[:200]}")
     except requests.exceptions.RequestException as e:
         print(f"❌ Failed to forward data to API: {e}")
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
 
 def on_disconnect(client, userdata, rc):
     """Callback when disconnected from MQTT broker"""
