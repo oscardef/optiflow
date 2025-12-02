@@ -56,6 +56,11 @@ export default function Home() {
   const [highlightedItem, setHighlightedItem] = useState<string | null>(null);
   const [currentMode, setCurrentMode] = useState<'SIMULATION' | 'REAL'>('SIMULATION');
   const [simulationRunning, setSimulationRunning] = useState(false);
+  
+  // Anchor placement modal state for REAL mode
+  const [pendingAnchor, setPendingAnchor] = useState<{x: number, y: number, index: number} | null>(null);
+  const [anchorMacInput, setAnchorMacInput] = useState('');
+  const [anchorNameInput, setAnchorNameInput] = useState('');
 
   const fetchAnchors = async () => {
     try {
@@ -244,6 +249,15 @@ export default function Home() {
   }, [viewMode]);
 
   const handleAnchorPlace = async (x: number, y: number, index: number) => {
+    if (currentMode === 'REAL') {
+      // In REAL mode, show modal to get actual hardware MAC address
+      setPendingAnchor({ x, y, index });
+      setAnchorMacInput('');
+      setAnchorNameInput(`Anchor ${index + 1}`);
+      return;
+    }
+    
+    // In SIMULATION mode, auto-generate MAC address
     const anchorData = {
       mac_address: `0x000${index + 1}`,
       name: `Anchor ${index + 1}`,
@@ -265,6 +279,53 @@ export default function Home() {
     } catch (error) {
       console.error('Failed to create anchor:', error);
     }
+  };
+
+  const handleConfirmAnchorPlacement = async () => {
+    if (!pendingAnchor || !anchorMacInput.trim()) return;
+    
+    // Normalize MAC address format (ensure it starts with 0x, uppercase hex digits only)
+    let macAddress = anchorMacInput.trim();
+    if (macAddress.toLowerCase().startsWith('0x')) {
+      macAddress = '0x' + macAddress.slice(2).toUpperCase();
+    } else {
+      macAddress = '0x' + macAddress.toUpperCase();
+    }
+    
+    const anchorData = {
+      mac_address: macAddress,
+      name: anchorNameInput.trim() || `Anchor ${pendingAnchor.index + 1}`,
+      x_position: Math.round(pendingAnchor.x),
+      y_position: Math.round(pendingAnchor.y),
+      is_active: true
+    };
+
+    try {
+      const response = await fetch(`${API_URL}/anchors`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(anchorData)
+      });
+
+      if (response.ok) {
+        await fetchAnchors();
+        setPendingAnchor(null);
+        setAnchorMacInput('');
+        setAnchorNameInput('');
+      } else {
+        const error = await response.json();
+        alert(`Failed to create anchor: ${error.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to create anchor:', error);
+      alert('Failed to create anchor. Check console for details.');
+    }
+  };
+
+  const handleCancelAnchorPlacement = () => {
+    setPendingAnchor(null);
+    setAnchorMacInput('');
+    setAnchorNameInput('');
   };
 
   const handleAnchorUpdate = async (anchorId: number, x: number, y: number) => {
@@ -845,6 +906,75 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* Anchor Placement Modal for REAL mode */}
+      {pendingAnchor && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-w-[90vw]">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Configure Anchor {pendingAnchor.index + 1}
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Enter the MAC address from your DWM3001CDK device. You can find this on the device label or in the UWB shell output.
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  MAC Address <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={anchorMacInput}
+                  onChange={(e) => setAnchorMacInput(e.target.value)}
+                  placeholder="e.g., 0xABCD or ABCD"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm font-mono"
+                  autoFocus
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Format: 0xXXXX (e.g., 0x1234, 0xABCD)
+                </p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Anchor Name
+                </label>
+                <input
+                  type="text"
+                  value={anchorNameInput}
+                  onChange={(e) => setAnchorNameInput(e.target.value)}
+                  placeholder="e.g., Anchor 1"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm"
+                />
+              </div>
+              
+              <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                <div className="font-medium text-gray-700 mb-1">Position</div>
+                <div className="text-gray-600">
+                  X: {Math.round(pendingAnchor.x)} cm, Y: {Math.round(pendingAnchor.y)} cm
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleCancelAnchorPlacement}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmAnchorPlacement}
+                disabled={!anchorMacInput.trim()}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-[#0055A4] rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                Create Anchor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

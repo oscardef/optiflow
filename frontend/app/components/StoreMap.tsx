@@ -44,6 +44,11 @@ export default function StoreMap({
   const [storeHeight, setStoreHeight] = useState(800);
   const [currentMode, setCurrentMode] = useState<ConfigMode>('SIMULATION');
 
+  // Reset nextAnchorIndex when anchors are cleared or reduced
+  useEffect(() => {
+    setNextAnchorIndex(anchors.length);
+  }, [anchors.length]);
+
   // Fetch store configuration on mount
   useEffect(() => {
     fetch(`${API_URL}/config/store`)

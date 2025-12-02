@@ -1,0 +1,61 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv
+ENV
+*.egg-info
+.eggs
+
+# Node.js
+node_modules
+.next
+.npm
+*.log
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist
+build
+*.tar
+*.gz
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Test files
+test_*.py
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+coverage
+
+# Simulation output
+sim_output.txt
+rfid_data_log.csv
+
+# Firmware (not needed for Docker)
+firmware
+
+# Local env files
+.env.local
+.env.*.local

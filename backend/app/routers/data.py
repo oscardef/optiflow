@@ -150,6 +150,17 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                             num_anchors=len(measurements)
                         )
                         db.add(position)
+                        
+                        # Update inventory items that were just detected with calculated position
+                        for detection in packet.detections:
+                            inventory_item = db.query(InventoryItem).filter(
+                                InventoryItem.rfid_tag == detection.product_id
+                            ).first()
+                            if inventory_item:
+                                inventory_item.x_position = x
+                                inventory_item.y_position = y
+                                logger.info(f"Updated position for {detection.product_id}: ({x:.1f}, {y:.1f})")
+                        
                         db.commit()
                         position_calculated = True
         except Exception as pos_error:

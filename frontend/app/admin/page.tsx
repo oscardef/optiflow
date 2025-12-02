@@ -27,6 +27,17 @@ export default function AdminPanel() {
   const [productSort, setProductSort] = useState<string>('name');
   const [connectionStatus, setConnectionStatus] = useState<any>(null);
   const [checkingConnection, setCheckingConnection] = useState(false);
+  
+  // Anchor management state
+  const [showAnchorForm, setShowAnchorForm] = useState(false);
+  const [editingAnchor, setEditingAnchor] = useState<Anchor | null>(null);
+  const [anchorForm, setAnchorForm] = useState({
+    mac_address: '',
+    name: '',
+    x_position: 0,
+    y_position: 0,
+    is_active: true
+  });
 
   // Fetch initial data
   useEffect(() => {
@@ -467,6 +478,86 @@ export default function AdminPanel() {
     }
   };
 
+  const openAnchorForm = (anchor?: Anchor) => {
+    if (anchor) {
+      setEditingAnchor(anchor);
+      setAnchorForm({
+        mac_address: anchor.mac_address,
+        name: anchor.name,
+        x_position: anchor.x_position,
+        y_position: anchor.y_position,
+        is_active: anchor.is_active
+      });
+    } else {
+      setEditingAnchor(null);
+      setAnchorForm({
+        mac_address: '',
+        name: `Anchor ${anchors.length + 1}`,
+        x_position: 0,
+        y_position: 0,
+        is_active: true
+      });
+    }
+    setShowAnchorForm(true);
+  };
+
+  const closeAnchorForm = () => {
+    setShowAnchorForm(false);
+    setEditingAnchor(null);
+    setAnchorForm({
+      mac_address: '',
+      name: '',
+      x_position: 0,
+      y_position: 0,
+      is_active: true
+    });
+  };
+
+  const saveAnchor = async () => {
+    // Normalize MAC address (keep 0x lowercase, uppercase hex digits only)
+    let macAddress = anchorForm.mac_address.trim();
+    if (macAddress.toLowerCase().startsWith('0x')) {
+      macAddress = '0x' + macAddress.slice(2).toUpperCase();
+    } else {
+      macAddress = '0x' + macAddress.toUpperCase();
+    }
+    
+    const anchorData = {
+      ...anchorForm,
+      mac_address: macAddress,
+      name: anchorForm.name.trim() || `Anchor ${anchors.length + 1}`,
+      x_position: Math.round(anchorForm.x_position),
+      y_position: Math.round(anchorForm.y_position)
+    };
+
+    setLoading(true);
+    try {
+      const url = editingAnchor 
+        ? `${API_URL}/anchors/${editingAnchor.id}` 
+        : `${API_URL}/anchors`;
+      const method = editingAnchor ? 'PUT' : 'POST';
+      
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(anchorData)
+      });
+
+      if (res.ok) {
+        showMessage('success', editingAnchor ? 'Anchor updated' : 'Anchor created');
+        await fetchAnchors();
+        closeAnchorForm();
+      } else {
+        const error = await res.json();
+        showMessage('error', error.detail || 'Failed to save anchor');
+      }
+    } catch (error) {
+      showMessage('error', 'Failed to save anchor');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -747,7 +838,29 @@ export default function AdminPanel() {
             {/* Anchors Tab */}
             {activeTab === 'anchors' && (
               <div>
-                <h2 className="text-xl font-semibold mb-4">Anchor Management</h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold">Anchor Management</h2>
+                  <button
+                    onClick={() => openAnchorForm()}
+                    className="px-4 py-2 text-sm font-medium text-white bg-[#0055A4] rounded-lg hover:bg-[#003d7a] transition-colors"
+                  >
+                    + Add Anchor
+                  </button>
+                </div>
+                
+                {mode?.mode === 'REAL' && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                    <h4 className="font-medium text-blue-900 mb-2">Real Mode - Hardware Configuration</h4>
+                    <p className="text-sm text-blue-800 mb-2">
+                      For real mode, you need to enter the actual MAC addresses from your DWM3001CDK devices.
+                    </p>
+                    <p className="text-sm text-blue-700">
+                      <strong>Finding your anchor MAC:</strong> Connect to your DWM3001CDK via USB, open a serial terminal, 
+                      and run <code className="bg-blue-100 px-1 rounded">les</code> command to see the device address.
+                    </p>
+                  </div>
+                )}
+                
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
@@ -761,32 +874,144 @@ export default function AdminPanel() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {anchors.map((anchor) => (
-                        <tr key={anchor.id}>
-                          <td className="px-4 py-3 text-sm font-mono">{anchor.mac_address}</td>
-                          <td className="px-4 py-3 text-sm">{anchor.name}</td>
-                          <td className="px-4 py-3 text-sm">{anchor.x_position.toFixed(0)}</td>
-                          <td className="px-4 py-3 text-sm">{anchor.y_position.toFixed(0)}</td>
-                          <td className="px-4 py-3 text-sm">
-                            <span className={`px-2 py-1 rounded-full text-xs ${
-                              anchor.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                            }`}>
-                              {anchor.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            <button
-                              onClick={() => deleteAnchor(anchor.id)}
-                              className="text-red-600 hover:text-red-800"
-                            >
-                              Delete
-                            </button>
+                      {anchors.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                            No anchors configured. Click "Add Anchor" to create one, or place anchors on the store map.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        anchors.map((anchor) => (
+                          <tr key={anchor.id}>
+                            <td className="px-4 py-3 text-sm font-mono">{anchor.mac_address}</td>
+                            <td className="px-4 py-3 text-sm">{anchor.name}</td>
+                            <td className="px-4 py-3 text-sm">{anchor.x_position.toFixed(0)}</td>
+                            <td className="px-4 py-3 text-sm">{anchor.y_position.toFixed(0)}</td>
+                            <td className="px-4 py-3 text-sm">
+                              <span className={`px-2 py-1 rounded-full text-xs ${
+                                anchor.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {anchor.is_active ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm space-x-2">
+                              <button
+                                onClick={() => openAnchorForm(anchor)}
+                                className="text-[#0055A4] hover:text-[#003d7a]"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => deleteAnchor(anchor.id)}
+                                className="text-red-600 hover:text-red-800"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
+                
+                {/* Anchor Form Modal */}
+                {showAnchorForm && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl p-6 w-[450px] max-w-[90vw]">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                        {editingAnchor ? 'Edit Anchor' : 'Add New Anchor'}
+                      </h3>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            MAC Address <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={anchorForm.mac_address}
+                            onChange={(e) => setAnchorForm({...anchorForm, mac_address: e.target.value})}
+                            placeholder="e.g., 0xABCD or ABCD"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm font-mono"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            {mode?.mode === 'REAL' 
+                              ? 'Enter the actual MAC address from your DWM3001CDK device'
+                              : 'Format: 0xXXXX (e.g., 0x0001, 0x0002)'}
+                          </p>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Name
+                          </label>
+                          <input
+                            type="text"
+                            value={anchorForm.name}
+                            onChange={(e) => setAnchorForm({...anchorForm, name: e.target.value})}
+                            placeholder="e.g., Anchor 1, Corner NW"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm"
+                          />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              X Position (cm)
+                            </label>
+                            <input
+                              type="number"
+                              value={anchorForm.x_position}
+                              onChange={(e) => setAnchorForm({...anchorForm, x_position: parseFloat(e.target.value) || 0})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Y Position (cm)
+                            </label>
+                            <input
+                              type="number"
+                              value={anchorForm.y_position}
+                              onChange={(e) => setAnchorForm({...anchorForm, y_position: parseFloat(e.target.value) || 0})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm"
+                            />
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="anchorActive"
+                            checked={anchorForm.is_active}
+                            onChange={(e) => setAnchorForm({...anchorForm, is_active: e.target.checked})}
+                            className="w-4 h-4 text-[#0055A4] border-gray-300 rounded focus:ring-[#0055A4]"
+                          />
+                          <label htmlFor="anchorActive" className="text-sm text-gray-700">
+                            Active
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-3 mt-6">
+                        <button
+                          onClick={closeAnchorForm}
+                          className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={saveAnchor}
+                          disabled={!anchorForm.mac_address.trim() || loading}
+                          className="flex-1 px-4 py-2 text-sm font-medium text-white bg-[#0055A4] rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {loading ? 'Saving...' : (editingAnchor ? 'Update' : 'Create')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
