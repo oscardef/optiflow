@@ -12,7 +12,7 @@ import numpy as np
 
 # Parameters
 AREA = 4850  # m²
-ASPECT_RATIO = 1.5  # WIDTH / HEIGHT (e.g., 1.5 means width is 1.5x height)
+ASPECT_RATIO = 1.4  # WIDTH / HEIGHT (e.g., 1.5 means width is 1.5x height)
 HEIGHT = np.sqrt(AREA / ASPECT_RATIO)
 WIDTH = HEIGHT * ASPECT_RATIO
 RADIUS = 10  # meters
@@ -135,7 +135,7 @@ def compute_grid(n_required, width, height, radius):
 
 # ============ VISUALIZATION ============
 
-initial_n = 3
+initial_n = 7
 anchor_x, anchor_y, spacing, min_cov, n_anchors = compute_grid(
     initial_n, WIDTH, HEIGHT, RADIUS
 )
@@ -163,8 +163,8 @@ ax.grid(True, alpha=0.2)
 ax.legend(loc='upper right')
 
 # Text input fields
-ax_n = plt.axes([0.15, 0.04, 0.1, 0.04])
-ax_radius = plt.axes([0.45, 0.04, 0.1, 0.04])
+ax_n = plt.axes([0.15, 0.02, 0.1, 0.04])
+ax_radius = plt.axes([0.45, 0.02, 0.1, 0.04])
 
 text_n = TextBox(ax_n, 'N (int): ', initial=str(initial_n))
 text_radius = TextBox(ax_radius, 'Radius (m): ', initial=str(RADIUS))
