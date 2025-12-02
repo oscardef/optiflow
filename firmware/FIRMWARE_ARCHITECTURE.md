@@ -178,7 +178,82 @@ The system implements a **"Drop-and-Expire"** policy to handle network instabili
 
 ---
 
-## 7. Debugging & Observability
+## 7. JSON Output Format
+
+The firmware outputs data in a structured JSON format that matches the reference implementation (`RFID+UWB_TEST`). This format is used for both Serial Monitor output and MQTT publishing.
+
+### JSON Schema
+
+```json
+{
+  "polling_cycle": 1,
+  "timestamp": 123456,
+  "uwb": {
+    "n_anchors": 2,
+    "anchors": [
+      {
+        "mac_address": "0xABCD",
+        "average_distance_cm": 150.5,
+        "measurements": 3,
+        "total_sessions": 5
+      }
+    ]
+  },
+  "rfid": {
+    "tag_count": 2,
+    "tags": [
+      {
+        "epc": "E200001234567890ABCD",
+        "rssi_dbm": -45,
+        "pc": "3000"
+      }
+    ]
+  }
+}
+```
+
+### Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `polling_cycle` | Integer | Incrementing cycle counter (starts at 1) |
+| `timestamp` | Integer | Milliseconds since boot (`millis()`) |
+| **UWB Section** | | |
+| `uwb.n_anchors` | Integer | Number of anchors with valid data |
+| `uwb.anchors[]` | Array | List of anchor measurements |
+| `uwb.anchors[].mac_address` | String | Anchor MAC address (prefixed with `0x`) |
+| `uwb.anchors[].average_distance_cm` | Float/null | Averaged distance over the cycle, or `null` if no successful measurements |
+| `uwb.anchors[].measurements` | Integer | Number of successful distance readings |
+| `uwb.anchors[].total_sessions` | Integer | Total UWB sessions (including failures) |
+| `uwb.available` | Boolean | Only present when `false` (no UWB data) |
+| **RFID Section** | | |
+| `rfid.tag_count` | Integer | Number of unique tags detected |
+| `rfid.tags[]` | Array | List of detected RFID tags |
+| `rfid.tags[].epc` | String | Electronic Product Code (24 hex characters) |
+| `rfid.tags[].rssi_dbm` | Integer | Signal strength in dBm (typically -70 to -30) |
+| `rfid.tags[].pc` | String | Protocol Control word (4 hex characters) |
+
+### Example: No UWB Data Available
+
+When no UWB anchors are detected, the `uwb` section contains only:
+
+```json
+{
+  "polling_cycle": 1,
+  "timestamp": 123456,
+  "uwb": {
+    "available": false
+  },
+  "rfid": {
+    "tag_count": 0,
+    "tags": []
+  }
+}
+```
+
+---
+
+## 8. Debugging & Observability
 
 The firmware includes a compile-time debug switch:
 - **`DEBUG_MODE 1`**: Enables verbose serial output for development (Task startup, heap status, MQTT events).
