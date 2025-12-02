@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
+import random
+import uuid
 
 from ..database import get_db
 from ..models import Product, StockLevel
@@ -46,6 +48,79 @@ def get_products_with_stock(db: Session = Depends(get_db)):
         }
         for p in products
     ]
+
+@router.post("/populate-stock")
+def populate_stock_for_all_products(db: Session = Depends(get_db)):
+    """
+    Add inventory items to all products to match their optimal_stock_level.
+    Creates new items with unique RFID tags and random shelf positions.
+    """
+    from ..models import InventoryItem
+    from sqlalchemy import func
+    
+    # Get current stock counts per product
+    stock_counts = db.query(
+        Product.id,
+        func.count(InventoryItem.id).label('current_count')
+    ).outerjoin(
+        InventoryItem, Product.id == InventoryItem.product_id
+    ).group_by(Product.id).all()
+    
+    stock_dict = {row.id: row.current_count for row in stock_counts}
+    
+    # Get all products
+    products = db.query(Product).all()
+    
+    # Store aisle positions for realistic placement
+    aisles = [
+        {'x': 200, 'y_min': 150, 'y_max': 700},
+        {'x': 400, 'y_min': 120, 'y_max': 700},
+        {'x': 600, 'y_min': 120, 'y_max': 700},
+        {'x': 800, 'y_min': 120, 'y_max': 700},
+    ]
+    
+    items_created = 0
+    products_updated = 0
+    
+    for product in products:
+        current_count = stock_dict.get(product.id, 0)
+        target_count = product.optimal_stock_level or 5
+        
+        if current_count < target_count:
+            items_needed = target_count - current_count
+            products_updated += 1
+            
+            for i in range(items_needed):
+                # Generate unique RFID tag
+                rfid_tag = f"RFID{str(uuid.uuid4().hex)[:8].upper()}"
+                
+                # Random aisle position along shelves (not in walkways)
+                aisle = random.choice(aisles)
+                # Position on shelf edge (left or right of aisle center)
+                shelf_offset = random.choice([-35, 35])  # Shelf width offset
+                x = aisle['x'] + shelf_offset + random.uniform(-5, 5)
+                y = random.uniform(aisle['y_min'] + 20, aisle['y_max'] - 20)
+                
+                new_item = InventoryItem(
+                    rfid_tag=rfid_tag,
+                    product_id=product.id,
+                    status='present',
+                    x_position=round(x, 2),
+                    y_position=round(y, 2)
+                )
+                db.add(new_item)
+                items_created += 1
+    
+    db.commit()
+    
+    logger.info(f"Populated stock: {items_created} items created for {products_updated} products")
+    
+    return {
+        "success": True,
+        "items_created": items_created,
+        "products_updated": products_updated,
+        "message": f"Created {items_created} inventory items for {products_updated} products"
+    }
 
 @router.post("", status_code=201)
 def create_product(product_data: ProductCreate, db: Session = Depends(get_db)):

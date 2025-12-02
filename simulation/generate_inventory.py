@@ -402,12 +402,16 @@ def main():
             x, y = positions[position_idx]
             position_idx += 1
             
+            # Store positions in simulation memory only - items won't appear on map
+            # until the employee walks past and detects them
             all_items.append({
                 'rfid_tag': f"RFID-{rfid_counter:08d}",
                 'product_sku': product['sku'],  # Will need to map to product_id after creation
                 'status': 'present',
-                'x_position': x,
-                'y_position': y
+                'x_position': None,  # Hidden until detected
+                'y_position': None,  # Hidden until detected
+                '_sim_x': x,  # Internal position for simulation
+                '_sim_y': y   # Internal position for simulation
             })
             rfid_counter += 1
             
@@ -466,10 +470,13 @@ def main():
     # Map SKUs to product IDs
     sku_to_id = {p['sku']: p['id'] for p in created_products}
     
-    # Update items with product_id
+    # Update items with product_id and remove internal simulation fields
     for item in all_items:
         sku = item.pop('product_sku')
         item['product_id'] = sku_to_id.get(sku)
+        # Remove internal simulation position fields (not sent to API)
+        item.pop('_sim_x', None)
+        item.pop('_sim_y', None)
     
     # Filter out items with no product_id
     valid_items = [item for item in all_items if item['product_id'] is not None]

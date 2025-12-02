@@ -22,11 +22,13 @@ class ModeSwitch(BaseModel):
 class StoreConfigResponse(BaseModel):
     store_width: int
     store_height: int
+    max_display_items: int
     mode: str
 
 class StoreConfigUpdate(BaseModel):
     store_width: Optional[int] = None
     store_height: Optional[int] = None
+    max_display_items: Optional[int] = None
 
 @router.get("/mode", response_model=ModeResponse)
 def get_current_mode():
@@ -96,6 +98,7 @@ def get_store_config(db: Session = Depends(get_db)):
         return {
             "store_width": db_config.store_width,
             "store_height": db_config.store_height,
+            "max_display_items": config_state.max_display_items,
             "mode": config_state.mode.value
         }
     
@@ -103,6 +106,7 @@ def get_store_config(db: Session = Depends(get_db)):
     return {
         "store_width": config_state.store_width,
         "store_height": config_state.store_height,
+        "max_display_items": config_state.max_display_items,
         "mode": config_state.mode.value
     }
 
@@ -131,15 +135,19 @@ def update_store_config(
         db_config.store_height = update.store_height
         config_state.store_height = update.store_height
     
+    if update.max_display_items is not None:
+        config_state.max_display_items = update.max_display_items
+    
     db.commit()
     db.refresh(db_config)
     
-    logger.info(f"Updated store config: {db_config.store_width}x{db_config.store_height}cm")
+    logger.info(f"Updated store config: {db_config.store_width}x{db_config.store_height}cm, max_display_items={config_state.max_display_items}")
     
     return {
         "success": True,
         "store_width": db_config.store_width,
-        "store_height": db_config.store_height
+        "store_height": db_config.store_height,
+        "max_display_items": config_state.max_display_items
     }
 
 @router.get("/layout")

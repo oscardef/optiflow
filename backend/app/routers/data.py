@@ -144,7 +144,7 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         x, y, confidence = result
                         position = TagPosition(
                             timestamp=timestamp,
-                            tag_id="tag_0x42",
+                            tag_id="employee",
                             x_position=x,
                             y_position=y,
                             confidence=confidence,
@@ -214,9 +214,18 @@ def get_latest_data(limit: int = 50, db: Session = Depends(get_db)):
 
 @router.get("/data/items", response_model=List[DetectionResponse])
 def get_all_items(db: Session = Depends(get_db)):
-    """Get all items from inventory with their latest status"""
+    """Get all items from inventory that have positions (have been detected)
+    
+    Returns all items with valid positions - no limit applied since items
+    should persist on the map once detected.
+    """
+    # Get all items with valid positions (both present and missing)
+    # No limit - all detected items should persist on the map
     items = db.query(InventoryItem, Product)\
         .join(Product, InventoryItem.product_id == Product.id)\
+        .filter(InventoryItem.x_position.isnot(None))\
+        .filter(InventoryItem.y_position.isnot(None))\
+        .order_by(InventoryItem.id)\
         .all()
     
     return [DetectionResponse(
@@ -253,18 +262,21 @@ def get_missing_items(db: Session = Depends(get_db)):
     ) for item, product in missing_items]
 
 @router.delete("/data/clear")
-def clear_tracking_data(keep_hours: int = 0, db: Session = Depends(get_db)):
+def clear_tracking_data(keep_hours: int = 0, delete_items: bool = False, db: Session = Depends(get_db)):
     """
     Clear old tracking data (positions, detections, UWB measurements, inventory)
     
     Args:
         keep_hours: Keep data from the last N hours. Default 0 = clear everything
+        delete_items: If True, completely delete inventory items (for fresh start). 
+                      If False (default), just reset item status and positions.
     """
     try:
         inventory_deleted = 0
         purchase_events_deleted = 0
         location_history_deleted = 0
         stock_levels_reset = 0
+        products_deleted = 0
         
         if keep_hours > 0:
             cutoff_time = datetime.utcnow() - timedelta(hours=keep_hours)
@@ -292,17 +304,27 @@ def clear_tracking_data(keep_hours: int = 0, db: Session = Depends(get_db)):
             positions_deleted = db.query(TagPosition).delete()
             detections_deleted = db.query(Detection).delete()
             uwb_deleted = db.query(UWBMeasurement).delete()
-            # Reset inventory items to initial state (not visible on map until simulation runs)
-            # Also reset positions so simulation can set fresh shelf positions
-            items_reset = db.query(InventoryItem).update({
-                InventoryItem.status: 'not present',
-                InventoryItem.last_seen_at: None,
-                InventoryItem.x_position: None,
-                InventoryItem.y_position: None
-            })
-            inventory_deleted = 0  # Items not deleted, just reset
+            
+            if delete_items:
+                # Complete deletion - for fresh start in simulation mode
+                inventory_deleted = db.query(InventoryItem).delete()
+                products_deleted = db.query(Product).delete()
+                logger.info(f"Deleted all items ({inventory_deleted}) and products ({products_deleted})")
+            else:
+                # Reset inventory items to initial state (not visible on map until simulation runs)
+                # Also reset positions so simulation can set fresh shelf positions
+                items_reset = db.query(InventoryItem).update({
+                    InventoryItem.status: 'not present',
+                    InventoryItem.last_seen_at: None,
+                    InventoryItem.x_position: None,
+                    InventoryItem.y_position: None
+                })
+                inventory_deleted = 0  # Items not deleted, just reset
+            
             purchase_events_deleted = db.query(PurchaseEvent).delete()
             location_history_deleted = db.query(ProductLocationHistory).delete()
+            
+            # Reset all stock levels to zero (fresh start for heatmap)
             stock_levels = db.query(StockLevel).all()
             for stock_level in stock_levels:
                 stock_level.max_items_seen = 0
@@ -312,14 +334,15 @@ def clear_tracking_data(keep_hours: int = 0, db: Session = Depends(get_db)):
         
         db.commit()
         
-        logger.info(f"Cleared data: {positions_deleted} positions, {detections_deleted} detections, {uwb_deleted} UWB")
+        logger.info(f"Cleared data: {positions_deleted} positions, {detections_deleted} detections, {uwb_deleted} UWB, location_history={location_history_deleted}")
         
         return {
-            "message": "Tracking data cleared successfully",
+            "message": "Tracking data cleared successfully" + (" (items deleted)" if delete_items else " (items reset)"),
             "positions_deleted": positions_deleted,
             "detections_deleted": detections_deleted,
             "uwb_measurements_deleted": uwb_deleted,
             "inventory_items_deleted": inventory_deleted,
+            "products_deleted": products_deleted,
             "purchase_events_deleted": purchase_events_deleted,
             "location_history_deleted": location_history_deleted,
             "stock_levels_reset": stock_levels_reset
@@ -552,20 +575,32 @@ def receive_bulk_uwb(data: dict, db: Session = Depends(get_db)):
             try:
                 anchors = db.query(Anchor).filter(Anchor.is_active == True).all()
                 if len(anchors) >= 2:
-                    triangulation = TriangulationService(anchors)
-                    x, y, confidence = triangulation.calculate_position(measurements)
+                    # Build measurement tuples (anchor_x, anchor_y, distance)
+                    anchor_dict = {a.mac_address: (a.x_position, a.y_position) for a in anchors}
+                    measurement_tuples = []
+                    for m in measurements:
+                        mac = m.get("mac_address")
+                        if mac in anchor_dict:
+                            ax, ay = anchor_dict[mac]
+                            distance = m.get("distance_cm", 0)
+                            measurement_tuples.append((ax, ay, distance))
                     
-                    if confidence > 0:
-                        # Store calculated position
-                        position = TagPosition(
-                            timestamp=timestamp,
-                            tag_id="shopper",
-                            x_position=x,
-                            y_position=y,
-                            confidence=confidence,
-                            num_anchors=len(measurements)
-                        )
-                        db.add(position)
+                    if len(measurement_tuples) >= 2:
+                        result = TriangulationService.calculate_position(measurement_tuples)
+                        if result:
+                            x, y, confidence = result
+                            
+                            if confidence > 0:
+                                # Store calculated position
+                                position = TagPosition(
+                                    timestamp=timestamp,
+                                    tag_id="employee",
+                                    x_position=x,
+                                    y_position=y,
+                                    confidence=confidence,
+                                    num_anchors=len(measurement_tuples)
+                                )
+                                db.add(position)
             except Exception as e:
                 logger.warning(f"Triangulation failed: {e}")
         

@@ -22,6 +22,9 @@ export default function AdminPanel() {
   const [simSpeedMultiplier, setSimSpeedMultiplier] = useState<number>(1.0);
   const [simMode, setSimMode] = useState<string>('REALISTIC');
   const [simDisappearanceRate, setSimDisappearanceRate] = useState<number>(1.5);
+  const [simItemCount, setSimItemCount] = useState<number>(1000);
+  const [regeneratingInventory, setRegeneratingInventory] = useState(false);
+  const [showClearDataModal, setShowClearDataModal] = useState(false);
   const [productSearch, setProductSearch] = useState<string>('');
   const [productFilter, setProductFilter] = useState<string>('all');
   const [productSort, setProductSort] = useState<string>('name');
@@ -403,6 +406,53 @@ export default function AdminPanel() {
     }
   };
 
+  const handleClearAllData = async () => {
+    setShowClearDataModal(false);
+    setLoading(true);
+    try {
+      // Delete all items and products for a fresh start
+      const res = await fetch(`${API_URL}/data/clear?delete_items=true`, { method: 'DELETE' });
+      const data = await res.json();
+      
+      if (res.ok) {
+        showMessage('success', 'All data cleared successfully');
+        // Refresh products list
+        await fetchProducts();
+      } else {
+        showMessage('error', data.detail || 'Failed to clear data');
+      }
+    } catch (error) {
+      showMessage('error', 'Failed to clear data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const regenerateInventory = async () => {
+    setRegeneratingInventory(true);
+    try {
+      // Call the backend to generate inventory
+      const res = await fetch(`${API_URL}/simulation/generate-inventory`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_count: simItemCount })
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        showMessage('success', `Generated ${data.items_created || simItemCount} items successfully`);
+        // Refresh products list
+        await fetchProducts();
+      } else {
+        showMessage('error', data.detail || 'Failed to generate inventory');
+      }
+    } catch (error) {
+      showMessage('error', 'Failed to generate inventory');
+    } finally {
+      setRegeneratingInventory(false);
+    }
+  };
+
   const validateAnchors = async () => {
     setLoading(true);
     try {
@@ -422,13 +472,18 @@ export default function AdminPanel() {
     }
   };
 
-  const updateStoreConfig = async (width: number, height: number) => {
+  const updateStoreConfig = async (width?: number, height?: number, maxDisplayItems?: number) => {
     setLoading(true);
     try {
+      const body: any = {};
+      if (width !== undefined) body.store_width = width;
+      if (height !== undefined) body.store_height = height;
+      if (maxDisplayItems !== undefined) body.max_display_items = maxDisplayItems;
+      
       const res = await fetch(`${API_URL}/config/store`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_width: width, store_height: height })
+        body: JSON.stringify(body)
       });
       
       if (res.ok) {
@@ -693,20 +748,20 @@ export default function AdminPanel() {
                     <div className="grid grid-cols-2 gap-6 mb-6">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Simulation Mode
+                          Number of Items
                         </label>
-                        <select
-                          value={simMode}
-                          onChange={(e) => setSimMode(e.target.value)}
-                          disabled={simulationStatus?.running || loading}
+                        <input
+                          type="number"
+                          min="50"
+                          max="5000"
+                          step="50"
+                          value={simItemCount}
+                          onChange={(e) => setSimItemCount(Math.max(50, Math.min(5000, parseInt(e.target.value) || 100)))}
+                          disabled={simulationStatus?.running || loading || regeneratingInventory}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        >
-                          <option value="DEMO">Demo (100 items, 1-2 per SKU)</option>
-                          <option value="REALISTIC">Realistic (1000 items, 5-10 per SKU)</option>
-                          <option value="STRESS">Stress Test (2000 items, 10-20 per SKU)</option>
-                        </select>
+                        />
                         <p className="text-xs text-gray-500 mt-1">
-                          Controls the number of items and density in the simulation
+                          Number of inventory items to simulate (50-5000)
                         </p>
                       </div>
 
@@ -738,7 +793,7 @@ export default function AdminPanel() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-6 mb-6">
+                    <div className="grid grid-cols-1 gap-6 mb-6">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           Disappearance Rate: {simDisappearanceRate}%
@@ -836,12 +891,75 @@ export default function AdminPanel() {
                       </div>
                     )}
 
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    {/* Data Management Section */}
+                    <div className="border-t pt-6 mt-6">
+                      <h3 className="text-lg font-semibold mb-4">Data Management</h3>
+                      <div className="flex items-center gap-3 mb-4">
+                        <button
+                          onClick={() => setShowClearDataModal(true)}
+                          disabled={simulationStatus?.running || loading}
+                          className="px-6 py-2.5 text-sm font-medium bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Clear All Data
+                        </button>
+                        <button
+                          onClick={regenerateInventory}
+                          disabled={simulationStatus?.running || loading || regeneratingInventory}
+                          className="px-6 py-2.5 text-sm font-medium bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {regeneratingInventory ? 'Generating...' : `Generate ${simItemCount} Items`}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        <strong>Clear All Data:</strong> Deletes all items, products, detections, and analytics data for a fresh start.
+                        <br />
+                        <strong>Generate Items:</strong> Creates new inventory items with the specified count.
+                      </p>
+                    </div>
+
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mt-4">
                       <p className="text-sm text-gray-600 leading-relaxed">
                         <strong>Note:</strong> Simulation parameters can only be changed when the simulation is stopped. 
                         The simulation generates synthetic RFID and UWB data to test the system without physical hardware.
                         Connection checks are performed automatically when starting the simulation.
                       </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Clear Data Confirmation Modal */}
+                {showClearDataModal && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+                      <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                        Clear All Simulation Data?
+                      </h3>
+                      <p className="text-gray-600 mb-4">
+                        This will permanently delete all:
+                      </p>
+                      <ul className="list-disc list-inside text-gray-600 mb-6 text-sm space-y-1">
+                        <li>Inventory items and products</li>
+                        <li>Detection history</li>
+                        <li>Position tracking data</li>
+                        <li>Analytics and heatmap data</li>
+                      </ul>
+                      <p className="text-sm text-orange-600 mb-6">
+                        ⚠️ This action cannot be undone.
+                      </p>
+                      <div className="flex gap-3 justify-end">
+                        <button
+                          onClick={() => setShowClearDataModal(false)}
+                          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleClearAllData}
+                          className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                        >
+                          Delete All Data
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1381,7 +1499,7 @@ export default function AdminPanel() {
                       onChange={(e) => {
                         const newWidth = parseInt(e.target.value);
                         if (newWidth > 0) {
-                          updateStoreConfig(newWidth, storeConfig.store_height);
+                          updateStoreConfig(newWidth, undefined, undefined);
                         }
                       }}
                       className="w-64 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1397,7 +1515,7 @@ export default function AdminPanel() {
                       onChange={(e) => {
                         const newHeight = parseInt(e.target.value);
                         if (newHeight > 0) {
-                          updateStoreConfig(storeConfig.store_width, newHeight);
+                          updateStoreConfig(undefined, newHeight, undefined);
                         }
                       }}
                       className="w-64 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"

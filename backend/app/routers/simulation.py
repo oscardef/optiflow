@@ -311,3 +311,98 @@ def update_simulation_params(params: SimulationParams):
         "success": False,
         "message": "Parameter hot-reload not yet implemented. Stop and restart simulation with new parameters."
     }
+
+
+class InventoryGenerationParams(BaseModel):
+    item_count: int = 1000
+
+
+@router.post("/generate-inventory")
+def generate_inventory(params: InventoryGenerationParams):
+    """
+    Generate inventory items for simulation.
+    This runs the inventory generation script as a subprocess.
+    
+    Args:
+        item_count: Number of items to generate (50-5000)
+    """
+    if config_state.mode != ConfigMode.SIMULATION:
+        raise HTTPException(
+            status_code=400,
+            detail="Inventory generation is only available in SIMULATION mode"
+        )
+    
+    if config_state.simulation_running:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot generate inventory while simulation is running. Stop simulation first."
+        )
+    
+    # Clamp item count
+    item_count = max(50, min(5000, params.item_count))
+    
+    # Find simulation directory
+    backend_dir = Path(__file__).parent.parent.parent.parent
+    simulation_dir = backend_dir / "simulation"
+    
+    if not simulation_dir.exists():
+        simulation_dir = Path("/simulation")
+        if not simulation_dir.exists():
+            raise HTTPException(
+                status_code=500,
+                detail="Simulation directory not found"
+            )
+    
+    # Run generate_inventory script
+    cmd = [
+        sys.executable, "-m", "simulation.generate_inventory",
+        "--items", str(item_count),
+        "--api", "http://localhost:8000"
+    ]
+    
+    try:
+        logger.info(f"Generating {item_count} inventory items...")
+        
+        # Set up environment with PYTHONPATH
+        env = os.environ.copy()
+        pythonpath = str(simulation_dir.parent)
+        if 'PYTHONPATH' in env:
+            pythonpath = f"{pythonpath}:{env['PYTHONPATH']}"
+        env['PYTHONPATH'] = pythonpath
+        
+        result = subprocess.run(
+            cmd,
+            cwd=str(simulation_dir.parent),
+            capture_output=True,
+            text=True,
+            timeout=120,  # 2 minute timeout
+            env=env
+        )
+        
+        if result.returncode != 0:
+            logger.error(f"Inventory generation failed: {result.stderr}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Inventory generation failed: {result.stderr[-500:] if result.stderr else 'Unknown error'}"
+            )
+        
+        logger.info(f"Successfully generated {item_count} inventory items")
+        
+        return {
+            "success": True,
+            "message": f"Generated inventory with {item_count} items",
+            "items_created": item_count,
+            "output": result.stdout[-1000:] if result.stdout else ""
+        }
+    
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=500,
+            detail="Inventory generation timed out"
+        )
+    except Exception as e:
+        logger.error(f"Inventory generation error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Inventory generation failed: {str(e)}"
+        )

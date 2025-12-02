@@ -49,6 +49,7 @@ export default function Home() {
   const [expandedRestockItems, setExpandedRestockItems] = useState<Set<string>>(new Set());
   const [products, setProducts] = useState<any[]>([]);
   const [stockHeatmap, setStockHeatmap] = useState<any[]>([]);
+  const [maxDisplayItems, setMaxDisplayItems] = useState<number>(500);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -98,18 +99,33 @@ export default function Home() {
 
   const fetchItems = async () => {
     try {
+      // Fetch all items with positions - no limit needed, items persist once detected
       const response = await fetch(`${API_URL}/data/items`);
       const data = await response.json();
       
-      const presentItems = data.filter((item: any) => 
-        item.x_position && 
-        item.y_position && 
-        item.status === 'present'
+      // Get all items with valid positions (both present and missing)
+      // The StoreMap component will render them differently based on status
+      // Use explicit null/undefined check since 0 is a valid position
+      const itemsWithPositions = data.filter((item: any) => 
+        item.x_position !== null && 
+        item.x_position !== undefined &&
+        item.y_position !== null &&
+        item.y_position !== undefined
       );
       
-      setItems(presentItems);
+      setItems(itemsWithPositions);
     } catch (error) {
       console.error('Error fetching items:', error);
+    }
+  };
+  
+  const fetchStoreConfig = async () => {
+    try {
+      const response = await fetch(`${API_URL}/config/store`);
+      const config = await response.json();
+      setMaxDisplayItems(config.max_display_items || 500);
+    } catch (error) {
+      console.error('Error fetching store config:', error);
     }
   };
 
@@ -218,6 +234,7 @@ export default function Home() {
 
   useEffect(() => {
     const init = async () => {
+      await fetchStoreConfig(); // Fetch config first to get max_display_items
       await fetchAnchors();
       await fetchPositions();
       await fetchItems();
@@ -227,6 +244,12 @@ export default function Home() {
       setLoading(false);
     };
     init();
+  }, []);
+
+  // Periodically refresh store config (every 10 seconds)
+  useEffect(() => {
+    const interval = setInterval(fetchStoreConfig, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {

@@ -33,17 +33,29 @@ def get_stock_heatmap(db: Session = Depends(get_db)):
     Get stock depletion heatmap based on location clusters
     Returns per-product location data with depletion percentage based on historical maximum
     0% depletion = all items present (green), 100% = all items missing (red)
+    
+    Works without zone assignments by clustering items by position.
     """
     zones = db.query(Zone).all()
     
     def get_zone_from_position(x, y):
+        if x is None or y is None:
+            return None
         for zone in zones:
             if (zone.x_min <= x <= zone.x_max and 
                 zone.y_min <= y <= zone.y_max):
                 return zone.id
         return None
     
-    items = db.query(InventoryItem).all()
+    # Get items that have positions (filter out items with no position)
+    items = db.query(InventoryItem).filter(
+        InventoryItem.x_position.isnot(None),
+        InventoryItem.y_position.isnot(None)
+    ).all()
+    
+    if not items:
+        logger.info("No items with positions found for heatmap")
+        return []
     
     product_stats = defaultdict(lambda: {
         'x_positions': [],
@@ -56,18 +68,20 @@ def get_stock_heatmap(db: Session = Depends(get_db)):
     for item in items:
         zone_id = item.zone_id if item.zone_id else get_zone_from_position(item.x_position, item.y_position)
         
-        if zone_id:
-            key = (item.product_id, zone_id)
-            product_stats[key]['x_positions'].append(item.x_position)
-            product_stats[key]['y_positions'].append(item.y_position)
-            product_stats[key]['total_count'] += 1
-            if item.status == "present":
-                product_stats[key]['present_count'] += 1
-            product_stats[key]['zone_id'] = zone_id
+        # Use zone_id 0 as fallback for items without zone
+        effective_zone_id = zone_id if zone_id else 0
+        
+        key = (item.product_id, effective_zone_id)
+        product_stats[key]['x_positions'].append(item.x_position)
+        product_stats[key]['y_positions'].append(item.y_position)
+        product_stats[key]['total_count'] += 1
+        if item.status == "present":
+            product_stats[key]['present_count'] += 1
+        product_stats[key]['zone_id'] = effective_zone_id
     
     current_stats = []
     for (product_id, zone_id), stats in product_stats.items():
-        if stats['total_count'] > 0:
+        if stats['total_count'] > 0 and stats['x_positions']:
             current_stats.append({
                 'product_id': product_id,
                 'zone_id': zone_id,
@@ -77,6 +91,7 @@ def get_stock_heatmap(db: Session = Depends(get_db)):
                 'total_count': stats['total_count']
             })
     
+    # Update ProductLocationHistory for tracking max items seen
     for stat in current_stats:
         location_history = db.query(ProductLocationHistory).filter(
             ProductLocationHistory.product_id == stat['product_id'],
@@ -104,39 +119,40 @@ def get_stock_heatmap(db: Session = Depends(get_db)):
     
     db.commit()
     
-    heatmap_data = db.query(
-        ProductLocationHistory,
-        Product,
-        Zone
-    ).join(
-        Product, ProductLocationHistory.product_id == Product.id
-    ).join(
-        Zone, ProductLocationHistory.zone_id == Zone.id
-    ).filter(
-        ProductLocationHistory.max_items_seen > 0
-    ).all()
-    
-    logger.info(f"Generated heatmap with {len(heatmap_data)} location clusters")
-    
-    return [
-        {
-            "product_id": location.product_id,
+    # Build result directly from current stats (don't require Zone join for zone_id=0)
+    result = []
+    for stat in current_stats:
+        product = db.query(Product).filter(Product.id == stat['product_id']).first()
+        if not product:
+            continue
+        
+        zone = None
+        zone_name = "Unassigned"
+        if stat['zone_id'] and stat['zone_id'] != 0:
+            zone = db.query(Zone).filter(Zone.id == stat['zone_id']).first()
+            if zone:
+                zone_name = zone.name
+        
+        max_items = max(stat['total_count'], 1)  # Avoid division by zero
+        depletion = ((max_items - stat['present_count']) / max_items * 100)
+        
+        result.append({
+            "product_id": stat['product_id'],
             "product_name": product.name,
             "product_category": product.category,
-            "zone_id": location.zone_id,
-            "zone_name": zone.name,
-            "x": location.x_center,
-            "y": location.y_center,
-            "current_count": location.current_count,
-            "max_items_seen": location.max_items_seen,
-            "items_missing": location.max_items_seen - location.current_count,
-            "depletion_percentage": round(
-                ((location.max_items_seen - location.current_count) / location.max_items_seen * 100), 
-                1
-            ) if location.max_items_seen > 0 else 0
-        }
-        for location, product, zone in heatmap_data
-    ]
+            "zone_id": stat['zone_id'],
+            "zone_name": zone_name,
+            "x": stat['x_center'],
+            "y": stat['y_center'],
+            "current_count": stat['present_count'],
+            "max_items_seen": max_items,
+            "items_missing": max_items - stat['present_count'],
+            "depletion_percentage": round(depletion, 1)
+        })
+    
+    logger.info(f"Generated heatmap with {len(result)} location clusters from {len(items)} items")
+    
+    return result
 
 @router.get("/purchase-heatmap")
 def get_purchase_heatmap(hours: int = 24, db: Session = Depends(get_db)):

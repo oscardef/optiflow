@@ -79,6 +79,17 @@ class ConfigState:
         self._save_state()
     
     @property
+    def max_display_items(self) -> int:
+        """Get max items to display on map"""
+        return self._state.get("max_display_items", 500)
+    
+    @max_display_items.setter
+    def max_display_items(self, value: int):
+        """Set max items to display on map"""
+        self._state["max_display_items"] = min(max(value, 100), 5000)  # Clamp between 100-5000
+        self._save_state()
+    
+    @property
     def simulation_running(self) -> bool:
         """Check if simulation is running"""
         return self._state.get("simulation_running", False)

@@ -64,6 +64,7 @@ export interface ModeResponse {
 export interface StoreConfig {
   store_width: number;
   store_height: number;
+  max_display_items: number;
   mode: ConfigMode;
 }
 

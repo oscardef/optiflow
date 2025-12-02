@@ -138,8 +138,9 @@ def fetch_inventory_from_backend(api_url: str):
             # Items always start as NOT missing in simulation
             # The simulation will detect them as "present" first, then they can go missing
             # based on the disappearance rate after the first pass
-            x_pos = item_data.get('x_position') or 0.0
-            y_pos = item_data.get('y_position') or 0.0
+            # Use internal sim positions if available (items hidden until detected)
+            x_pos = item_data.get('_sim_x') or item_data.get('x_position') or 0.0
+            y_pos = item_data.get('_sim_y') or item_data.get('y_position') or 0.0
             
             item = Item(
                 rfid_tag=item_data['rfid_tag'],

@@ -448,10 +448,8 @@ export default function StoreMap({
 
     // Draw items on the map (only in live mode)
     if (viewMode === 'live') {
-      console.log('StoreMap drawing items:', items.length, 'viewMode:', viewMode);
       const missingItems = items.filter(item => item.status === 'not present');
       const presentItems = items.filter(item => item.status !== 'not present');
-      console.log('Present items:', presentItems.length, 'Missing items:', missingItems.length);
       
       // Draw present items first (so missing items are on top)
       presentItems.forEach((item) => {
@@ -587,18 +585,6 @@ export default function StoreMap({
 
     // Draw employee positions (from UWB triangulation) - only in live mode
     if (viewMode === 'live' && positions.length > 0) {
-      // Draw trail for previous positions (fading)
-      for (let i = Math.min(positions.length - 1, 5); i > 0; i--) {
-        const pos = positions[i];
-        const canvasPos = toCanvasCoords(pos.x_position, pos.y_position, canvas);
-        const alpha = (5 - i) / 8;
-        
-        ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`;
-        ctx.beginPath();
-        ctx.arc(canvasPos.x, canvasPos.y, 8, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-      
       // Draw current employee position (most recent)
       const currentPos = positions[0];
       const canvasPos = toCanvasCoords(currentPos.x_position, currentPos.y_position, canvas);
