@@ -260,3 +260,50 @@ The firmware includes a compile-time debug switch:
 - **`DEBUG_MODE 0`**: Disables all non-essential serial prints for production efficiency.
 
 All debug prints use the `DEBUG_PRINT()` macro, allowing the entire logging system to be compiled out for maximum performance.
+
+---
+
+## 9. UWB Hardware Configuration
+
+### Anchor MAC Addresses
+
+The system uses **Qorvo DWM3001CDK** modules with CLI firmware configured in FiRa ONE_TO_MANY mode.
+
+| Device | Role | MAC Address | CLI Command |
+|--------|------|-------------|-------------|
+| **Tag** | Controller/Initiator | `0x0000` | `INITF -MULTI -ADDR=0 -PADDR=[1,2,3,4] ...` |
+| **Anchor 1** | Responder | `0x0001` | `RESPF -MULTI -ADDR=1 -PADDR=0 ...` |
+| **Anchor 2** | Responder | `0x0002` | `RESPF -MULTI -ADDR=2 -PADDR=0 ...` |
+| **Anchor 3** | Responder | `0x0003` | `RESPF -MULTI -ADDR=3 -PADDR=0 ...` |
+| **Anchor 4** | Responder | `0x0004` | `RESPF -MULTI -ADDR=4 -PADDR=0 ...` |
+
+### Ranging Protocol
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| Protocol | FiRa DS-TWR | Double-Sided Two-Way Ranging |
+| Mode | ONE_TO_MANY | 1 tag → multiple anchors |
+| Channel | 9 | UWB channel |
+| Block Duration | 200ms | Update rate: 5 Hz |
+| Session ID | 42 | Shared across all devices |
+| Max Anchors | 8 | FiRa TWR protocol limit |
+
+### Example Ranging Output
+
+```
+SESSION_INFO_NTF: {session_handle=1, sequence_number=1, block_index=1, n_measurements=4
+ [mac_address=0x0001, status="SUCCESS", distance[cm]=245];
+ [mac_address=0x0002, status="SUCCESS", distance[cm]=312];
+ [mac_address=0x0003, status="SUCCESS", distance[cm]=189];
+ [mac_address=0x0004, status="SUCCESS", distance[cm]=403]}
+```
+
+### Adding More Anchors
+
+To scale to 8 anchors (maximum for FiRa TWR):
+
+1. Configure additional anchors with addresses `0x0005` through `0x0008`
+2. Update the tag's `PADDR` list: `PADDR=[1,2,3,4,5,6,7,8]`
+3. Increase block duration if needed: `-BLOCK=300` (for 8 anchors)
+
+> **Note**: For setups exceeding 8 anchors, UCI firmware with programmatic control is required. See `firmware/old/UWB_TEST/MULTI_ANCHOR_ARCHITECTURE.md` for details.
