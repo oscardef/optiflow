@@ -7,7 +7,7 @@ Click inside the rectangle to see coverage.
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from matplotlib.widgets import Slider
+from matplotlib.widgets import TextBox
 import numpy as np
 
 # Parameters
@@ -162,13 +162,20 @@ scatter_anchors = ax.scatter(anchor_x, anchor_y,
 ax.grid(True, alpha=0.2)
 ax.legend(loc='upper right')
 
-# Slider
-ax_slider = plt.axes([0.2, 0.04, 0.6, 0.03])
-slider_n = Slider(ax_slider, 'Min Anchors (N)', 1, 10, valinit=initial_n, valstep=1)
+# Text input fields
+ax_n = plt.axes([0.15, 0.04, 0.1, 0.04])
+ax_radius = plt.axes([0.45, 0.04, 0.1, 0.04])
+
+text_n = TextBox(ax_n, 'N (int): ', initial=str(initial_n))
+text_radius = TextBox(ax_radius, 'Radius (m): ', initial=str(RADIUS))
+
+# Current values
+current_n = initial_n
+current_radius = RADIUS
 
 # Title
 title = ax.set_title(
-    f'{n_anchors} anchors | Spacing: {spacing:.1f}m | Min coverage: {min_cov}'
+    f'{n_anchors} anchors | Spacing: {spacing:.1f}m | Min coverage: {min_cov} | Radius: {current_radius}m'
 )
 
 # Click visualization
@@ -179,12 +186,11 @@ highlight = None
 
 def update(val=None):
     global anchor_x, anchor_y, spacing, min_cov, n_anchors
-    global scatter_anchors
+    global scatter_anchors, current_n, current_radius
     global circle, count_text, highlight
     
-    n_req = int(slider_n.val)
     anchor_x, anchor_y, spacing, min_cov, n_anchors = compute_grid(
-        n_req, WIDTH, HEIGHT, RADIUS
+        current_n, WIDTH, HEIGHT, current_radius
     )
     
     scatter_anchors.remove()
@@ -197,14 +203,37 @@ def update(val=None):
     if highlight: highlight.remove(); highlight = None
     
     title.set_text(
-        f'{n_anchors} anchors | Spacing: {spacing:.1f}m | Min coverage: {min_cov}'
+        f'{n_anchors} anchors | Spacing: {spacing:.1f}m | Min coverage: {min_cov} | Radius: {current_radius}m'
     )
     
     fig.canvas.draw_idle()
-    print(f"N={n_req}: {n_anchors} anchors, spacing={spacing:.2f}m, min_coverage={min_cov}")
+    print(f"N={current_n}, Radius={current_radius}m: {n_anchors} anchors, spacing={spacing:.2f}m, min_coverage={min_cov}")
 
 
-slider_n.on_changed(update)
+def on_n_submit(text):
+    global current_n
+    try:
+        val = int(text)
+        if val >= 1:
+            current_n = val
+            update()
+    except ValueError:
+        pass  # Invalid input, ignore
+
+
+def on_radius_submit(text):
+    global current_radius
+    try:
+        val = float(text)
+        if val > 0:
+            current_radius = val
+            update()
+    except ValueError:
+        pass  # Invalid input, ignore
+
+
+text_n.on_submit(on_n_submit)
+text_radius.on_submit(on_radius_submit)
 
 
 def on_click(event):
@@ -224,14 +253,14 @@ def on_click(event):
     if count_text: count_text.remove()
     if highlight: highlight.remove()
     
-    # Draw circle
-    circle = patches.Circle((cx, cy), RADIUS, linewidth=2, edgecolor='red', 
+    # Draw circle with current radius
+    circle = patches.Circle((cx, cy), current_radius, linewidth=2, edgecolor='red', 
                              facecolor='red', alpha=0.15, zorder=3)
     ax.add_patch(circle)
     
     # Count anchors
     dist = np.sqrt((anchor_x - cx)**2 + (anchor_y - cy)**2)
-    in_range = dist <= RADIUS
+    in_range = dist <= current_radius
     count = np.sum(in_range)
     
     # Highlight
@@ -239,11 +268,10 @@ def on_click(event):
                            c='lime', s=100, zorder=6, edgecolors='darkgreen', linewidths=2)
     
     # Label
-    n_req = int(slider_n.val)
-    color = 'lightgreen' if count >= n_req else 'salmon'
-    status = '✓' if count >= n_req else '✗'
+    color = 'lightgreen' if count >= current_n else 'salmon'
+    status = '✓' if count >= current_n else '✗'
     
-    count_text = ax.text(cx, cy + RADIUS + 1.5, f'{status} {count} anchors', 
+    count_text = ax.text(cx, cy + current_radius + 1.5, f'{status} {count} anchors', 
                          fontsize=11, fontweight='bold', ha='center',
                          bbox=dict(boxstyle='round', facecolor=color, alpha=0.9), zorder=7)
     
