@@ -1,12 +1,61 @@
 """Individual inventory item management router"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
 
 from ..database import get_db
 from ..models import InventoryItem, Product
 from ..core import logger
 
 router = APIRouter(prefix="/items", tags=["items"])
+
+class InventoryItemCreate(BaseModel):
+    rfid_tag: str
+    product_id: int
+    status: str = "present"
+    x_position: Optional[float] = None
+    y_position: Optional[float] = None
+    zone_id: Optional[int] = None
+
+@router.get("")
+def get_all_items(db: Session = Depends(get_db)):
+    """Get all inventory items"""
+    items = db.query(InventoryItem).all()
+    return [item.to_dict() for item in items]
+
+@router.post("")
+def create_inventory_item(item: InventoryItemCreate, db: Session = Depends(get_db)):
+    """Create a new inventory item"""
+    # Check if product exists
+    product = db.query(Product).filter(Product.id == item.product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+    
+    # Check if RFID tag already exists
+    existing = db.query(InventoryItem).filter(InventoryItem.rfid_tag == item.rfid_tag).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Item with RFID tag {item.rfid_tag} already exists")
+    
+    # Create item
+    new_item = InventoryItem(
+        rfid_tag=item.rfid_tag,
+        product_id=item.product_id,
+        status=item.status,
+        x_position=item.x_position,
+        y_position=item.y_position,
+        zone_id=item.zone_id,
+        last_seen_at=datetime.utcnow()
+    )
+    
+    db.add(new_item)
+    db.commit()
+    db.refresh(new_item)
+    
+    logger.info(f"Created inventory item {item.rfid_tag} for product {product.sku}")
+    
+    return new_item.to_dict()
 
 @router.delete("/{rfid_tag}")
 def delete_inventory_item(rfid_tag: str, db: Session = Depends(get_db)):

@@ -271,10 +271,10 @@ def clear_tracking_data(keep_hours: int = 0, db: Session = Depends(get_db)):
             positions_deleted = db.query(TagPosition).delete()
             detections_deleted = db.query(Detection).delete()
             uwb_deleted = db.query(UWBMeasurement).delete()
-            inventory_deleted = db.query(InventoryItem).delete()
+            # Do NOT delete inventory items or products
+            inventory_deleted = 0
             purchase_events_deleted = db.query(PurchaseEvent).delete()
             location_history_deleted = db.query(ProductLocationHistory).delete()
-            
             stock_levels = db.query(StockLevel).all()
             for stock_level in stock_levels:
                 stock_level.max_items_seen = 0
@@ -437,3 +437,109 @@ def get_item_detail(rfid_tag: str, db: Session = Depends(get_db)):
             "max_detected": total_count
         }
     }
+
+@router.post("/data/bulk")
+def receive_bulk_detections(data: dict, db: Session = Depends(get_db)):
+    """
+    Receive bulk RFID detections from simulation
+    Optimized for high-throughput data ingestion
+    """
+    detections = data.get("detections", [])
+    if not detections:
+        return {"status": "success", "processed": 0}
+    
+    try:
+        timestamp = datetime.utcnow()
+        processed = 0
+        
+        for detection in detections:
+            # Normalize status
+            status_val = detection.get("status", "present")
+            if status_val == 'missing':
+                status_val = 'not present'
+            
+            # Store detection
+            det = Detection(
+                timestamp=timestamp,
+                product_id=detection.get("product_id"),
+                product_name=detection.get("product_name"),
+                x_position=detection.get("x_position"),
+                y_position=detection.get("y_position"),
+                status=status_val
+            )
+            db.add(det)
+            
+            # Update inventory item
+            inventory_item = db.query(InventoryItem).filter(
+                InventoryItem.rfid_tag == detection.get("product_id")
+            ).first()
+            
+            if inventory_item:
+                inventory_item.status = status_val
+                inventory_item.x_position = detection.get("x_position")
+                inventory_item.y_position = detection.get("y_position")
+                inventory_item.last_seen_at = timestamp
+            
+            processed += 1
+        
+        db.commit()
+        return {"status": "success", "processed": processed}
+    
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Bulk detection error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/uwb/bulk")
+def receive_bulk_uwb(data: dict, db: Session = Depends(get_db)):
+    """
+    Receive bulk UWB measurements from simulation
+    Optimized for high-throughput data ingestion
+    """
+    measurements = data.get("measurements", [])
+    if not measurements:
+        return {"status": "success", "processed": 0}
+    
+    try:
+        timestamp = datetime.utcnow()
+        processed = 0
+        
+        for measurement in measurements:
+            uwb = UWBMeasurement(
+                timestamp=timestamp,
+                mac_address=measurement.get("mac_address"),
+                distance_cm=measurement.get("distance_cm"),
+                status=measurement.get("status", "0x01")
+            )
+            db.add(uwb)
+            processed += 1
+        
+        # Try triangulation if we have enough measurements
+        if len(measurements) >= 2:
+            try:
+                anchors = db.query(Anchor).filter(Anchor.is_active == True).all()
+                if len(anchors) >= 2:
+                    triangulation = TriangulationService(anchors)
+                    x, y, confidence = triangulation.calculate_position(measurements)
+                    
+                    if confidence > 0:
+                        # Store calculated position
+                        position = TagPosition(
+                            timestamp=timestamp,
+                            tag_id="shopper",
+                            x_position=x,
+                            y_position=y,
+                            confidence=confidence,
+                            num_anchors=len(measurements)
+                        )
+                        db.add(position)
+            except Exception as e:
+                logger.warning(f"Triangulation failed: {e}")
+        
+        db.commit()
+        return {"status": "success", "processed": processed}
+    
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Bulk UWB error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

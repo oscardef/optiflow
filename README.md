@@ -14,7 +14,7 @@ A UWB (Ultra-Wideband) positioning system for tracking items and employees in re
 
 ## 🚀 Quick Start (5 Minutes - No Hardware!)
 
-### Automated Setup
+### Step 1: Automated Setup
 
 ```bash
 # One command to install and start everything!
@@ -27,6 +27,22 @@ This script will:
 - ✅ Install Python dependencies
 - ✅ Start all Docker containers
 - ✅ Verify services are running
+
+### Step 2: Generate Store Inventory
+
+**NEW: Generate realistic store inventory with thousands of products!**
+
+```bash
+# Generate 3000 items with realistic variants (sizes, colors, styles)
+python3 -m simulation.generate_inventory --items 3000
+```
+
+This creates:
+- **1,500+ unique product variants** (Running Shoes - Pro Black 9, Athletic T-Shirt - Medium Blue, etc.)
+- **3,000 RFID-tagged items** distributed across the store
+- **Realistic categories**: Footwear, Apparel, Sports Equipment, Fitness, Accessories, Electronics, Nutrition
+
+💡 **See [Inventory Generation Guide](docs/INVENTORY_GENERATION.md) for advanced options**
 
 ### Manual Setup (if you prefer)
 
@@ -47,7 +63,7 @@ docker compose up -d
 
 </details>
 
-### Configure Anchors
+### Step 3: Configure Anchors
 
 1. Open http://localhost:3000 in your browser
 2. Click **"⚙️ Setup Mode"** button
@@ -60,22 +76,28 @@ docker compose up -d
 
 **Important:** The simulator will automatically load anchor positions from the backend!
 
-### Run Simulator
+### Step 4: Run Simulator
 
 ```bash
-# Install dependencies (first time only)
-pip3 install -r requirements.txt
+# Start simulator with real-time analytics tracking
+python3 -m simulation.main --analytics
 
-# Start simulator (auto-loads anchors from backend)
-python3 -m simulation.main --mode realistic
-
-# Other modes available:
-# --mode demo      # 100 items for quick testing
-# --mode stress    # 1000 items for load testing
+# Note: Simulation now uses database inventory!
+# --mode is still available but mainly affects shopper behavior
 # --speed 2.0      # 2x speed (default 1.0)
+# --analytics      # Enable real-time analytics tracking
 ```
 
-### Step 4: Watch Magic Happen ✨
+### Step 5: Generate Historical Analytics (Optional)
+
+```bash
+# Generate 30 days of historical data for analytics dashboard
+python3 -m simulation.backfill_history --days 30 --density normal
+
+# Or use the frontend: Analytics → Generate Data button
+```
+
+### Step 6: Watch Magic Happen ✨
 
 You should now see:
 - 🚶 **Blue employee icon** moving through aisles (UWB triangulated position)

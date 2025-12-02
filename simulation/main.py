@@ -17,7 +17,7 @@ import paho.mqtt.client as mqtt
 import requests
 
 from .config import SimulationConfig, SimulationMode
-from .inventory import InventoryGenerator, PRODUCT_CATALOG
+from .inventory import InventoryGenerator, PRODUCT_CATALOG, Item, Product as ProductDataClass
 from .shopper import ShopperSimulator
 from .scanner import ScannerSimulator
 from .analytics_tracker import AnalyticsTracker
@@ -82,43 +82,79 @@ def on_message(client, userdata, msg):
         print("\n▶️  Resumed by MQTT command")
 
 
-def sync_products_to_backend(api_url: str):
-    """Sync product catalog from simulator to backend database"""
+def fetch_inventory_from_backend(api_url: str):
+    """Fetch products and inventory items from backend database
+    Returns tuple of (items_list, products_dict) or None if failed
+    """
     try:
-        # Get existing products first to avoid duplicate checks
-        response = requests.get(f"{api_url}/products", timeout=5)
-        existing_skus = set()
-        if response.status_code == 200:
-            existing_products = response.json()
-            existing_skus = {p['sku'] for p in existing_products}
+        # Fetch products
+        print("   Fetching products...")
+        products_response = requests.get(f"{api_url}/products", timeout=10)
+        if products_response.status_code != 200:
+            print(f"   ❌ Failed to fetch products: {products_response.status_code}")
+            return None
         
-        created_count = 0
-        for product in PRODUCT_CATALOG:
-            if product.sku in existing_skus:
-                continue  # Skip existing products
+        products_data = products_response.json()
+        if not products_data:
+            print("   ⚠️  No products found in database")
+            print("   Please run: python -m simulation.generate_inventory --items 3000")
+            return None
+        
+        print(f"   ✅ Loaded {len(products_data)} products")
+        
+        # Fetch inventory items
+        print("   Fetching inventory items...")
+        items_response = requests.get(f"{api_url}/items", timeout=10)
+        if items_response.status_code != 200:
+            print(f"   ❌ Failed to fetch items: {items_response.status_code}")
+            return None
+        
+        items_data = items_response.json()
+        if not items_data:
+            print("   ⚠️  No inventory items found in database")
+            print("   Please run: python -m simulation.generate_inventory --items 3000")
+            return None
+        
+        print(f"   ✅ Loaded {len(items_data)} inventory items")
+        
+        # Build product lookup
+        products_by_id = {p['id']: p for p in products_data}
+        
+        # Convert to simulation Item objects
+        simulation_items = []
+        for item_data in items_data:
+            product_data = products_by_id.get(item_data['product_id'])
+            if not product_data:
+                continue
             
-            # Create product
-            payload = {
-                "sku": product.sku,
-                "name": product.name,
-                "category": product.category,
-                "unit_price": 29.99,  # Default price
-                "reorder_threshold": 5,
-                "optimal_stock_level": 15
-            }
-            create_response = requests.post(f"{api_url}/products", json=payload, timeout=5)
-            if create_response.status_code == 201:
-                created_count += 1
-            else:
-                print(f"   ⚠️  Failed to create {product.sku}: {create_response.status_code}")
+            # Create Product dataclass
+            product = ProductDataClass(
+                sku=product_data['sku'],
+                name=product_data['name'],
+                category=product_data['category']
+            )
+            
+            # Create Item dataclass
+            item = Item(
+                rfid_tag=item_data['rfid_tag'],
+                product=product,
+                x=item_data.get('x_position', 0.0),
+                y=item_data.get('y_position', 0.0),
+                detected=False,
+                last_seen=None,
+                missing=(item_data['status'] == 'not present'),
+                reported_status=None
+            )
+            simulation_items.append(item)
         
-        if created_count > 0:
-            print(f"   ✅ Created {created_count} new products")
-        print(f"✅ Product catalog synced ({len(PRODUCT_CATALOG)} total SKUs)")
+        print(f"   ✅ Converted {len(simulation_items)} items for simulation")
+        return simulation_items, products_by_id
     
     except Exception as e:
-        print(f"⚠️  Could not sync products to backend: {e}")
-        print("   Continuing anyway - products will be created on-demand")
+        print(f"   ❌ Error fetching inventory: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 def main():
@@ -181,14 +217,25 @@ def main():
     
     anchor_positions, anchor_macs = anchor_config
     
-    # Sync product catalog to backend
-    print("\n📋 Syncing product catalog to backend...")
-    sync_products_to_backend(config.api_url)
+    # Fetch inventory from backend database
+    print("\n📦 Loading inventory from database...")
+    inventory_result = fetch_inventory_from_backend(config.api_url)
     
-    # Generate inventory
-    print("\n📦 Generating inventory...")
-    inventory_gen = InventoryGenerator(config)
-    items = inventory_gen.generate_items()
+    if inventory_result is None:
+        print("\n❌ ERROR: Could not load inventory from backend.")
+        print("   Please generate inventory first:")
+        print("   python -m simulation.generate_inventory --items 3000\n")
+        return 1
+    
+    items, products_dict = inventory_result
+    
+    if len(items) == 0:
+        print("\n❌ ERROR: No items found in inventory.")
+        print("   Please generate inventory first:")
+        print("   python -m simulation.generate_inventory --items 3000\n")
+        return 1
+    
+    print(f"\n✅ Loaded {len(items)} items from {len(products_dict)} products")
     
     # Initialize simulators
     print("\n🤖 Initializing simulators...")
@@ -282,18 +329,39 @@ def main():
                 detections = scanner.get_rfid_detections(x, y)
                 uwb_measurements = scanner.measure_distances(x, y, anchor_macs)
                 
-                # Build MQTT packet (only send if connected)
+                # Build packet
                 packet = {
                     "timestamp": datetime.utcnow().isoformat() + "Z",
                     "detections": detections,
                     "uwb_measurements": uwb_measurements
                 }
                 
-                # Publish to MQTT
+                # Send to backend API directly (in addition to MQTT)
+                try:
+                    # Send detections to API
+                    if detections:
+                        api_response = requests.post(
+                            f"{config.api_url}/data/bulk",
+                            json={"detections": detections},
+                            timeout=2
+                        )
+                    
+                    # Send UWB measurements to API
+                    if uwb_measurements:
+                        api_response = requests.post(
+                            f"{config.api_url}/uwb/bulk",
+                            json={"measurements": uwb_measurements},
+                            timeout=2
+                        )
+                except Exception as e:
+                    # Silently fail API calls to not spam console
+                    pass
+                
+                # Publish to MQTT (for legacy support)
                 payload = json.dumps(packet)
                 result = client.publish(config.mqtt.topic_data, payload)
                 
-                if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                if result.rc == mqtt.MQTT_ERR_SUCCESS or True:  # Count even if MQTT fails
                     packet_count += 1
                     
                     # Print status every 5th update

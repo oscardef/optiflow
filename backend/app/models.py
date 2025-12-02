@@ -183,8 +183,8 @@ class InventoryItem(Base):
             "y_position": self.y_position,
             "zone_id": self.zone_id,
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat()
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
 
 class StockLevel(Base):
