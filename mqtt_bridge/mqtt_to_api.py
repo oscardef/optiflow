@@ -59,7 +59,7 @@ def on_message(client, userdata, msg):
 def on_disconnect(client, userdata, rc):
     """Callback when disconnected from MQTT broker"""
     if rc != 0:
-        print(f"⚠️  Unexpected disconnection. Reconnecting...")
+        print(f"⚠️  Unexpected disconnection from MQTT broker (code: {rc}). Will attempt to reconnect...")
 
 def main():
     """Main function to start MQTT bridge"""
@@ -84,19 +84,24 @@ def main():
     client.on_message = on_message
     client.on_disconnect = on_disconnect
     
-    # Connect to broker
-    try:
-        client.connect(MQTT_BROKER_HOST, MQTT_BROKER_PORT, 60)
+    # Connect to broker with retry logic
+    while True:
+        try:
+            print(f"🔄 Attempting to connect to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}...")
+            client.connect(MQTT_BROKER_HOST, MQTT_BROKER_PORT, 60)
+            
+            # Start listening loop
+            print("🎧 MQTT Bridge running. Press Ctrl+C to stop.")
+            client.loop_forever()
         
-        # Start listening loop
-        print("🎧 MQTT Bridge running. Press Ctrl+C to stop.")
-        client.loop_forever()
-    
-    except KeyboardInterrupt:
-        print("\n🛑 Shutting down MQTT bridge...")
-        client.disconnect()
-    except Exception as e:
-        print(f"❌ Fatal error: {e}")
+        except KeyboardInterrupt:
+            print("\n🛑 Shutting down MQTT bridge...")
+            client.disconnect()
+            break
+        except Exception as e:
+            print(f"❌ MQTT broker connection failed: {e}")
+            print(f"🔄 Retrying in 5 seconds...")
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
