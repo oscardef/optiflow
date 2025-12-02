@@ -35,19 +35,14 @@ export default function StoreMap({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [draggedAnchor, setDraggedAnchor] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [hoveredAnchor, setHoveredAnchor] = useState<number | null>(null);
-  const [nextAnchorIndex, setNextAnchorIndex] = useState(0);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 640 });
   
   // Dynamic configuration from backend
   const [storeWidth, setStoreWidth] = useState(1000);
   const [storeHeight, setStoreHeight] = useState(800);
   const [currentMode, setCurrentMode] = useState<ConfigMode>('SIMULATION');
-
-  // Reset nextAnchorIndex when anchors are cleared or reduced
-  useEffect(() => {
-    setNextAnchorIndex(anchors.length);
-  }, [anchors.length]);
 
   // Fetch store configuration on mount
   useEffect(() => {
@@ -340,23 +335,54 @@ export default function StoreMap({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw grid
+    // Draw grid - scale grid size based on store dimensions for nice divisions
     ctx.strokeStyle = '#e5e7eb';
-    ctx.lineWidth = 2;
-    const gridSize = 100; // 1 meter grid
-    for (let x = 0; x < storeWidth; x += gridSize) {
+    ctx.lineWidth = 1;
+    
+    // Calculate appropriate grid size (aim for 5-10 divisions per axis)
+    const getGridSize = (dimension: number) => {
+      if (dimension <= 200) return 20;
+      if (dimension <= 500) return 50;
+      if (dimension <= 1000) return 100;
+      if (dimension <= 2000) return 200;
+      return 500;
+    };
+    
+    const gridSizeX = getGridSize(storeWidth);
+    const gridSizeY = getGridSize(storeHeight);
+    
+    // Draw vertical grid lines
+    for (let x = 0; x <= storeWidth; x += gridSizeX) {
       const canvasX = toCanvasCoords(x, 0, canvas).x;
       ctx.beginPath();
       ctx.moveTo(canvasX, 0);
       ctx.lineTo(canvasX, canvas.height);
       ctx.stroke();
+      
+      // Draw coordinate label at top
+      if (setupMode && x > 0 && x < storeWidth) {
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${x}`, canvasX, 14);
+      }
     }
-    for (let y = 0; y < storeHeight; y += gridSize) {
+    
+    // Draw horizontal grid lines
+    for (let y = 0; y <= storeHeight; y += gridSizeY) {
       const canvasY = toCanvasCoords(0, y, canvas).y;
       ctx.beginPath();
       ctx.moveTo(0, canvasY);
       ctx.lineTo(canvas.width, canvasY);
       ctx.stroke();
+      
+      // Draw coordinate label at left
+      if (setupMode && y > 0 && y < storeHeight) {
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${y}`, 4, canvasY + 4);
+      }
     }
 
     // Draw store boundary
@@ -422,8 +448,10 @@ export default function StoreMap({
 
     // Draw items on the map (only in live mode)
     if (viewMode === 'live') {
+      console.log('StoreMap drawing items:', items.length, 'viewMode:', viewMode);
       const missingItems = items.filter(item => item.status === 'not present');
       const presentItems = items.filter(item => item.status !== 'not present');
+      console.log('Present items:', presentItems.length, 'Missing items:', missingItems.length);
       
       // Draw present items first (so missing items are on top)
       presentItems.forEach((item) => {
@@ -499,6 +527,14 @@ export default function StoreMap({
     // Draw anchors
     anchors.forEach((anchor, index) => {
       const pos = toCanvasCoords(anchor.x_position, anchor.y_position, canvas);
+      const isHovered = hoveredAnchor === anchor.id || draggedAnchor === anchor.id;
+      
+      // Draw outer ring for better visibility
+      ctx.strokeStyle = anchor.is_active ? 'rgba(0, 85, 164, 0.3)' : 'rgba(156, 163, 175, 0.3)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 32, 0, 2 * Math.PI);
+      ctx.stroke();
       
       // Anchor circle - royal blue
       ctx.fillStyle = anchor.is_active ? '#0055A4' : '#9ca3af';
@@ -506,25 +542,47 @@ export default function StoreMap({
       ctx.arc(pos.x, pos.y, 24, 0, 2 * Math.PI);
       ctx.fill();
       
+      // White border
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 24, 0, 2 * Math.PI);
+      ctx.stroke();
+      
       // Highlight if hovered or dragged
-      if (hoveredAnchor === anchor.id || draggedAnchor === anchor.id) {
-        ctx.strokeStyle = '#1a6bbb';
-        ctx.lineWidth = 6;
+      if (isHovered) {
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 4;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 30, 0, 2 * Math.PI);
+        ctx.arc(pos.x, pos.y, 36, 0, 2 * Math.PI);
         ctx.stroke();
       }
       
-      // Anchor label
-      ctx.fillStyle = '#111827';
-      ctx.font = 'bold 24px sans-serif';
+      // Anchor number inside circle
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 20px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(anchor.name || anchor.mac_address, pos.x, pos.y - 40);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${index + 1}`, pos.x, pos.y);
+      ctx.textBaseline = 'alphabetic';
       
-      // MAC address
-      ctx.font = '20px sans-serif';
+      // Anchor name label (above)
+      ctx.fillStyle = '#111827';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(anchor.name || `Anchor ${index + 1}`, pos.x, pos.y - 44);
+      
+      // MAC address (below)
+      ctx.font = '14px monospace';
       ctx.fillStyle = '#6b7280';
-      ctx.fillText(anchor.mac_address, pos.x, pos.y + 60);
+      ctx.fillText(anchor.mac_address, pos.x, pos.y + 44);
+      
+      // Position coordinates in setup mode
+      if (setupMode) {
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = '#9ca3af';
+        ctx.fillText(`(${Math.round(anchor.x_position)}, ${Math.round(anchor.y_position)})`, pos.x, pos.y + 58);
+      }
     });
 
     // Draw employee positions (from UWB triangulation) - only in live mode
@@ -657,10 +715,25 @@ export default function StoreMap({
     
     // If in setup mode, handle anchor placement
     if (setupMode && onAnchorPlace) {
-      if (draggedAnchor !== null) return; // Don't place if we were dragging
+      // Don't place if we were dragging an existing anchor
+      if (isDragging || draggedAnchor !== null) {
+        return;
+      }
+      
+      // Check if clicking on an existing anchor (don't create new one)
+      for (const anchor of anchors) {
+        const anchorCanvas = toCanvasCoords(anchor.x_position, anchor.y_position, canvas);
+        const distance = Math.sqrt(
+          Math.pow(x - anchorCanvas.x, 2) + Math.pow(y - anchorCanvas.y, 2)
+        );
+        if (distance < 40) {
+          return; // Clicked on existing anchor, don't create new
+        }
+      }
+      
       const storeCoords = toStoreCoords(x, y, canvas);
-      onAnchorPlace(storeCoords.x, storeCoords.y, nextAnchorIndex);
-      setNextAnchorIndex(nextAnchorIndex + 1);
+      // Use anchors.length as index - page.tsx will handle the actual creation
+      onAnchorPlace(storeCoords.x, storeCoords.y, anchors.length);
       return;
     }
     
@@ -704,15 +777,17 @@ export default function StoreMap({
     const x = displayX * scaleX;
     const y = displayY * scaleY;
     
-    // Check if clicking on an anchor
+    // Check if clicking on an anchor to start dragging
     for (const anchor of anchors) {
       const anchorCanvas = toCanvasCoords(anchor.x_position, anchor.y_position, canvas);
       const distance = Math.sqrt(
         Math.pow(x - anchorCanvas.x, 2) + Math.pow(y - anchorCanvas.y, 2)
       );
       
-      if (distance < 30) {  // Increased radius for easier clicking
+      if (distance < 40) {  // Increased radius for easier clicking
         setDraggedAnchor(anchor.id);
+        setIsDragging(false); // Will be set to true on first move
+        e.preventDefault(); // Prevent click event
         break;
       }
     }
@@ -734,6 +809,7 @@ export default function StoreMap({
     const y = displayY * scaleY;
     
     if (draggedAnchor !== null && setupMode && onAnchorUpdate) {
+      setIsDragging(true); // Mark that we're actually dragging
       const storeCoords = toStoreCoords(x, y, canvas);
       onAnchorUpdate(draggedAnchor, storeCoords.x, storeCoords.y);
     }
@@ -756,7 +832,11 @@ export default function StoreMap({
 
   // Handle mouse up (stop dragging)
   const handleMouseUp = () => {
-    setDraggedAnchor(null);
+    // Small delay to prevent click event from firing after drag
+    setTimeout(() => {
+      setDraggedAnchor(null);
+      setIsDragging(false);
+    }, 10);
   };
 
   return (
@@ -778,9 +858,12 @@ export default function StoreMap({
       />
       
       {setupMode && (
-        <div className="absolute top-4 right-4 bg-[#0055A4] text-white px-4 py-2 text-sm font-medium">
-          Click to place anchor #{nextAnchorIndex + 1}<br/>
-          Drag existing anchors to reposition
+        <div className="absolute top-4 right-4 bg-[#0055A4] text-white px-4 py-2 text-sm font-medium rounded-lg shadow-lg">
+          <div className="font-semibold">Setup Mode</div>
+          <div className="text-blue-100 text-xs mt-1">
+            Click to place Anchor #{anchors.length + 1}<br/>
+            Drag anchors to reposition
+          </div>
         </div>
       )}
 

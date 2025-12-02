@@ -138,11 +138,14 @@ def fetch_inventory_from_backend(api_url: str):
             # Items always start as NOT missing in simulation
             # The simulation will detect them as "present" first, then they can go missing
             # based on the disappearance rate after the first pass
+            x_pos = item_data.get('x_position') or 0.0
+            y_pos = item_data.get('y_position') or 0.0
+            
             item = Item(
                 rfid_tag=item_data['rfid_tag'],
                 product=product,
-                x=item_data.get('x_position', 0.0),
-                y=item_data.get('y_position', 0.0),
+                x=x_pos if x_pos else 0.0,
+                y=y_pos if y_pos else 0.0,
                 detected=False,
                 last_seen=None,
                 missing=False,  # Always start as not missing - will be detected as present first
@@ -150,8 +153,14 @@ def fetch_inventory_from_backend(api_url: str):
             )
             simulation_items.append(item)
         
+        # Check if items need position assignment (all at 0,0 means positions were cleared)
+        items_needing_positions = [i for i in simulation_items if i.x == 0.0 and i.y == 0.0]
+        if items_needing_positions and len(items_needing_positions) > len(simulation_items) * 0.5:
+            print(f"   ⚠️  {len(items_needing_positions)} items have no positions - will redistribute")
+            return simulation_items, products_by_id, True  # Flag to redistribute
+        
         print(f"   ✅ Converted {len(simulation_items)} items for simulation")
-        return simulation_items, products_by_id
+        return simulation_items, products_by_id, False
     
     except Exception as e:
         print(f"   ❌ Error fetching inventory: {e}")
@@ -230,13 +239,21 @@ def main():
         print("   python -m simulation.generate_inventory --items 3000\n")
         return 1
     
-    items, products_dict = inventory_result
+    items, products_dict, needs_redistribution = inventory_result
     
     if len(items) == 0:
         print("\n❌ ERROR: No items found in inventory.")
         print("   Please generate inventory first:")
         print("   python -m simulation.generate_inventory --items 3000\n")
         return 1
+    
+    # Redistribute items if positions were cleared
+    if needs_redistribution:
+        print("\n🔄 Redistributing items to shelf positions...")
+        from .inventory import InventoryGenerator
+        generator = InventoryGenerator(config)
+        generator.distribute_items(items)
+        print(f"   ✅ Assigned shelf positions to {len(items)} items")
     
     print(f"\n✅ Loaded {len(items)} items from {len(products_dict)} products")
     

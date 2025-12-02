@@ -61,6 +61,9 @@ export default function Home() {
   const [pendingAnchor, setPendingAnchor] = useState<{x: number, y: number, index: number} | null>(null);
   const [anchorMacInput, setAnchorMacInput] = useState('');
   const [anchorNameInput, setAnchorNameInput] = useState('');
+  
+  // Clear data confirmation modal
+  const [showClearDataModal, setShowClearDataModal] = useState(false);
 
   const fetchAnchors = async () => {
     try {
@@ -248,18 +251,25 @@ export default function Home() {
     if (viewMode === 'stock-heatmap') fetchStockHeatmap();
   }, [viewMode]);
 
+  // Generate proper MAC address format: 0x0001, 0x0002, ..., 0x000A, 0x000B, etc.
+  const generateMacAddress = (index: number): string => {
+    const hex = (index + 1).toString(16).toUpperCase().padStart(4, '0');
+    return `0x${hex}`;
+  };
+
   const handleAnchorPlace = async (x: number, y: number, index: number) => {
     if (currentMode === 'REAL') {
-      // In REAL mode, show modal to get actual hardware MAC address
+      // In REAL mode, show modal with pre-filled sequential MAC address
+      const suggestedMac = generateMacAddress(index);
       setPendingAnchor({ x, y, index });
-      setAnchorMacInput('');
+      setAnchorMacInput(suggestedMac);
       setAnchorNameInput(`Anchor ${index + 1}`);
       return;
     }
     
     // In SIMULATION mode, auto-generate MAC address
     const anchorData = {
-      mac_address: `0x000${index + 1}`,
+      mac_address: generateMacAddress(index),
       name: `Anchor ${index + 1}`,
       x_position: Math.round(x),
       y_position: Math.round(y),
@@ -357,9 +367,12 @@ export default function Home() {
     }
   };
 
-  const handleClearData = async () => {
-    if (!confirm('Clear all tracking data?')) return;
+  const handleClearData = () => {
+    setShowClearDataModal(true);
+  };
 
+  const confirmClearData = async () => {
+    setShowClearDataModal(false);
     try {
       await fetch(`${API_URL}/data/clear`, { method: 'DELETE' });
       
@@ -910,13 +923,18 @@ export default function Home() {
       {/* Anchor Placement Modal for REAL mode */}
       {pendingAnchor && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-w-[90vw]">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Configure Anchor {pendingAnchor.index + 1}
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Enter the MAC address from your DWM3001CDK device. You can find this on the device label or in the UWB shell output.
-            </p>
+          <div className="bg-white rounded-lg shadow-xl p-6 w-[420px] max-w-[90vw]">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-[#0055A4] rounded-full flex items-center justify-center text-white font-bold">
+                {pendingAnchor.index + 1}
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Configure Anchor {pendingAnchor.index + 1}
+                </h3>
+                <p className="text-xs text-gray-500">Position: ({Math.round(pendingAnchor.x)}, {Math.round(pendingAnchor.y)}) cm</p>
+              </div>
+            </div>
             
             <div className="space-y-4">
               <div>
@@ -927,12 +945,12 @@ export default function Home() {
                   type="text"
                   value={anchorMacInput}
                   onChange={(e) => setAnchorMacInput(e.target.value)}
-                  placeholder="e.g., 0xABCD or ABCD"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm font-mono"
+                  placeholder="e.g., 0x0001"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm font-mono text-lg"
                   autoFocus
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Format: 0xXXXX (e.g., 0x1234, 0xABCD)
+                  Pre-filled with sequential address. Change to match your DWM3001CDK device if needed.
                 </p>
               </div>
               
@@ -944,32 +962,59 @@ export default function Home() {
                   type="text"
                   value={anchorNameInput}
                   onChange={(e) => setAnchorNameInput(e.target.value)}
-                  placeholder="e.g., Anchor 1"
+                  placeholder="e.g., Corner NW"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm"
                 />
               </div>
               
-              <div className="bg-gray-50 rounded-lg p-3 text-sm">
-                <div className="font-medium text-gray-700 mb-1">Position</div>
-                <div className="text-gray-600">
-                  X: {Math.round(pendingAnchor.x)} cm, Y: {Math.round(pendingAnchor.y)} cm
-                </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+                <div className="font-medium mb-1">💡 Tip</div>
+                Place anchors at known physical locations (e.g., room corners). 
+                The position should match where the anchor is in the real world.
               </div>
             </div>
             
             <div className="flex gap-3 mt-6">
               <button
                 onClick={handleCancelAnchorPlacement}
-                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmAnchorPlacement}
                 disabled={!anchorMacInput.trim()}
-                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-[#0055A4] rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-[#0055A4] rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
                 Create Anchor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Data Confirmation Modal */}
+      {showClearDataModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">
+              Clear All Tracking Data?
+            </h3>
+            <p className="text-gray-600 mb-6">
+              This will remove all item positions and tracking data. Anchors and products will be preserved.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowClearDataModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmClearData}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+              >
+                Clear Data
               </button>
             </div>
           </div>

@@ -25,7 +25,8 @@ class ShopperSimulator:
         # Movement state
         self.current_aisle = 0
         self.direction = 'forward'  # 'forward' = 1->4, 'backward' = 4->1
-        self.movement_phase = 'going_down'  # 'going_down', 'going_up', 'at_cross'
+        # Phases: 'going_down', 'going_up', 'entering_cross', 'crossing', 'exiting_cross'
+        self.movement_phase = 'going_down'
         self.target_x = self.x
         self.target_y = config.store.aisles[0]['y_end']
         
@@ -50,54 +51,83 @@ class ShopperSimulator:
             self._reached_target()
             return
         
-        # Move toward target
+        # Move toward target (only one axis at a time for grid-like movement)
         move_distance = self.speed * dt
-        if move_distance >= distance:
-            self.x = self.target_x
-            self.y = self.target_y
-        else:
-            ratio = move_distance / distance
-            self.x += dx * ratio
-            self.y += dy * ratio
+        
+        # For entering/exiting cross aisle, move vertically first
+        # For crossing, move horizontally
+        if self.movement_phase in ['entering_cross', 'exiting_cross', 'going_down', 'going_up']:
+            # Vertical movement only
+            if abs(dy) > 1:
+                if move_distance >= abs(dy):
+                    self.y = self.target_y
+                else:
+                    self.y += math.copysign(move_distance, dy)
+            else:
+                self.y = self.target_y
+        elif self.movement_phase == 'crossing':
+            # Horizontal movement only
+            if abs(dx) > 1:
+                if move_distance >= abs(dx):
+                    self.x = self.target_x
+                else:
+                    self.x += math.copysign(move_distance, dx)
+            else:
+                self.x = self.target_x
     
     def _reached_target(self):
         """Handle reaching current target, set next target"""
         aisles = self.config.store.aisles
+        cross_y = self.config.store.cross_aisle_y
         
         if self.movement_phase == 'going_down':
             # Reached bottom of aisle
             self.aisles_visited.add(self.current_aisle)
             
-            # Check if we can move to cross aisle
+            # Check if we can move to next aisle
             if self.direction == 'forward' and self.current_aisle < len(aisles) - 1:
-                # Go to cross aisle to move to next aisle
-                self.movement_phase = 'at_cross'
-                self.target_x = aisles[self.current_aisle + 1]['x']
-                self.target_y = self.config.store.cross_aisle_y
+                # Step 1: Move vertically into the cross aisle
+                self.movement_phase = 'entering_cross'
+                self.target_y = cross_y
+                # Keep same X for now
             elif self.direction == 'backward' and self.current_aisle > 0:
-                # Go to cross aisle to move to previous aisle
-                self.movement_phase = 'at_cross'
-                self.target_x = aisles[self.current_aisle - 1]['x']
-                self.target_y = self.config.store.cross_aisle_y
+                # Step 1: Move vertically into the cross aisle
+                self.movement_phase = 'entering_cross'
+                self.target_y = cross_y
+                # Keep same X for now
             else:
                 # Can't go further, reverse direction
                 self._reverse_direction()
         
-        elif self.movement_phase == 'going_up':
-            # Reached top of aisle
-            self.movement_phase = 'going_down'
-            self.target_y = aisles[self.current_aisle]['y_end']
+        elif self.movement_phase == 'entering_cross':
+            # Now in the cross aisle, move horizontally to next aisle
+            self.movement_phase = 'crossing'
+            if self.direction == 'forward':
+                self.target_x = aisles[self.current_aisle + 1]['x']
+            else:
+                self.target_x = aisles[self.current_aisle - 1]['x']
+            # Y stays at cross_aisle_y
         
-        elif self.movement_phase == 'at_cross':
-            # Reached next aisle via cross aisle
+        elif self.movement_phase == 'crossing':
+            # Reached the next aisle's X position, now exit cross aisle
             if self.direction == 'forward':
                 self.current_aisle += 1
             else:
                 self.current_aisle -= 1
             
-            # Go up the new aisle
-            self.movement_phase = 'going_up'
+            # Step 3: Exit cross aisle by going up to the aisle start
+            self.movement_phase = 'exiting_cross'
             self.target_y = aisles[self.current_aisle]['y_start']
+        
+        elif self.movement_phase == 'exiting_cross':
+            # Exited cross aisle, now at top of new aisle, go down
+            self.movement_phase = 'going_down'
+            self.target_y = aisles[self.current_aisle]['y_end']
+        
+        elif self.movement_phase == 'going_up':
+            # Reached top of aisle
+            self.movement_phase = 'going_down'
+            self.target_y = aisles[self.current_aisle]['y_end']
     
     def _reverse_direction(self):
         """Reverse direction when reaching end of store"""
@@ -163,6 +193,12 @@ class ShopperSimulator:
             direction_info = "↓ Down"
         elif self.movement_phase == 'going_up':
             direction_info = "↑ Up"
+        elif self.movement_phase == 'entering_cross':
+            direction_info = "↓ Enter Cross"
+        elif self.movement_phase == 'crossing':
+            direction_info = "→ Cross" if self.direction == 'forward' else "← Cross"
+        elif self.movement_phase == 'exiting_cross':
+            direction_info = "↑ Exit Cross"
         else:
             direction_info = "→ Cross"
         

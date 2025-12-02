@@ -28,6 +28,10 @@ class ScannerSimulator:
         detection_range = self.config.tag.rfid_detection_range
         
         for item in self.items:
+            # Skip items with null positions
+            if item.x is None or item.y is None:
+                continue
+                
             # Calculate distance
             dx = item.x - shopper_x
             dy = item.y - shopper_y

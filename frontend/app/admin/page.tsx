@@ -27,6 +27,7 @@ export default function AdminPanel() {
   const [productSort, setProductSort] = useState<string>('name');
   const [connectionStatus, setConnectionStatus] = useState<any>(null);
   const [checkingConnection, setCheckingConnection] = useState(false);
+  const [pendingModeSwitch, setPendingModeSwitch] = useState<ConfigMode | null>(null);
   
   // Anchor management state
   const [showAnchorForm, setShowAnchorForm] = useState(false);
@@ -300,12 +301,18 @@ export default function AdminPanel() {
     await fetchProducts();
   };
 
-  const switchMode = async (newMode: ConfigMode) => {
-    if (!confirm(`Switch to ${newMode} mode? All data will be preserved and can be resumed by switching back.`)) {
-      return;
-    }
+  const switchMode = (newMode: ConfigMode) => {
+    // Show confirmation modal instead of browser confirm()
+    setPendingModeSwitch(newMode);
+  };
 
+  const confirmModeSwitch = async () => {
+    if (!pendingModeSwitch) return;
+    
+    const newMode = pendingModeSwitch;
+    setPendingModeSwitch(null);
     setLoading(true);
+    
     try {
       const res = await fetch(`${API_URL}/config/mode/switch`, {
         method: 'POST',
@@ -323,6 +330,7 @@ export default function AdminPanel() {
         showMessage('error', data.detail || 'Failed to switch mode');
       }
     } catch (error) {
+      console.error('Switch mode error:', error);
       showMessage('error', 'Failed to switch mode');
     } finally {
       setLoading(false);
@@ -560,6 +568,39 @@ export default function AdminPanel() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
+      {/* Mode Switch Confirmation Modal */}
+      {pendingModeSwitch && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">
+              Switch to {pendingModeSwitch} Mode?
+            </h3>
+            <p className="text-gray-600 mb-6">
+              {pendingModeSwitch === 'REAL' 
+                ? 'This will switch to real hardware mode. The simulation will be stopped and the system will listen for data from physical RFID/UWB devices.'
+                : 'This will switch to simulation mode. You can run the inventory simulation to test the system.'}
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              All data will be preserved and can be resumed by switching back.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setPendingModeSwitch(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmModeSwitch}
+                className="px-4 py-2 text-sm font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] rounded-lg transition-colors"
+              >
+                Switch to {pendingModeSwitch}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto">
         <div className="mb-6 flex items-start justify-between">
           <div>

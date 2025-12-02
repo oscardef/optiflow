@@ -13,6 +13,7 @@ from ..schemas import (
     DataPacket, DetectionResponse, UWBMeasurementResponse, LatestDataResponse
 )
 from ..triangulation import TriangulationService
+from ..config import config_state, ConfigMode
 from ..core import logger
 
 router = APIRouter(tags=["data"])
@@ -151,15 +152,17 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         )
                         db.add(position)
                         
-                        # Update inventory items that were just detected with calculated position
-                        for detection in packet.detections:
-                            inventory_item = db.query(InventoryItem).filter(
-                                InventoryItem.rfid_tag == detection.product_id
-                            ).first()
-                            if inventory_item:
-                                inventory_item.x_position = x
-                                inventory_item.y_position = y
-                                logger.info(f"Updated position for {detection.product_id}: ({x:.1f}, {y:.1f})")
+                        # Only update inventory item positions with triangulated position in REAL mode
+                        # In SIMULATION mode, items have predefined shelf positions that should be preserved
+                        if config_state.mode == ConfigMode.REAL:
+                            for detection in packet.detections:
+                                inventory_item = db.query(InventoryItem).filter(
+                                    InventoryItem.rfid_tag == detection.product_id
+                                ).first()
+                                if inventory_item:
+                                    inventory_item.x_position = x
+                                    inventory_item.y_position = y
+                                    logger.info(f"[REAL] Updated position for {detection.product_id}: ({x:.1f}, {y:.1f})")
                         
                         db.commit()
                         position_calculated = True
@@ -290,9 +293,12 @@ def clear_tracking_data(keep_hours: int = 0, db: Session = Depends(get_db)):
             detections_deleted = db.query(Detection).delete()
             uwb_deleted = db.query(UWBMeasurement).delete()
             # Reset inventory items to initial state (not visible on map until simulation runs)
+            # Also reset positions so simulation can set fresh shelf positions
             items_reset = db.query(InventoryItem).update({
                 InventoryItem.status: 'not present',
-                InventoryItem.last_seen_at: None
+                InventoryItem.last_seen_at: None,
+                InventoryItem.x_position: None,
+                InventoryItem.y_position: None
             })
             inventory_deleted = 0  # Items not deleted, just reset
             purchase_events_deleted = db.query(PurchaseEvent).delete()
