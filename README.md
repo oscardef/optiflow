@@ -1,515 +1,790 @@
-# OptiFlow - Real-time Store Tracking System
+# OptiFlow
 
-A UWB (Ultra-Wideband) positioning system for tracking items and employees in retail stores. Features an interactive map interface with real-time triangulation, aisle navigation simulation, and missing item detection.
+Real-time inventory tracking system combining UWB (Ultra-Wideband) positioning and RFID detection for retail environments. The system provides precise employee tracking, automated inventory monitoring, and comprehensive analytics.
 
-## 🎯 What It Does
+## Table of Contents
 
-- **Real-time Position Tracking**: Uses UWB triangulation to calculate precise 2D positions
-- **Interactive Store Map**: Canvas-based visualization with drag-and-drop anchor configuration
-- **Item Tracking**: Persistent item display with status monitoring (present/missing)
-- **Realistic Simulation**: Walk patterns through store aisles with proximity-based detection
-- **Missing Item Alerts**: Automatic detection and notification when items disappear
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [API Reference](#api-reference)
+- [Hardware Integration](#hardware-integration)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## 🚀 Quick Start (5 Minutes - No Hardware!)
+## Overview
 
-### Step 1: Automated Setup
+OptiFlow is a full-stack inventory management solution that tracks:
 
-```bash
-# One command to install and start everything!
-./start.sh
+- **Employee Position**: UWB triangulation provides sub-meter accuracy positioning
+- **Item Detection**: RFID scanning detects items within proximity of employees
+- **Stock Levels**: Real-time monitoring of present/missing items
+- **Analytics**: Historical trends, product velocity, and AI-powered insights
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| Real-time Tracking | 6-7 position updates per second with confidence scoring |
+| Dual Database | Separate databases for simulation and production environments |
+| Interactive Dashboard | Canvas-based store visualization with drag-and-drop anchor configuration |
+| Stock Heatmap | Visual representation of inventory depletion by location |
+| Analytics Suite | Product velocity, category performance, demand forecasting |
+| Hardware Ready | ESP32 firmware for RFID + UWB integration |
+
+---
+
+## Architecture
+
+### System Overview
+
+```
+                                    OPTIFLOW SYSTEM ARCHITECTURE
+    
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                              PRESENTATION LAYER                                  │
+    │  ┌─────────────────────────────────────────────────────────────────────────┐   │
+    │  │                        Next.js Frontend (Port 3000)                      │   │
+    │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐  │   │
+    │  │  │  Store Map   │  │  Admin Panel │  │  Analytics   │  │  Restock    │  │   │
+    │  │  │  (Canvas)    │  │  (Settings)  │  │  Dashboard   │  │  Queue      │  │   │
+    │  │  └──────────────┘  └──────────────┘  └──────────────┘  └─────────────┘  │   │
+    │  └─────────────────────────────────────────────────────────────────────────┘   │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                                          │ HTTP/REST
+                                          ▼
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                               APPLICATION LAYER                                  │
+    │  ┌─────────────────────────────────────────────────────────────────────────┐   │
+    │  │                      FastAPI Backend (Port 8000)                         │   │
+    │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │   │
+    │  │  │ Triangula-  │  │   Data      │  │  Analytics  │  │   Simulation    │ │   │
+    │  │  │ tion Engine │  │   Ingestion │  │  Engine     │  │   Controller    │ │   │
+    │  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────┘ │   │
+    │  └─────────────────────────────────────────────────────────────────────────┘   │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                          ┌───────────────┼───────────────┐
+                          │               │               │
+                          ▼               ▼               ▼
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                                 DATA LAYER                                       │
+    │  ┌───────────────────────┐              ┌───────────────────────┐               │
+    │  │  PostgreSQL           │              │  PostgreSQL           │               │
+    │  │  Simulation DB        │              │  Production DB        │               │
+    │  │  (Port 5432)          │              │  (Port 5433)          │               │
+    │  │                       │              │                       │               │
+    │  │  - Inventory Items    │              │  - Inventory Items    │               │
+    │  │  - Products           │              │  - Products           │               │
+    │  │  - Zones              │              │  - Zones              │               │
+    │  │  - Anchors            │              │  - Anchors            │               │
+    │  │  - Analytics Data     │              │  - Analytics Data     │               │
+    │  └───────────────────────┘              └───────────────────────┘               │
+    └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-This script will:
-- ✅ Check prerequisites (Docker, Python, Homebrew)
-- ✅ Install & start Mosquitto MQTT broker
-- ✅ Install Python dependencies
-- ✅ Start all Docker containers
-- ✅ Verify services are running
+### Data Flow Diagram
 
-### Step 2: Generate Store Inventory
+```
+                              HARDWARE/SIMULATION DATA FLOW
 
-**NEW: Generate realistic store inventory with thousands of products!**
-
-```bash
-# Generate 3000 items with realistic variants (sizes, colors, styles)
-python3 -m simulation.generate_inventory --items 3000
+    ┌──────────────────┐          ┌──────────────────┐
+    │   ESP32 + UWB    │          │   Python         │
+    │   + RFID         │          │   Simulator      │
+    │   (Hardware)     │          │   (Development)  │
+    └────────┬─────────┘          └────────┬─────────┘
+             │                              │
+             │ MQTT                         │ MQTT
+             │ (store/aisle1)               │ (store/aisle1)
+             ▼                              ▼
+    ┌─────────────────────────────────────────────────┐
+    │              Mosquitto MQTT Broker              │
+    │                   (Port 1883)                   │
+    └─────────────────────┬───────────────────────────┘
+                          │
+                          │ Subscribe
+                          ▼
+    ┌─────────────────────────────────────────────────┐
+    │              MQTT Bridge Service                │
+    │                                                 │
+    │   - Transforms hardware JSON to API format     │
+    │   - Forwards to backend via HTTP POST          │
+    └─────────────────────┬───────────────────────────┘
+                          │
+                          │ HTTP POST /data
+                          ▼
+    ┌─────────────────────────────────────────────────┐
+    │              FastAPI Backend                    │
+    │                                                 │
+    │   1. Receive UWB distances + RFID detections   │
+    │   2. Match anchors by MAC address              │
+    │   3. Triangulate employee position             │
+    │   4. Update item statuses (present/missing)    │
+    │   5. Record analytics events                   │
+    └─────────────────────┬───────────────────────────┘
+                          │
+                          │ SQL
+                          ▼
+    ┌─────────────────────────────────────────────────┐
+    │              PostgreSQL Database                │
+    │                                                 │
+    │   Tables:                                       │
+    │   - inventory_items (RFID tags, positions)     │
+    │   - products (SKU, name, category)             │
+    │   - tag_positions (calculated positions)       │
+    │   - anchors (UWB anchor configurations)        │
+    │   - zones (store areas)                        │
+    │   - purchase_events (analytics)                │
+    │   - stock_snapshots (historical data)          │
+    └─────────────────────────────────────────────────┘
 ```
 
-This creates:
-- **1,500+ unique product variants** (Running Shoes - Pro Black 9, Athletic T-Shirt - Medium Blue, etc.)
-- **3,000 RFID-tagged items** distributed across the store
-- **Realistic categories**: Footwear, Apparel, Sports Equipment, Fitness, Accessories, Electronics, Nutrition
+### Position Calculation
 
-💡 **See [Inventory Generation Guide](docs/INVENTORY_GENERATION.md) for advanced options**
+```
+                        REAL-TIME POSITION CALCULATION
 
-### Manual Setup (if you prefer)
+    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+    │  Anchor 1   │     │  Anchor 2   │     │  Anchor 3   │     │  Anchor 4   │
+    │  (Corner)   │     │  (Corner)   │     │  (Corner)   │     │  (Corner)   │
+    └──────┬──────┘     └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+           │                   │                   │                   │
+           │ d1 = 245cm        │ d2 = 312cm        │ d3 = 198cm        │ d4 = 287cm
+           │                   │                   │                   │
+           └───────────────────┴───────────────────┴───────────────────┘
+                                         │
+                                         ▼
+                        ┌────────────────────────────────┐
+                        │    Triangulation Algorithm     │
+                        │                                │
+                        │  - 2 anchors: Weighted midpoint│
+                        │  - 3+ anchors: Least squares   │
+                        │  - Confidence: 0.3 - 0.95      │
+                        └────────────────┬───────────────┘
+                                         │
+                                         ▼
+                        ┌────────────────────────────────┐
+                        │   Employee Position            │
+                        │   x: 423.5, y: 287.2           │
+                        │   confidence: 0.87             │
+                        └────────────────────────────────┘
+```
 
-<details>
-<summary>Click to expand manual setup steps</summary>
+### Frontend Component Architecture
+
+```
+                           FRONTEND ARCHITECTURE
+
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                         page.tsx (Main)                         │
+    │  ┌──────────────────────────────────────────────────────────┐  │
+    │  │  State Management                                         │  │
+    │  │  - Mode (simulation/real)                                 │  │
+    │  │  - Items, Positions, Anchors                              │  │
+    │  │  - Simulation Status                                      │  │
+    │  └──────────────────────────────────────────────────────────┘  │
+    │                              │                                  │
+    │           ┌──────────────────┼──────────────────┐              │
+    │           ▼                  ▼                  ▼              │
+    │  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐  │
+    │  │   StoreMap.tsx  │ │  Dashboard.tsx  │ │ Admin Panel     │  │
+    │  │                 │ │                 │ │                 │  │
+    │  │  - Canvas       │ │  - Stats Cards  │ │  - Mode Toggle  │  │
+    │  │  - Anchors      │ │  - Item List    │ │  - Item Count   │  │
+    │  │  - Items        │ │  - Restock Queue│ │  - Start/Stop   │  │
+    │  │  - Employee     │ │                 │ │  - Clear Data   │  │
+    │  │  - Heatmap      │ │                 │ │                 │  │
+    │  │  - Zones        │ │                 │ │                 │  │
+    │  └─────────────────┘ └─────────────────┘ └─────────────────┘  │
+    └─────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ /analytics
+                                    ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                    Analytics Dashboard                          │
+    │  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐  │
+    │  │ AnalyticsOver-  │ │ ProductVelocity │ │ DemandForecast  │  │
+    │  │ view.tsx        │ │ Chart.tsx       │ │ Chart.tsx       │  │
+    │  └─────────────────┘ └─────────────────┘ └─────────────────┘  │
+    │  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐  │
+    │  │ CategoryDonut   │ │ TopProducts     │ │ AIClusterView   │  │
+    │  │ .tsx            │ │ Table.tsx       │ │ .tsx            │  │
+    │  └─────────────────┘ └─────────────────┘ └─────────────────┘  │
+    └─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Prerequisites
+
+### Required Software
+
+| Software | Version | Purpose |
+|----------|---------|---------|
+| Docker | 20.10+ | Container runtime |
+| Docker Compose | 2.0+ | Service orchestration |
+| Python | 3.9+ | Simulation scripts |
+| Node.js | 18+ | Frontend development (optional) |
+
+### Required Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| Mosquitto | 1883 | MQTT message broker |
+
+### macOS Installation
 
 ```bash
-# 1. Install Mosquitto MQTT broker
+# Install Docker Desktop (includes Docker Compose)
+# Download from: https://www.docker.com/products/docker-desktop
+
+# Install Mosquitto MQTT broker
 brew install mosquitto
 brew services start mosquitto
 
-# 2. Install Python dependencies
-pip3 install paho-mqtt
+# Install Python dependencies
+pip3 install paho-mqtt requests
+```
 
-# 3. Start Docker services
+### Linux Installation
+
+```bash
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Install Mosquitto
+sudo apt-get install mosquitto mosquitto-clients
+
+# Install Python dependencies
+pip3 install paho-mqtt requests
+```
+
+---
+
+## Installation
+
+### Quick Start
+
+```bash
+# Clone repository
+git clone https://github.com/oscardef/optiflow.git
+cd optiflow
+
+# Start all services
 docker compose up -d
+
+# Verify services are running
+docker compose ps
+
+# Generate inventory (simulation mode)
+python3 -m simulation.generate_inventory --items 3000
+
+# Access the dashboard
+open http://localhost:3000
 ```
 
-</details>
+### Service Ports
 
-### Step 3: Configure Anchors
+| Service | Port | URL |
+|---------|------|-----|
+| Frontend | 3000 | http://localhost:3000 |
+| Backend API | 8000 | http://localhost:8000 |
+| API Documentation | 8000 | http://localhost:8000/docs |
+| Simulation Database | 5432 | postgresql://localhost:5432/optiflow_simulation |
+| Production Database | 5433 | postgresql://localhost:5433/optiflow_real |
 
-1. Open http://localhost:3000 in your browser
-2. Click **"⚙️ Setup Mode"** button
-3. Click on the map to place anchors at your physical anchor locations
-   - Minimum: 2 anchors (basic positioning)
-   - Recommended: 4 anchors (best accuracy)
-   - Place at corners or edges of store for optimal triangulation
-4. Drag anchors to adjust positions if needed
-5. Click **"✓ Finish Setup"** when done
+---
 
-**Important:** The simulator will automatically load anchor positions from the backend!
+## Configuration
 
-### Step 4: Run Simulator
+### Environment Variables
+
+Create a `.env` file in the project root:
 
 ```bash
-# Start simulator with real-time analytics tracking
+# Database
+POSTGRES_USER=optiflow
+POSTGRES_PASSWORD=optiflow_dev
+
+# MQTT
+MQTT_BROKER_HOST=host.docker.internal
+MQTT_BROKER_PORT=1883
+
+# API
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+### Anchor Configuration
+
+1. Open the dashboard at http://localhost:3000
+2. Click "Setup Mode" in the header
+3. Click on the map to place anchors at physical locations
+4. Minimum 2 anchors required, 4 recommended for optimal accuracy
+5. Click "Finish Setup" when complete
+
+### Store Zones
+
+Zones are automatically created for simulation mode:
+
+| Zone | Area | Type |
+|------|------|------|
+| Entrance | 0-200 x 0-160 | entrance |
+| Aisle 1-4 | 200-1000 x 0-400 | aisle |
+| Cross Aisle | 0-1000 x 360-440 | aisle |
+| Aisle 5-8 | 200-1000 x 440-800 | aisle |
+| Checkout | 0-200 x 640-800 | checkout |
+
+---
+
+## Usage
+
+### Running the Simulation
+
+```bash
+# Basic simulation with analytics
 python3 -m simulation.main --analytics
 
-# Note: Simulation now uses database inventory!
-# --mode is still available but mainly affects shopper behavior
-# --speed 2.0      # 2x speed (default 1.0)
-# --analytics      # Enable real-time analytics tracking
+# Custom speed (2x faster)
+python3 -m simulation.main --analytics --speed 2.0
+
+# Custom item count
+python3 -m simulation.generate_inventory --items 5000
+python3 -m simulation.main --analytics
 ```
 
-### Step 5: Generate Historical Analytics (Optional)
+### Dashboard Features
+
+**Store Map**
+- Blue circle: Employee position (UWB triangulated)
+- Dashed circle: RFID detection range (1.5m)
+- Green squares: Present items
+- Red squares: Missing items
+- Orange diamonds: UWB anchors
+
+**Heatmap Mode**
+- Toggle with "Heatmap" button
+- Green: Full stock
+- Yellow/Orange: Partial depletion
+- Red: Significant missing items
+
+**Admin Panel**
+- Mode toggle: Switch between simulation and real hardware
+- Item count: Configure number of items for simulation
+- Start/Stop: Control simulation execution
+- Clear items: Reset inventory data
+
+### Generating Historical Data
 
 ```bash
-# Generate 30 days of historical data for analytics dashboard
+# Generate 30 days of analytics data
 python3 -m simulation.backfill_history --days 30 --density normal
 
-# Or use the frontend: Analytics → Generate Data button
-```
-
-### Step 6: Watch Magic Happen ✨
-
-You should now see:
-- 🚶 **Blue employee icon** moving through aisles (UWB triangulated position)
-- **Dashed circle** around employee showing 1.5m RFID detection range
-- ✅ **Green squares** for items detected within range (RFID)
-- ⚠️ **Red squares** for missing items (displayed on map AND in sidebar)
-- 📊 Live position updates with confidence scores
-- 📋 **Restock Queue** sidebar showing all missing items
-
-**How it works:**
-1. UWB anchors triangulate employee position every 0.5s
-2. Employee walks through aisles following realistic patterns
-3. RFID detects items within 2 meters of employee
-4. Items persist on map even after employee walks away
-5. Missing items are flagged when expected items aren't detected
-
----
-
-## 🏗️ System Architecture
-
-```
-┌─────────────────┐
-│  ESP32 / Sim    │  Simulates/reads UWB distances
-└────────┬────────┘
-         │ MQTT
-         ▼
-┌─────────────────┐
-│ Mosquitto MQTT  │  Message broker
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  MQTT Bridge    │  Forwards MQTT → HTTP
-└────────┬────────┘
-         │ HTTP POST
-         ▼
-┌─────────────────┐
-│  FastAPI        │  • Triangulation algorithm
-│  Backend        │  • Anchor management
-└────────┬────────┘  • Position calculation
-         │
-         ▼
-┌─────────────────┐
-│  PostgreSQL     │  Stores measurements,
-│  Database       │  anchors, positions, items
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Next.js        │  Interactive map dashboard
-│  Frontend       │  with real-time updates
-└─────────────────┘
+# Generate high-density data for testing
+python3 -m simulation.backfill_history --days 7 --density high
 ```
 
 ---
 
-## 📊 How It Works
+## API Reference
 
-### 1. Employee Tracking (UWB Triangulation)
+### Core Endpoints
 
-The system uses **trilateration** to calculate employee's 2D position:
+#### Data Ingestion
 
-- **2 anchors**: Weighted midpoint (~50% confidence)
-- **3+ anchors**: Least-squares algorithm (70-90% confidence)
-- **Update rate**: 6-7 times per second (0.15s interval)
-- **Accuracy**: Typically 20-50cm with 4 anchors
-
-### 2. Item Detection (RFID Simulation)
-
-- **Detection range**: 1.5m radius around employee
-- **Persistent display**: Items stay on map after detection
-- **Status tracking**: present/missing
-- **First pass**: All items detected as "present" (baseline inventory)
-- **Later passes**: 1-2% chance items go missing per pass
-- **Smart reporting**: Only reports status changes, not duplicate scans (prevents database bloat)
-
-### 3. Movement Pattern
-
-Employee follows realistic back-and-forth pattern:
 ```
-Aisle 1 (down) → Cross aisle → Aisle 2 (up/down) → Cross aisle →
-Aisle 3 (up/down) → Cross aisle → Aisle 4 (up/down) → Walk back to start
+POST /data
+```
+Receives detection and UWB measurement data from hardware or simulation.
+
+Request body:
+```json
+{
+  "timestamp": "2025-12-02T10:00:00Z",
+  "tag_id": "employee",
+  "detections": [
+    {"product_id": "RFID001", "status": "present", "x_position": 400, "y_position": 300}
+  ],
+  "uwb_measurements": [
+    {"mac_address": "0x0001", "distance_cm": 245.5, "status": "0x01"}
+  ]
+}
 ```
 
-- **Speed**: 30 cm/s (realistic walking pace)
-- **Updates**: 6-7 per second for smooth tracking
-- **Movement**: Independent of anchor positions (follows store layout)
+#### Position Tracking
 
-### 4. Data Efficiency
+```
+GET /positions/latest?limit=10
+```
+Returns latest calculated positions.
 
-**Backend optimizations:**
-- Only creates new Detection record when item status changes
-- Updates timestamp for unchanged items (no duplicate records)
-- New `/data/items` endpoint returns unique items (not raw detection logs)
+Response:
+```json
+[
+  {
+    "id": 1,
+    "tag_id": "employee",
+    "x_position": 423.5,
+    "y_position": 287.2,
+    "confidence": 0.87,
+    "timestamp": "2025-12-02T10:00:00Z"
+  }
+]
+```
 
-**Result**: Database grows ~30-50x slower, items never disappear from map
+#### Inventory
+
+```
+GET /data/items
+```
+Returns all inventory items with current status.
+
+```
+GET /data/missing
+```
+Returns only missing items.
+
+```
+DELETE /data/clear
+```
+Clears all tracking data (detections, positions).
+
+### Anchor Management
+
+```
+GET /anchors                    # List all anchors
+POST /anchors                   # Create anchor
+PUT /anchors/{id}               # Update anchor
+DELETE /anchors/{id}            # Delete anchor
+```
+
+### Analytics Endpoints
+
+```
+GET /analytics/stock-heatmap           # Stock depletion by location
+GET /analytics/overview                # Summary metrics
+GET /analytics/top-products            # Best performing products
+GET /analytics/category-performance    # Performance by category
+GET /analytics/stock-trends/{id}       # Historical trends for product
+GET /analytics/slow-movers             # Slow-moving inventory
+GET /analytics/ai/demand-forecast      # ML-based demand prediction
+GET /analytics/ai/abc-analysis         # ABC inventory classification
+```
+
+### Simulation Control
+
+```
+GET /simulation/status                  # Current simulation state
+POST /simulation/start                  # Start simulation
+POST /simulation/stop                   # Stop simulation
+POST /simulation/generate-inventory     # Generate new inventory
+PUT /simulation/params                  # Update simulation parameters
+```
+
+### Configuration
+
+```
+GET /config/mode                        # Current mode (simulation/real)
+POST /config/mode                       # Set mode
+GET /config/settings                    # Store configuration
+```
 
 ---
 
-## 🎮 Using the System
+## Hardware Integration
 
-### API Endpoints
+### Supported Hardware
 
-```bash
-# Check backend health
-curl http://localhost:8000
+| Component | Model | Purpose |
+|-----------|-------|---------|
+| Microcontroller | ESP32-S3 | Main processing unit |
+| UWB Module | DWM3001CDK | Distance measurement |
+| RFID Reader | JRD-100 (UHF) | Tag detection |
 
-# List configured anchors
-curl http://localhost:8000/anchors | jq
+### Wiring Diagram
 
-# Get latest position
-curl http://localhost:8000/positions/latest?limit=1 | jq
+```
+                    ESP32-S3 WIRING
 
-# Get all unique items (with latest status)
-curl http://localhost:8000/data/items | jq
-
-# Get only missing items
-curl http://localhost:8000/data/missing | jq
-
-# Clear all tracking data
-curl -X DELETE http://localhost:8000/data/clear
+    ┌─────────────────────────────────────────┐
+    │              ESP32-S3                    │
+    │                                          │
+    │  GPIO6 (RX) <-------- RFID TX (Blue)    │
+    │  GPIO7 (TX) --------> RFID RX (White)   │
+    │  GND <--------------> RFID GND (Black)  │
+    │  5V ----------------> RFID VCC (Red)    │
+    │                                          │
+    │  GPIO18 (RX) <------- DWM P0.19 (TX)    │
+    │  GPIO17 (TX) -------> DWM P0.15 (RX)    │
+    │  GND <--------------> DWM GND           │
+    └─────────────────────────────────────────┘
 ```
 
-### Simulator Options
+### Firmware Configuration
 
-```bash
-# Enable real-time analytics tracking (recommended)
-python3 -m simulation.main --analytics
+Edit `firmware/code_esp32/code_esp32.ino`:
 
-# Custom snapshot interval (default: 3600s = 1 hour)
-python3 -m simulation.main --analytics --snapshot-interval 1800
-
-# Custom MQTT broker
-python3 -m simulation.main --broker 192.168.1.100
-
-# Custom mode and speed
-python3 -m simulation.main --mode stress --speed 0.5
-
-# Custom backend API
-python3 -m simulation.main --api http://192.168.1.100:8000
-
-# Full example with analytics
-python3 -m simulation.main --mode realistic --speed 2.0 --analytics --snapshot-interval 600
+```cpp
+// WiFi Configuration
+const char* WIFI_SSID = "YourNetwork";
+const char* WIFI_PASSWORD = "YourPassword";
+const char* MQTT_SERVER = "192.168.1.100";  // Your server IP
+const int MQTT_PORT = 1883;
 ```
 
-### Analytics Features
+### Anchor Setup
 
-The simulation now includes **real-time analytics tracking**:
+For each DWM3001CDK anchor:
 
-- **Stock Snapshots**: Periodic captures of inventory levels (configurable interval)
-- **Purchase Events**: Automatic recording when items go missing (simulating purchases)
-- **Background Thread**: Non-blocking analytics collection during simulation
-- **Batch Uploads**: Efficient API calls with queued data
+1. Connect via USB
+2. Open serial monitor (115200 baud)
+3. Enter configuration commands:
+   ```
+   INITR
+   RESPF
+   SAVE
+   ```
+4. Power anchor and position in store
 
-**Usage:**
-```bash
-# Run simulation with analytics enabled
-python3 -m simulation.main --analytics
+---
 
-# Generate historical data for testing
-python3 -m simulation.backfill_history --days 30 --density normal
+## Development
 
-# View analytics dashboard
-open http://localhost:3000/analytics
-```
-
-### Customize Store Layout
-
-Edit `simulation/config.py`:
-```python
-STORE_WIDTH = 1000       # Store width in cm
-STORE_HEIGHT = 800       # Store height in cm
-UPDATE_INTERVAL = 0.15   # Update frequency (lower = more updates)
-```
-
-
-
-## 📁 Project Structure
+### Project Structure
 
 ```
 optiflow/
-├── backend/                     # FastAPI backend
+├── backend/                    # FastAPI backend service
 │   ├── app/
-│   │   ├── main.py             # API endpoints + triangulation
-│   │   ├── models.py           # Database models
-│   │   ├── schemas.py          # Pydantic schemas
+│   │   ├── main.py            # Application entry point
+│   │   ├── models.py          # SQLAlchemy models
+│   │   ├── schemas.py         # Pydantic schemas
+│   │   ├── database.py        # Database configuration
 │   │   ├── triangulation.py   # Position calculation
-│   │   └── database.py         # DB connection
+│   │   ├── config.py          # Application settings
+│   │   ├── routers/           # API route handlers
+│   │   │   ├── analytics.py   # Analytics endpoints
+│   │   │   ├── anchors.py     # Anchor management
+│   │   │   ├── data.py        # Data ingestion
+│   │   │   ├── positions.py   # Position queries
+│   │   │   ├── products.py    # Product management
+│   │   │   ├── simulation.py  # Simulation control
+│   │   │   └── zones.py       # Zone management
+│   │   └── services/
+│   │       └── ai_analytics.py # ML analytics
+│   ├── migrations/            # Database migrations
+│   ├── requirements.txt
 │   └── Dockerfile
-├── frontend/                    # Next.js dashboard
+├── frontend/                   # Next.js frontend
 │   ├── app/
 │   │   ├── page.tsx           # Main dashboard
-│   │   └── components/
-│   │       └── StoreMap.tsx   # Interactive map
+│   │   ├── layout.tsx         # App layout
+│   │   ├── analytics/         # Analytics page
+│   │   ├── admin/             # Admin panel
+│   │   └── components/        # React components
+│   ├── package.json
 │   └── Dockerfile
-├── mqtt_bridge/                # MQTT → HTTP bridge
+├── mqtt_bridge/               # MQTT to HTTP bridge
 │   ├── mqtt_to_api.py
+│   ├── requirements.txt
 │   └── Dockerfile
-├── simulation/                  # Modular simulator
-│   ├── main.py                # CLI entry point
-│   ├── config.py              # Configuration
-│   ├── inventory.py           # Item generation
-│   ├── shopper.py             # Movement simulation
-│   └── scanner.py             # RFID/UWB scanning
-├── firmware/                    # ESP32 hardware docs (optional)
-│   ├── UWB_TEST/              # UWB setup guides
-│   └── RFID_TEST/             # RFID integration
-├── docs/                        # Technical documentation
-│   ├── architecture/          # System architecture
-│   ├── implementation/        # Implementation guides
-│   └── reference/             # Reference materials
-├── docker-compose.yml          # Service orchestration
-├── requirements.txt            # Python dependencies
-└── README.md                   # This file
+├── simulation/                # Python simulation
+│   ├── main.py               # CLI entry point
+│   ├── config.py             # Simulation settings
+│   ├── inventory.py          # Item generation
+│   ├── shopper.py            # Movement patterns
+│   ├── scanner.py            # RFID/UWB simulation
+│   ├── analytics_tracker.py  # Analytics collection
+│   ├── generate_inventory.py # Inventory generator
+│   └── backfill_history.py   # Historical data
+├── firmware/                  # ESP32 firmware
+│   └── code_esp32/
+├── docs/                      # Documentation
+├── docker-compose.yml
+└── README.md
 ```
 
-## 📚 Documentation
+### Database Schema
 
-For detailed technical documentation, see the [docs/](docs/) directory:
-- [Simulation Architecture](docs/architecture/simulation.md) - Modular simulation system design
-- [Heatmap Implementation](docs/implementation/heatmap.md) - Stock depletion heatmap details
-- [Color Reference](docs/reference/colors.md) - Visual design and color system
+```
+                          DATABASE SCHEMA
+
+    ┌─────────────────┐         ┌─────────────────┐
+    │    products     │         │     zones       │
+    ├─────────────────┤         ├─────────────────┤
+    │ id (PK)         │         │ id (PK)         │
+    │ sku             │<───┐    │ name            │
+    │ name            │    │    │ x_min, x_max    │
+    │ category        │    │    │ y_min, y_max    │
+    │ price           │    │    │ zone_type       │
+    │ optimal_stock   │    │    └────────┬────────┘
+    │ reorder_thresh  │    │             │
+    └─────────────────┘    │             │
+                           │             │
+    ┌─────────────────┐    │             │
+    │ inventory_items │    │             │
+    ├─────────────────┤    │             │
+    │ id (PK)         │    │             │
+    │ rfid_tag        │    │             │
+    │ product_id (FK) │────┘             │
+    │ zone_id (FK)    │──────────────────┘
+    │ x_position      │
+    │ y_position      │
+    │ status          │
+    └─────────────────┘
+
+    ┌─────────────────┐         ┌─────────────────┐
+    │    anchors      │         │  tag_positions  │
+    ├─────────────────┤         ├─────────────────┤
+    │ id (PK)         │         │ id (PK)         │
+    │ mac_address     │         │ tag_id          │
+    │ name            │         │ x_position      │
+    │ x_position      │         │ y_position      │
+    │ y_position      │         │ confidence      │
+    │ is_active       │         │ timestamp       │
+    └─────────────────┘         └─────────────────┘
+
+    ┌─────────────────┐         ┌─────────────────┐
+    │ purchase_events │         │ stock_snapshots │
+    ├─────────────────┤         ├─────────────────┤
+    │ id (PK)         │         │ id (PK)         │
+    │ product_id (FK) │         │ product_id (FK) │
+    │ quantity        │         │ stock_level     │
+    │ unit_price      │         │ snapshot_time   │
+    │ timestamp       │         └─────────────────┘
+    └─────────────────┘
+```
+
+### Running Tests
+
+```bash
+# Backend tests
+cd backend
+pytest
+
+# System tests
+python3 test_system.py
+
+# MQTT tests
+python3 test_mqtt.py
+```
+
+### Local Development
+
+```bash
+# Backend (without Docker)
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# Frontend (without Docker)
+cd frontend
+npm install
+npm run dev
+```
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### "Could not load anchors from backend"
+### Common Issues
+
+**Services won't start**
 ```bash
-# Check backend is running
-curl http://localhost:8000
+# Check port availability
+lsof -i :3000 :8000 :5432 :5433
 
-# If not, restart services
-docker compose restart backend
-
-# Configure anchors in web UI at http://localhost:3000
-```
-
-### "Items disappearing from map"
-This should be fixed! Items now persist regardless of pass count. If still happening:
-```bash
-# Clear old data and restart
-curl -X DELETE http://localhost:8000/data/clear
-docker compose restart backend frontend
-python3 -m simulation.main --mode realistic
-```
-
-### Services won't start
-```bash
-# Check if ports are in use
-lsof -i :3000  # Frontend
-lsof -i :8000  # Backend
-lsof -i :1883  # MQTT
-
-# Stop Docker and restart
+# Restart all services
 docker compose down
 docker compose up -d
 
-# Check logs
+# View logs
 docker compose logs backend
 docker compose logs frontend
 ```
 
-### No Positions Calculated
+**No positions calculated**
 ```bash
-# Verify at least 2 anchors configured
+# Verify anchors are configured
 curl http://localhost:8000/anchors
 
-# Check UWB measurements arriving
-curl http://localhost:8000/data/latest?limit=5
+# Check for at least 2 active anchors
+# Reconfigure anchors in the UI if needed
 ```
 
-### Python Module Not Found
+**Items not appearing on map**
 ```bash
-pip3 install -r requirements.txt
+# Verify items exist in database
+curl http://localhost:8000/data/items | head
+
+# Regenerate inventory if empty
+python3 -m simulation.generate_inventory --items 3000
 ```
 
----
+**MQTT connection failed**
+```bash
+# Verify Mosquitto is running
+brew services list | grep mosquitto
 
-## 🛑 Stopping the System
+# Start Mosquitto
+brew services start mosquitto
+
+# Test MQTT
+mosquitto_pub -h localhost -t test -m "hello"
+```
+
+**Database connection errors**
+```bash
+# Check database containers
+docker compose ps
+
+# Restart databases
+docker compose restart postgres-simulation postgres-real
+
+# View database logs
+docker compose logs postgres-simulation
+```
+
+### Logs
 
 ```bash
-# Stop all Docker containers
-docker compose down
-
-# Stop simulator (Ctrl+C in simulator terminal)
-
-# Stop Mosquitto (optional)
-brew services stop mosquitto
-```
-
----
-
-## 🎓 Real Hardware Setup (Optional)
-
-### Hardware Requirements
-
-- **ESP32-S3** development board
-- **DWM3001CDK** UWB modules (1 tag + 2-4 anchors)
-- USB cables for programming
-
-### Anchor Configuration
-
-For each DWM3001CDK anchor:
-
-```
-1. Connect USB, open Serial Monitor (115200 baud)
-2. Type: INITR [Enter]
-3. Type: RESPF [Enter]
-4. Type: SAVE [Enter]
-5. Disconnect, power via USB/battery
-```
-
-### ESP32 Firmware
-
-1. Open `UART_UWB_TEST/esp32_dwm3001_cli/esp32_uwb_simple_mqtt.ino` in Arduino IDE
-2. Configure WiFi settings (lines 32-34):
-   ```cpp
-   const char* ssid = "YourWiFi";
-   const char* password = "YourPassword";
-   const char* mqtt_server = "192.168.1.X";  // Your Mac IP
-   ```
-3. Select Board: "ESP32S3 Dev Module"
-4. Upload sketch
-5. Send START command: `mosquitto_pub -h localhost -t store/control -m 'START'`
-
----
-
-## 🔮 What's Next
-
-### Current Features ✅
-- Interactive map with triangulation
-- Anchor configuration UI
-- ESP32 simulator with realistic movement
-- Item tracking with missing item detection
-- Aisle-following navigation pattern
-
-### Future Enhancements 🚧
-- WebSocket for real-time updates (no polling)
-- RFID reader integration with ESP32
-- Heatmap visualization of movement patterns
-- Multi-store support
-- Mobile app for employees
-- Machine learning for anomaly detection
-- Integration with inventory management systems
-
----
-
-## �️ Helper Scripts
-
-### Main Script
-
-- **`./start.sh`** - One-command system startup
-  - Checks prerequisites
-  - Installs dependencies
-  - Starts all services
-  - Verifies everything is running
-
-### Optional Scripts (in `scripts/` folder)
-
-- **`scripts/setup.sh`** - Manual dependency installation only
-- **`scripts/test_system.sh`** - Comprehensive system validation
-  - Tests all endpoints
-  - Creates/deletes test anchors
-  - Verifies MQTT broker
-  - Checks frontend accessibility
-
-**Usage:**
-```bash
-# Test your system
-./scripts/test_system.sh
-
-# Manual setup (if you don't want automated script)
-./scripts/setup.sh
-```
-
----
-
-## �📞 Support & Commands
-
-**Quick Links:**
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
-
-**Common Commands:**
-```bash
-# Start system
-./start.sh
-
-# Stop system
-docker compose down
-
-# Restart a service
-docker compose restart backend
-
-# View logs
+# All services
 docker compose logs -f
 
-# Test system health
-./scripts/test_system.sh
+# Specific service
+docker compose logs -f backend
 
-# Access database
-docker compose exec postgres psql -U optiflow optiflow
+# Last 100 lines
+docker compose logs --tail=100 backend
+```
+
+### Reset System
+
+```bash
+# Clear all data (keep configuration)
+curl -X DELETE http://localhost:8000/data/clear
+
+# Full reset (remove volumes)
+docker compose down -v
+docker compose up -d
 ```
 
 ---
 
-## 📝 License
+## License
 
-MIT License - Built for retail innovation and warehouse optimization.
+MIT License
 
 ---
 
-**Need help?** Check the troubleshooting section above or review the logs with `docker compose logs`.
+## Support
+
+- Repository: https://github.com/oscardef/optiflow
+- Documentation: See `/docs` directory
+- API Reference: http://localhost:8000/docs (when running)
