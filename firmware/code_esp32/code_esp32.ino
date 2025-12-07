@@ -64,7 +64,7 @@ const char* TOPIC_STATUS = "store/status";     // Status updates
 #define RFID_TX_PIN         7
 #define RFID_BAUD           115200
 #define RFID_MAX_TX_POWER   3000        // 26.00dB
-#define RFID_POLLING_COUNT  30
+#define RFID_POLLING_COUNT  6
 #define RFID_MAX_TAGS       200         // Maximum tags per polling cycle
 #define UWB_MAX_ANCHORS     30          // Circular buffer size
 #define UWB_FRESHNESS_MS    3000        // Data valid for 3 seconds  
@@ -915,7 +915,6 @@ void reconnectMQTT() {
             if (mqttClient.connect("ESP32_RFID_UWB")) {
                 DEBUG_PRINTLN(" ✓ Connected!");
                 mqttClient.subscribe(TOPIC_CONTROL);
-                mqttClient.publish(TOPIC_STATUS, "ESP32_READY");
                 DEBUG_PRINTLN("[MQTT] Subscribed to control topic");
             } else {
                 DEBUG_PRINT(" ✗ Failed, rc=");

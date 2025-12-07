@@ -1,0 +1,32 @@
+clean up UI
+
+AI
+
+Classic AI : clustering anomaly detections
+
+
+restock threshold : rename
+
+
+remove zones
+
+make sure we are storing the timestamps 
+
+
+every time we receive an mqtt publish : append to DB (for persistence) and notify the client with these data. 
+
+
+button live : stop or start signal for mqtt ( mosquitto_pub -h 172.20.10.3 -t store/control -m 'START'  )
+
+mqtt retries if wifi connected at startup : wait for subscription : while
+
+mqtt : whn closing docker container : close mqtt
+
+
+
+make sure the dots we display are products and only their last location.
+
+in simulaition mode : should ne take into account the mqtt : store/production and store/simulation
+
+
+
