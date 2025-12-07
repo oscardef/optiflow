@@ -666,10 +666,13 @@ export default function StoreMap({
     });
 
     // Draw employee positions (from UWB triangulation) - only in live mode
+    console.log('[DEBUG StoreMap] viewMode:', viewMode, 'positions:', positions.length, 'positions data:', positions);
     if (viewMode === 'live' && positions.length > 0) {
       // Draw current employee position (most recent)
       const currentPos = positions[0];
+      console.log('[DEBUG StoreMap] Drawing employee at:', currentPos.x_position, currentPos.y_position);
       const canvasPos = toCanvasCoords(currentPos.x_position, currentPos.y_position, canvas);
+      console.log('[DEBUG StoreMap] Canvas coords:', canvasPos.x, canvasPos.y, 'storeWidth:', storeWidth, 'canvas.width:', canvas.width);
       
       // 1.5m detection radius circle (RFID range)
       ctx.strokeStyle = 'rgba(0, 85, 164, 0.3)';

@@ -1,4 +1,5 @@
 """Data ingestion and retrieval router"""
+import math
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -127,8 +128,15 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
         # Try to calculate position if we have enough data
         try:
             anchors = db.query(Anchor).filter(Anchor.is_active == True).all()
+            logger.info(f"Position calculation: {len(anchors)} anchors configured, {len(packet.uwb_measurements)} UWB measurements received")
+            
             if len(anchors) >= 2 and len(packet.uwb_measurements) >= 2:
                 measurements = []
+                configured_macs = {a.mac_address for a in anchors}
+                received_macs = {uwb.mac_address for uwb in packet.uwb_measurements}
+                logger.info(f"Configured anchor MACs: {configured_macs}")
+                logger.info(f"Received UWB MACs: {received_macs}")
+                
                 for uwb in packet.uwb_measurements:
                     anchor = next((a for a in anchors if a.mac_address == uwb.mac_address), None)
                     if anchor:
@@ -137,6 +145,9 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                             anchor.y_position,
                             uwb.distance_cm
                         ))
+                        logger.info(f"Matched anchor {uwb.mac_address} at ({anchor.x_position}, {anchor.y_position})")
+                    else:
+                        logger.warning(f"No anchor configured for MAC: {uwb.mac_address}")
                 
                 if len(measurements) >= 2:
                     result = TriangulationService.calculate_position(measurements)
@@ -155,6 +166,10 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         # Only update inventory item positions with triangulated position in REAL mode
                         # In SIMULATION mode, items have predefined shelf positions that should be preserved
                         if config_state.mode == ConfigMode.REAL:
+                            # Get the set of currently detected RFID tags
+                            detected_rfid_tags = {detection.product_id for detection in packet.detections}
+                            
+                            # Update positions for detected items
                             for detection in packet.detections:
                                 inventory_item = db.query(InventoryItem).filter(
                                     InventoryItem.rfid_tag == detection.product_id
@@ -163,6 +178,40 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                                     inventory_item.x_position = x
                                     inventory_item.y_position = y
                                     logger.info(f"[REAL] Updated position for {detection.product_id}: ({x:.1f}, {y:.1f})")
+                            
+                            # MISSING ITEM DETECTION for REAL mode:
+                            # Find items that were previously seen near this location but are NOT in current detections
+                            # This handles the case where an item was removed since the last visit
+                            DETECTION_RADIUS = 150.0  # cm - radius to consider "same location"
+                            
+                            # Query items that:
+                            # 1. Have a valid position (were detected before)
+                            # 2. Are within DETECTION_RADIUS of current position
+                            # 3. Are currently marked as 'present'
+                            # 4. Are NOT in the current detection batch
+                            
+                            nearby_present_items = db.query(InventoryItem).filter(
+                                InventoryItem.x_position.isnot(None),
+                                InventoryItem.y_position.isnot(None),
+                                InventoryItem.status == 'present',
+                                InventoryItem.last_seen_at.isnot(None)
+                            ).all()
+                            
+                            missing_count = 0
+                            for item in nearby_present_items:
+                                # Calculate distance from current employee position to item's last known position
+                                dx = item.x_position - x
+                                dy = item.y_position - y
+                                distance = math.sqrt(dx*dx + dy*dy)
+                                
+                                # If item is within detection radius but NOT detected, mark as not present
+                                if distance <= DETECTION_RADIUS and item.rfid_tag not in detected_rfid_tags:
+                                    item.status = 'not present'
+                                    missing_count += 1
+                                    logger.info(f"[REAL] Item {item.rfid_tag} marked as 'not present' - was at ({item.x_position:.1f}, {item.y_position:.1f}), employee at ({x:.1f}, {y:.1f}), distance: {distance:.1f}cm")
+                            
+                            if missing_count > 0:
+                                logger.info(f"[REAL] Marked {missing_count} items as 'not present' (not detected within {DETECTION_RADIUS}cm radius)")
                         
                         db.commit()
                         position_calculated = True

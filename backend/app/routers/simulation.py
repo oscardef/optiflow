@@ -13,6 +13,14 @@ from datetime import datetime
 from ..config import config_state, ConfigMode
 from ..core import logger
 
+# Optional MQTT client for hardware control
+try:
+    import paho.mqtt.publish as mqtt_publish
+    MQTT_AVAILABLE = True
+except ImportError:
+    MQTT_AVAILABLE = False
+    logger.warning("paho-mqtt not available - hardware control will be disabled")
+
 router = APIRouter(prefix="/simulation", tags=["simulation"])
 
 # Store simulation process reference
@@ -405,4 +413,65 @@ def generate_inventory(params: InventoryGenerationParams):
         raise HTTPException(
             status_code=500,
             detail=f"Inventory generation failed: {str(e)}"
+        )
+
+
+class HardwareControlRequest(BaseModel):
+    command: str  # "START" or "STOP"
+
+
+class HardwareControlResponse(BaseModel):
+    success: bool
+    message: str
+    command_sent: str
+
+
+@router.post("/hardware/control", response_model=HardwareControlResponse)
+def control_hardware(request: HardwareControlRequest):
+    """
+    Send control commands to ESP32 hardware via MQTT.
+    
+    Commands:
+    - START: Begin polling and publishing RFID/UWB data
+    - STOP: Stop polling
+    """
+    if not MQTT_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="MQTT library not available. Install paho-mqtt to enable hardware control."
+        )
+    
+    command = request.command.upper()
+    if command not in ["START", "STOP"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid command. Use 'START' or 'STOP'."
+        )
+    
+    mqtt_broker = os.getenv("MQTT_BROKER", "172.20.10.3")
+    mqtt_port = int(os.getenv("MQTT_PORT", "1883"))
+    topic = "store/control"
+    
+    try:
+        mqtt_publish.single(
+            topic,
+            payload=command,
+            hostname=mqtt_broker,
+            port=mqtt_port,
+            client_id="optiflow_backend_control"
+        )
+        
+        logger.info(f"Sent {command} command to hardware via MQTT topic {topic}")
+        
+        return HardwareControlResponse(
+            success=True,
+            message=f"Successfully sent {command} command to hardware",
+            command_sent=command
+        )
+    
+    except Exception as e:
+        logger.error(f"Failed to send hardware control command: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send command to hardware: {str(e)}"
         )

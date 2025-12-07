@@ -81,6 +81,8 @@ export default function Home() {
       const response = await fetch(`${API_URL}/positions/latest?limit=100`);
       const data = await response.json();
       
+      console.log('[DEBUG] Fetched positions:', data.length, 'raw positions');
+      
       const latestByTag = new Map();
       data.forEach((pos: Position) => {
         const existing = latestByTag.get(pos.tag_id);
@@ -89,7 +91,10 @@ export default function Home() {
         }
       });
       
-      setPositions(Array.from(latestByTag.values()));
+      const positionsArray = Array.from(latestByTag.values());
+      console.log('[DEBUG] Setting positions:', positionsArray.length, 'unique positions', positionsArray);
+      
+      setPositions(positionsArray);
       setConnected(data.length > 0);
     } catch (error) {
       console.error('Error fetching positions:', error);
