@@ -123,36 +123,6 @@ class Product(Base):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
 
-class Zone(Base):
-    """Store map divided into zones for heat mapping"""
-    __tablename__ = "zones"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    x_min = Column(Float, nullable=False)
-    y_min = Column(Float, nullable=False)
-    x_max = Column(Float, nullable=False)
-    y_max = Column(Float, nullable=False)
-    zone_type = Column(String(50), index=True)  # aisle, checkout, entrance, storage
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Relationships
-    inventory_items = relationship("InventoryItem", back_populates="zone")
-    purchase_events = relationship("PurchaseEvent", back_populates="zone")
-    
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "name": self.name,
-            "description": self.zone_type,  # Using zone_type as description
-            "x_min": self.x_min,
-            "y_min": self.y_min,
-            "x_max": self.x_max,
-            "y_max": self.y_max,
-            "zone_type": self.zone_type,
-            "created_at": self.created_at.isoformat() if self.created_at else None
-        }
-
 class InventoryItem(Base):
     """Individual RFID-tagged items in the store"""
     __tablename__ = "inventory_items"
@@ -163,14 +133,12 @@ class InventoryItem(Base):
     status = Column(String(20), default="present", index=True)  # present, not present
     x_position = Column(Float)
     y_position = Column(Float)
-    zone_id = Column(Integer, ForeignKey("zones.id", ondelete="SET NULL"), index=True)
     last_seen_at = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     product = relationship("Product", back_populates="inventory_items")
-    zone = relationship("Zone", back_populates="inventory_items")
     purchase_event = relationship("PurchaseEvent", back_populates="inventory_item", uselist=False)
     
     def to_dict(self):
@@ -181,7 +149,6 @@ class InventoryItem(Base):
             "status": self.status,
             "x_position": self.x_position,
             "y_position": self.y_position,
-            "zone_id": self.zone_id,
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
@@ -223,7 +190,8 @@ class ProductLocationHistory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
-    zone_id = Column(Integer, ForeignKey("zones.id", ondelete="CASCADE"), nullable=True, index=True)  # Nullable for items without zone
+    grid_x = Column(Integer, index=True)  # Spatial grid cell X (50cm cells)
+    grid_y = Column(Integer, index=True)  # Spatial grid cell Y (50cm cells)
     x_center = Column(Float)  # Center of location cluster
     y_center = Column(Float)
     max_items_seen = Column(Integer, default=0)
@@ -234,7 +202,8 @@ class ProductLocationHistory(Base):
         return {
             "id": self.id,
             "product_id": self.product_id,
-            "zone_id": self.zone_id,
+            "grid_x": self.grid_x,
+            "grid_y": self.grid_y,
             "x_center": self.x_center,
             "y_center": self.y_center,
             "max_items_seen": self.max_items_seen,
@@ -252,13 +221,11 @@ class PurchaseEvent(Base):
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
     x_position = Column(Float)
     y_position = Column(Float)
-    zone_id = Column(Integer, ForeignKey("zones.id", ondelete="SET NULL"), index=True)
     purchased_at = Column(DateTime, default=datetime.utcnow, index=True)
     
     # Relationships
     inventory_item = relationship("InventoryItem", back_populates="purchase_event")
     product = relationship("Product", back_populates="purchase_events")
-    zone = relationship("Zone", back_populates="purchase_events")
     
     def to_dict(self):
         return {
@@ -267,7 +234,6 @@ class PurchaseEvent(Base):
             "product_id": self.product_id,
             "x_position": self.x_position,
             "y_position": self.y_position,
-            "zone_id": self.zone_id,
             "purchased_at": self.purchased_at.isoformat()
         }
 
@@ -297,7 +263,6 @@ class StockSnapshot(Base):
     timestamp = Column(DateTime, nullable=False, index=True)
     present_count = Column(Integer, default=0)
     missing_count = Column(Integer, default=0)
-    zone_id = Column(Integer, ForeignKey("zones.id", ondelete="SET NULL"), index=True)
     
     def to_dict(self):
         return {
@@ -305,8 +270,7 @@ class StockSnapshot(Base):
             "product_id": self.product_id,
             "timestamp": self.timestamp.isoformat(),
             "present_count": self.present_count,
-            "missing_count": self.missing_count,
-            "zone_id": self.zone_id
+            "missing_count": self.missing_count
         }
 
 class StockMovement(Base):

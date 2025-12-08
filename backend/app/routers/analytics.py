@@ -10,13 +10,17 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
+import math
 
 from ..database import get_db
 from ..models import (
-    Zone, InventoryItem, ProductLocationHistory, Product,
+    InventoryItem, ProductLocationHistory, Product,
     PurchaseEvent
 )
 from ..core import logger
+
+# Grid cell size for spatial clustering (in cm)
+GRID_CELL_SIZE = 50  # 50cm x 50cm cells
 
 router = APIRouter(
     prefix="/analytics",
@@ -27,29 +31,30 @@ router = APIRouter(
     }
 )
 
+def position_to_grid(x: float, y: float) -> tuple:
+    """Convert x/y position to grid cell coordinates"""
+    if x is None or y is None:
+        return (None, None)
+    grid_x = math.floor(x / GRID_CELL_SIZE)
+    grid_y = math.floor(y / GRID_CELL_SIZE)
+    return (grid_x, grid_y)
+
 @router.get("/stock-heatmap")
 def get_stock_heatmap(db: Session = Depends(get_db)):
     """
-    Get stock depletion heatmap based on individual item (EPC) tracking.
-    Groups items by product and location, tracking:
+    Get stock depletion heatmap based on spatial clustering of items.
+    Uses grid-based clustering (50cm x 50cm cells) to group items by:
+    - Product type
+    - Spatial location
+    
+    Tracks:
     - present_count: items with status='present'
-    - total_count: all items that have been detected (have positions)
-    - max_items_seen: historical max (from ProductLocationHistory)
+    - total_count: all items detected at this location
+    - max_items_seen: historical maximum from ProductLocationHistory
     
-    Depletion is calculated as: (max_items_seen - present_count) / max_items_seen * 100
-    Green (0%) = all items present, Red (100%) = all items missing
+    Depletion = (max_items_seen - present_count) / max_items_seen * 100
+    Green (0%) = fully stocked, Red (100%) = fully depleted
     """
-    zones = db.query(Zone).all()
-    
-    def get_zone_from_position(x, y):
-        if x is None or y is None:
-            return None
-        for zone in zones:
-            if (zone.x_min <= x <= zone.x_max and 
-                zone.y_min <= y <= zone.y_max):
-                return zone.id
-        return None
-    
     # Get all items that have ever been detected (have positions)
     items = db.query(InventoryItem).filter(
         InventoryItem.x_position.isnot(None),
@@ -60,64 +65,70 @@ def get_stock_heatmap(db: Session = Depends(get_db)):
         logger.info("No items with positions found for heatmap")
         return []
     
-    # Group items by product and location cluster
+    # Group items by product and spatial grid cell
     product_stats = defaultdict(lambda: {
         'x_positions': [],
         'y_positions': [],
         'present_count': 0,
-        'total_count': 0,  # Total EPCs detected at this location
-        'zone_id': None,
-        'rfid_tags': []  # Track individual EPCs
+        'total_count': 0,
+        'grid_x': None,
+        'grid_y': None,
+        'rfid_tags': []
     })
     
     for item in items:
-        zone_id = item.zone_id if item.zone_id else get_zone_from_position(item.x_position, item.y_position)
-        # Use None for items without zone (not 0, which violates FK constraint)
-        effective_zone_id = zone_id if zone_id else None
+        grid_x, grid_y = position_to_grid(item.x_position, item.y_position)
+        if grid_x is None or grid_y is None:
+            continue
         
-        key = (item.product_id, effective_zone_id)
+        # Key: (product_id, grid_x, grid_y)
+        key = (item.product_id, grid_x, grid_y)
         product_stats[key]['x_positions'].append(item.x_position)
         product_stats[key]['y_positions'].append(item.y_position)
         product_stats[key]['total_count'] += 1
         product_stats[key]['rfid_tags'].append(item.rfid_tag)
+        product_stats[key]['grid_x'] = grid_x
+        product_stats[key]['grid_y'] = grid_y
         
-        # Count present items (not missing)
+        # Count present items
         if item.status == "present":
             product_stats[key]['present_count'] += 1
-        
-        product_stats[key]['zone_id'] = effective_zone_id
     
+    # Calculate cluster centers and prepare stats
     current_stats = []
-    for (product_id, zone_id), stats in product_stats.items():
+    for (product_id, grid_x, grid_y), stats in product_stats.items():
         if stats['total_count'] > 0 and stats['x_positions']:
             current_stats.append({
                 'product_id': product_id,
-                'zone_id': zone_id,
+                'grid_x': grid_x,
+                'grid_y': grid_y,
                 'x_center': mean(stats['x_positions']),
                 'y_center': mean(stats['y_positions']),
                 'present_count': stats['present_count'],
                 'total_count': stats['total_count']
             })
     
-    # Update ProductLocationHistory to track max items ever seen
+    # Update ProductLocationHistory to track historical max
     for stat in current_stats:
         location_history = db.query(ProductLocationHistory).filter(
             ProductLocationHistory.product_id == stat['product_id'],
-            ProductLocationHistory.zone_id == stat['zone_id']
+            ProductLocationHistory.grid_x == stat['grid_x'],
+            ProductLocationHistory.grid_y == stat['grid_y']
         ).first()
         
         if location_history:
             location_history.current_count = stat['present_count']
             location_history.x_center = stat['x_center']
             location_history.y_center = stat['y_center']
-            # Update max_items_seen if we've seen more items
+            # Update max if we've seen more items in this cluster
             if stat['total_count'] > location_history.max_items_seen:
                 location_history.max_items_seen = stat['total_count']
             location_history.last_updated = datetime.utcnow()
         else:
             location_history = ProductLocationHistory(
                 product_id=stat['product_id'],
-                zone_id=stat['zone_id'],
+                grid_x=stat['grid_x'],
+                grid_y=stat['grid_y'],
                 x_center=stat['x_center'],
                 y_center=stat['y_center'],
                 current_count=stat['present_count'],
@@ -128,28 +139,21 @@ def get_stock_heatmap(db: Session = Depends(get_db)):
     
     db.commit()
     
-    # Build result using historical max_items_seen for accurate depletion
+    # Build result with depletion calculation
     result = []
     for stat in current_stats:
         product = db.query(Product).filter(Product.id == stat['product_id']).first()
         if not product:
             continue
         
-        zone = None
-        zone_name = "Unassigned"
-        if stat['zone_id'] is not None:
-            zone = db.query(Zone).filter(Zone.id == stat['zone_id']).first()
-            if zone:
-                zone_name = zone.name
-        
         # Get historical max from ProductLocationHistory
         location_history = db.query(ProductLocationHistory).filter(
             ProductLocationHistory.product_id == stat['product_id'],
-            ProductLocationHistory.zone_id == stat['zone_id']
+            ProductLocationHistory.grid_x == stat['grid_x'],
+            ProductLocationHistory.grid_y == stat['grid_y']
         ).first()
         
-        # Use historical max for depletion calculation
-        # This ensures depletion reflects items that have gone missing since max was seen
+        # Calculate depletion based on historical max
         max_items = location_history.max_items_seen if location_history else stat['total_count']
         max_items = max(max_items, 1)  # Avoid division by zero
         
@@ -160,44 +164,66 @@ def get_stock_heatmap(db: Session = Depends(get_db)):
             "product_id": stat['product_id'],
             "product_name": product.name,
             "product_category": product.category,
-            "zone_id": stat['zone_id'],
-            "zone_name": zone_name,
+            "grid_x": stat['grid_x'],
+            "grid_y": stat['grid_y'],
             "x": stat['x_center'],
             "y": stat['y_center'],
             "current_count": stat['present_count'],
-            "total_detected": stat['total_count'],  # Total EPCs currently with positions
-            "max_items_seen": max_items,  # Historical max
+            "total_detected": stat['total_count'],
+            "max_items_seen": max_items,
             "items_missing": items_missing,
             "depletion_percentage": round(depletion, 1)
         })
     
-    logger.info(f"Generated heatmap with {len(result)} product locations from {len(items)} items")
+    logger.info(f"Generated heatmap with {len(result)} product clusters from {len(items)} items")
     
     return result
 
 @router.get("/purchase-heatmap")
 def get_purchase_heatmap(hours: int = 24, db: Session = Depends(get_db)):
     """
-    Get purchase density heatmap by zone
-    Returns purchase count per zone for the last N hours
+    Get purchase density heatmap using spatial grid clustering.
+    Returns purchase count per grid cell for the last N hours.
+    Grid cells are 50cm x 50cm.
     """
     cutoff_time = datetime.utcnow() - timedelta(hours=hours)
     
-    results = db.query(
-        Zone,
-        func.count(PurchaseEvent.id).label("purchase_count")
-    ).outerjoin(
-        PurchaseEvent,
-        (PurchaseEvent.zone_id == Zone.id) & (PurchaseEvent.purchased_at >= cutoff_time)
-    ).group_by(Zone.id).all()
+    # Get recent purchases with positions
+    purchases = db.query(PurchaseEvent).filter(
+        PurchaseEvent.purchased_at >= cutoff_time,
+        PurchaseEvent.x_position.isnot(None),
+        PurchaseEvent.y_position.isnot(None)
+    ).all()
     
-    return [
-        {
-            "zone": zone.to_dict(),
-            "purchase_count": count
-        }
-        for zone, count in results
-    ]
+    # Group by grid cells
+    grid_stats = defaultdict(lambda: {
+        'x_positions': [],
+        'y_positions': [],
+        'count': 0
+    })
+    
+    for purchase in purchases:
+        grid_x, grid_y = position_to_grid(purchase.x_position, purchase.y_position)
+        if grid_x is None or grid_y is None:
+            continue
+        
+        key = (grid_x, grid_y)
+        grid_stats[key]['x_positions'].append(purchase.x_position)
+        grid_stats[key]['y_positions'].append(purchase.y_position)
+        grid_stats[key]['count'] += 1
+    
+    # Build result
+    result = []
+    for (grid_x, grid_y), stats in grid_stats.items():
+        result.append({
+            "grid_x": grid_x,
+            "grid_y": grid_y,
+            "x_center": mean(stats['x_positions']),
+            "y_center": mean(stats['y_positions']),
+            "purchase_count": stats['count']
+        })
+    
+    return result
 
 @router.get(
     "/overview",
@@ -733,7 +759,7 @@ def get_slow_movers(velocity_threshold: float = 0.1, days: int = 30, db: Session
     
     **Notes**:
     - Creates dummy InventoryItem records automatically
-    - Zone fields (zone_id, x_position, y_position) are optional
+    - Position fields (x_position, y_position) are optional
     - Processes in batches for efficiency
     
     **Use Case**: Historical data generation, testing, migration
@@ -756,7 +782,7 @@ def get_slow_movers(velocity_threshold: float = 0.1, days: int = 30, db: Session
 def bulk_insert_purchases(purchases: list[dict], db: Session = Depends(get_db)):
     """
     Bulk insert historical purchase events for analytics backfill
-    Expected format: [{"product_id": int, "purchased_at": str, "zone_id": int (optional)}, ...]
+    Expected format: [{"product_id": int, "purchased_at": str, "x_position": float (optional), "y_position": float (optional)}, ...]
     Note: Creates dummy inventory_item records for historical data
     """
     from ..models import InventoryItem
@@ -770,8 +796,7 @@ def bulk_insert_purchases(purchases: list[dict], db: Session = Depends(get_db)):
                 rfid_tag=f"HIST_{purchase_data['product_id']}_{inserted}",
                 x_position=purchase_data.get('x_position'),
                 y_position=purchase_data.get('y_position'),
-                status='not_present',  # Historical purchases are gone
-                zone_id=purchase_data.get('zone_id')
+                status='not_present'  # Historical purchases are gone
             )
             db.add(dummy_item)
             db.flush()  # Get the ID
@@ -782,7 +807,6 @@ def bulk_insert_purchases(purchases: list[dict], db: Session = Depends(get_db)):
                 product_id=purchase_data['product_id'],
                 x_position=purchase_data.get('x_position'),
                 y_position=purchase_data.get('y_position'),
-                zone_id=purchase_data.get('zone_id'),
                 purchased_at=datetime.fromisoformat(purchase_data['purchased_at'])
             )
             db.add(purchase)
@@ -816,8 +840,8 @@ def bulk_insert_purchases(purchases: list[dict], db: Session = Depends(get_db)):
     
     **Notes**:
     - Processes in batches of 1000 for efficiency
-    - Zone_id is optional (for zone-specific snapshots)
     - Timestamps should be in ISO 8601 format
+    - Snapshots are per-product (not location-specific)
     
     **Use Case**: Historical data generation, periodic backups
     """,
@@ -839,7 +863,7 @@ def bulk_insert_purchases(purchases: list[dict], db: Session = Depends(get_db)):
 def bulk_insert_snapshots(snapshots: list[dict], db: Session = Depends(get_db)):
     """
     Bulk insert historical stock snapshots for analytics backfill
-    Expected format: [{"product_id": int, "timestamp": str, "present_count": int, "missing_count": int, "zone_id": int}, ...]
+    Expected format: [{"product_id": int, "timestamp": str, "present_count": int, "missing_count": int}, ...]
     """
     from ..models import StockSnapshot
     
@@ -854,8 +878,7 @@ def bulk_insert_snapshots(snapshots: list[dict], db: Session = Depends(get_db)):
                     product_id=snapshot_data['product_id'],
                     timestamp=datetime.fromisoformat(snapshot_data['timestamp']),
                     present_count=snapshot_data.get('present_count', 0),
-                    missing_count=snapshot_data.get('missing_count', 0),
-                    zone_id=snapshot_data.get('zone_id')
+                    missing_count=snapshot_data.get('missing_count', 0)
                 )
                 db.add(snapshot)
                 inserted += 1

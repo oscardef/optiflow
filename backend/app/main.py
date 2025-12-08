@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import init_db, SessionLocal_simulation, SessionLocal_real
-from .models import Zone, Configuration, InventoryItem, Product
+from .models import Configuration, InventoryItem, Product
 from .config import config_state, ConfigMode
 from .core import logger
 import random
@@ -96,7 +96,6 @@ from .routers import (
     data_router,
     products_router,
     analytics_router,
-    zones_router,
     config_router,
     simulation_router,
     items_router
@@ -156,7 +155,6 @@ app.include_router(positions_router)
 app.include_router(data_router)
 app.include_router(products_router)
 app.include_router(analytics_router)
-app.include_router(zones_router)
 app.include_router(config_router)
 app.include_router(simulation_router)
 app.include_router(items_router)
@@ -189,31 +187,6 @@ def startup_event():
             db_sim.commit()
             logger.info("Created default configuration in simulation database")
         
-        # Create default zones for simulation mode only
-        zone_count = db_sim.query(Zone).count()
-        if zone_count == 0:
-            logger.info("Creating default store zones for simulation...")
-            # Create store zones based on typical retail layout
-            # Store dimensions: 1000cm x 800cm
-            zones = [
-                Zone(name="Entrance", x_min=0, x_max=200, y_min=0, y_max=160, zone_type="entrance"),
-                Zone(name="Aisle 1", x_min=200, x_max=400, y_min=0, y_max=400, zone_type="aisle"),
-                Zone(name="Aisle 2", x_min=400, x_max=600, y_min=0, y_max=400, zone_type="aisle"),
-                Zone(name="Aisle 3", x_min=600, x_max=800, y_min=0, y_max=400, zone_type="aisle"),
-                Zone(name="Aisle 4", x_min=800, x_max=1000, y_min=0, y_max=400, zone_type="aisle"),
-                Zone(name="Cross Aisle", x_min=0, x_max=1000, y_min=360, y_max=440, zone_type="aisle"),
-                Zone(name="Aisle 5", x_min=200, x_max=400, y_min=440, y_max=800, zone_type="aisle"),
-                Zone(name="Aisle 6", x_min=400, x_max=600, y_min=440, y_max=800, zone_type="aisle"),
-                Zone(name="Aisle 7", x_min=600, x_max=800, y_min=440, y_max=800, zone_type="aisle"),
-                Zone(name="Aisle 8", x_min=800, x_max=1000, y_min=440, y_max=800, zone_type="aisle"),
-                Zone(name="Checkout", x_min=0, x_max=200, y_min=640, y_max=800, zone_type="checkout"),
-            ]
-            db_sim.add_all(zones)
-            db_sim.commit()
-            logger.info(f"Created {len(zones)} default zones in simulation database")
-        else:
-            logger.info(f"Found {zone_count} existing zones in simulation database")
-        
         # Populate inventory items if empty
         populate_inventory_if_empty(db_sim)
     finally:
@@ -231,10 +204,6 @@ def startup_event():
             db_real.add(config)
             db_real.commit()
             logger.info("Created default configuration in real database")
-        
-        # Real mode starts with empty zones - admin can create them
-        zone_count = db_real.query(Zone).count()
-        logger.info(f"Real database has {zone_count} zones")
     finally:
         db_real.close()
     
