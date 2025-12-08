@@ -58,13 +58,18 @@ export default function SalesTimeSeriesChart({ data, interval, isLoading }: Prop
     const date = new Date(dateStr);
     switch (interval) {
       case 'hour':
-        return date.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
+        return date.toLocaleString('en-US', { 
+          month: 'short', 
+          day: 'numeric', 
+          hour: 'numeric', 
+          hour12: true 
+        });
       case 'day':
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       case 'week':
-        return `Week ${Math.ceil(date.getDate() / 7)}`;
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       case 'month':
-        return date.toLocaleDateString('en-US', { month: 'short' });
+        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
       default:
         return dateStr;
     }
@@ -76,6 +81,12 @@ export default function SalesTimeSeriesChart({ data, interval, isLoading }: Prop
     return range === 0 ? 50 : ((yAxis.max - sales) / range) * 100;
   };
 
+  // Calculate minimum width needed for proper data display
+  // More data points = need more horizontal space
+  const minPointWidth = interval === 'hour' ? 40 : 30; // Pixels per data point
+  const calculatedWidth = Math.max(800, data.length * minPointWidth);
+  const needsScroll = calculatedWidth > 800;
+
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6 min-h-[400px]">
       <div className="flex justify-between items-start mb-4">
@@ -86,6 +97,7 @@ export default function SalesTimeSeriesChart({ data, interval, isLoading }: Prop
             {interval === 'day' && 'Daily sales'}
             {interval === 'week' && 'Weekly sales'}
             {interval === 'month' && 'Monthly sales'}
+            {needsScroll && <span className="ml-2 text-[#0055A4]">→ Scroll to see all data</span>}
           </p>
         </div>
         <div className="text-right">
@@ -96,8 +108,10 @@ export default function SalesTimeSeriesChart({ data, interval, isLoading }: Prop
         </div>
       </div>
 
-      {/* Chart */}
-      <div className="relative" style={{ height: `${chartHeight}px` }}>
+      {/* Chart Container with horizontal scroll */}
+      <div className={`${needsScroll ? 'overflow-x-auto' : ''}`}>
+        <div style={{ minWidth: `${calculatedWidth}px` }}>
+          <div className="relative" style={{ height: `${chartHeight}px` }}>
         {/* Y-axis labels */}
         <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-between text-xs text-gray-500 pr-2 font-medium">
           <span>{yAxis.max}</span>
@@ -184,12 +198,14 @@ export default function SalesTimeSeriesChart({ data, interval, isLoading }: Prop
           {data.length > 0 && (
             <>
               <span>{formatDate(data[0].date)}</span>
-              {data.length > 2 && data.length < 15 && (
+              {data.length > 2 && data.length < 20 && (
                 <span>{formatDate(data[Math.floor(data.length / 2)].date)}</span>
               )}
               <span>{formatDate(data[data.length - 1].date)}</span>
             </>
           )}
+        </div>
+          </div>
         </div>
       </div>
     </div>

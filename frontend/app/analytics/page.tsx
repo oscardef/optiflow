@@ -51,6 +51,9 @@ export default function AnalyticsPage() {
   const [timeInterval, setTimeInterval] = useState<'hour' | 'day' | 'week' | 'month'>('day');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
+  
+  // Applied values (what's actually being displayed)
+  const [appliedInterval, setAppliedInterval] = useState<'hour' | 'day' | 'week' | 'month'>('day');
 
   // Helper to get date range for API calls
   const getDateParams = () => {
@@ -82,6 +85,9 @@ export default function AnalyticsPage() {
     setLoading(true);
     setError(null);
     try {
+      // Apply the current selections
+      setAppliedInterval(timeInterval);
+      
       const dateParams = getDateParams();
       const [overview, velocity, top, category, clusters, anomaliesData, timeSeries] = await Promise.all([
         fetch(`${API_URL}/analytics/overview?${dateParams}&interval=${timeInterval}`).then(r => r.ok ? r.json() : null),
@@ -125,6 +131,42 @@ export default function AnalyticsPage() {
       setDemandForecast(forecast);
     } catch (error) {
       console.error('Error fetching forecast:', error);
+    }
+  };
+
+  const clearData = async () => {
+    if (!confirm('This will delete all purchase events and stock snapshots. Are you sure?')) {
+      return;
+    }
+    
+    setIsBackfilling(true);
+    try {
+      const response = await fetch(`${API_URL}/analytics/clear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const result = await response.json();
+      setBackfillStatus({
+        running: false,
+        message: result.message || 'Data cleared successfully',
+        records: 0
+      });
+      
+      // Refresh status and analytics
+      setTimeout(() => {
+        fetchSetupStatus();
+        fetchAnalyticsData();
+      }, 1000);
+    } catch (error) {
+      console.error('Error clearing data:', error);
+      setBackfillStatus({
+        running: false,
+        message: 'Failed to clear data',
+        records: 0
+      });
+    } finally {
+      setIsBackfilling(false);
     }
   };
 
@@ -188,12 +230,7 @@ export default function AnalyticsPage() {
     // Removed auto-refresh - users can manually refresh via the refresh button
   }, []);
 
-  useEffect(() => {
-    // Refetch when date range changes
-    if (!loading) {
-      fetchAnalyticsData();
-    }
-  }, [dateRange, timeInterval, customStartDate, customEndDate]);
+  // Removed auto-refresh on date/interval changes - user must click Apply button
 
   useEffect(() => {
     if (selectedProductForForecast) {
@@ -271,54 +308,65 @@ export default function AnalyticsPage() {
         {/* Backfill Controls */}
         {showBackfill && (
           <div className="max-w-7xl mx-auto mb-4 bg-white rounded-lg shadow p-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Generate Historical Data</h3>
-            <div className="grid grid-cols-4 gap-4 items-end">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Density
-                </label>
-                <select
-                  value={backfillDensity}
-                  onChange={(e) => setBackfillDensity(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
-                  disabled={isBackfilling}
-                >
-                  <option value="sparse">Sparse (few events)</option>
-                  <option value="normal">Normal</option>
-                  <option value="dense">Dense</option>
-                  <option value="extreme">Extreme (max events)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Days
-                </label>
-                <input
-                  type="number"
-                  value={backfillDays}
-                  onChange={(e) => setBackfillDays(parseInt(e.target.value) || 30)}
-                  min="1"
-                  max="365"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
-                  disabled={isBackfilling}
-                />
-              </div>
-              <div>
-                <button
-                  onClick={triggerBackfill}
-                  disabled={isBackfilling}
-                  className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 rounded-lg transition-colors"
-                >
-                  {isBackfilling ? 'Generating...' : 'Generate'}
-                </button>
-              </div>
-              <div>
-                {backfillStatus && (
-                  <div className={`text-sm ${backfillStatus.running ? 'text-blue-600' : backfillStatus.records > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {backfillStatus.message}
-                    {backfillStatus.records > 0 && ` (${backfillStatus.records} records)`}
-                  </div>
-                )}
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Data Management</h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-5 gap-4 items-end">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Density
+                  </label>
+                  <select
+                    value={backfillDensity}
+                    onChange={(e) => setBackfillDensity(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
+                    disabled={isBackfilling}
+                  >
+                    <option value="sparse">Sparse</option>
+                    <option value="normal">Normal</option>
+                    <option value="dense">Dense</option>
+                    <option value="extreme">Extreme</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Days
+                  </label>
+                  <input
+                    type="number"
+                    value={backfillDays}
+                    onChange={(e) => setBackfillDays(parseInt(e.target.value) || 30)}
+                    min="1"
+                    max="365"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
+                    disabled={isBackfilling}
+                  />
+                </div>
+                <div>
+                  <button
+                    onClick={triggerBackfill}
+                    disabled={isBackfilling}
+                    className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 rounded-lg transition-colors"
+                  >
+                    {isBackfilling ? 'Working...' : 'Generate Data'}
+                  </button>
+                </div>
+                <div>
+                  <button
+                    onClick={clearData}
+                    disabled={isBackfilling}
+                    className="w-full px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 rounded-lg transition-colors"
+                  >
+                    Clear Data
+                  </button>
+                </div>
+                <div>
+                  {backfillStatus && (
+                    <div className={`text-xs ${backfillStatus.running ? 'text-blue-600' : backfillStatus.records > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {backfillStatus.message}
+                      {backfillStatus.records > 0 && ` (${backfillStatus.records} records)`}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -408,7 +456,8 @@ export default function AnalyticsPage() {
 
                   {/* Interval Selector */}
                   <div className="flex gap-1 border-l border-gray-200 pl-4">
-                    {(['day', 'week', 'month'] as const).map((interval) => (
+                    <span className="text-xs text-gray-500 self-center mr-2">Interval:</span>
+                    {(['hour', 'day', 'week', 'month'] as const).map((interval) => (
                       <button
                         key={interval}
                         onClick={() => setTimeInterval(interval)}
@@ -423,6 +472,15 @@ export default function AnalyticsPage() {
                       </button>
                     ))}
                   </div>
+
+                  {/* Apply Button */}
+                  <button
+                    onClick={fetchAnalyticsData}
+                    disabled={loading}
+                    className="px-4 py-1.5 text-xs font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] disabled:bg-gray-400 rounded-lg transition-colors"
+                  >
+                    {loading ? 'Loading...' : 'Apply'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -435,7 +493,7 @@ export default function AnalyticsPage() {
                   <AnalyticsOverview data={analyticsOverview} />
                   <SalesTimeSeriesChart 
                     data={salesTimeSeries} 
-                    interval={timeInterval}
+                    interval={appliedInterval}
                     isLoading={loading}
                   />
                 </div>
