@@ -3,8 +3,8 @@ services:
     image: postgres:15-alpine
     container_name: optiflow-db-simulation
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-optiflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-optiflow_dev}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: optiflow_simulation
     ports:
       - "5432:5432"
@@ -20,8 +20,8 @@ services:
     image: postgres:15-alpine
     container_name: optiflow-db-real
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-optiflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-optiflow_dev}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: optiflow_real
     ports:
       - "5433:5432"
@@ -39,13 +39,13 @@ services:
       dockerfile: Dockerfile
     container_name: optiflow-backend
     environment:
-      DATABASE_URL_SIMULATION: postgresql://${POSTGRES_USER:-optiflow}:${POSTGRES_PASSWORD:-optiflow_dev}@postgres-simulation:5432/optiflow_simulation
-      DATABASE_URL_REAL: postgresql://${POSTGRES_USER:-optiflow}:${POSTGRES_PASSWORD:-optiflow_dev}@postgres-real:5432/optiflow_real
-      MQTT_BROKER_HOST: ${MQTT_BROKER_HOST:-host.docker.internal}
-      MQTT_BROKER_PORT: ${MQTT_BROKER_PORT:-1883}
-      MQTT_BROKER: ${MQTT_BROKER:-172.20.10.4}
-      MQTT_PORT: ${MQTT_PORT:-1883}
-      REQUIRED_WIFI_SSID: ${REQUIRED_WIFI_SSID:-}
+      DATABASE_URL_SIMULATION: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-simulation:5432/optiflow_simulation
+      DATABASE_URL_REAL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-real:5432/optiflow_real
+      MQTT_BROKER_HOST: ${MQTT_BROKER_HOST}
+      MQTT_BROKER_PORT: ${MQTT_BROKER_PORT}
+      MQTT_BROKER: ${MQTT_BROKER}
+      MQTT_PORT: ${MQTT_PORT}
+      REQUIRED_WIFI_SSID: ${REQUIRED_WIFI_SSID}
     ports:
       - "8000:8000"
     depends_on:
@@ -65,7 +65,7 @@ services:
       dockerfile: Dockerfile
     container_name: optiflow-frontend
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     ports:
       - "3000:3000"
     depends_on:
@@ -81,9 +81,9 @@ services:
       dockerfile: Dockerfile
     container_name: optiflow-mqtt-bridge
     environment:
-      MQTT_BROKER_HOST: ${MQTT_BROKER_HOST:-172.20.10.4}
-      MQTT_BROKER_PORT: ${MQTT_BROKER_PORT:-1883}
-      MQTT_TOPIC: ${MQTT_TOPIC:-store/simulation}  # Legacy - now uses mode-aware topics
+      MQTT_BROKER_HOST: ${MQTT_BROKER_HOST}
+      MQTT_BROKER_PORT: ${MQTT_BROKER_PORT}
+      MQTT_TOPIC: ${MQTT_TOPIC}  # Legacy - now uses mode-aware topics
       API_URL: http://backend:8000
     depends_on:
       - backend

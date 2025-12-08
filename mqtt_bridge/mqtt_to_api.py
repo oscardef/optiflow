@@ -8,9 +8,9 @@ import paho.mqtt.client as mqtt
 from datetime import datetime
 
 # Configuration from environment variables
-MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
-MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", 1883))
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+MQTT_BROKER_HOST = os.environ["MQTT_BROKER_HOST"]
+MQTT_BROKER_PORT = int(os.environ["MQTT_BROKER_PORT"])
+API_URL = os.environ["API_URL"]
 
 # Mode-aware topic configuration
 TOPIC_SIMULATION = "store/simulation"

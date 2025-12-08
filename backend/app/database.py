@@ -4,14 +4,8 @@ from sqlalchemy.orm import sessionmaker
 import os
 
 # Dual database URLs for simulation and real modes
-DATABASE_URL_SIMULATION = os.getenv(
-    "DATABASE_URL_SIMULATION", 
-    "postgresql://optiflow:optiflow_dev@localhost:5432/optiflow_simulation"
-)
-DATABASE_URL_REAL = os.getenv(
-    "DATABASE_URL_REAL", 
-    "postgresql://optiflow:optiflow_dev@localhost:5433/optiflow_real"
-)
+DATABASE_URL_SIMULATION = os.environ["DATABASE_URL_SIMULATION"]
+DATABASE_URL_REAL = os.environ["DATABASE_URL_REAL"]
 
 # Create engines for both databases
 engine_simulation = create_engine(DATABASE_URL_SIMULATION)

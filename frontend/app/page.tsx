@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import StoreMap from './components/StoreMap';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
 interface Anchor {
   id: number;

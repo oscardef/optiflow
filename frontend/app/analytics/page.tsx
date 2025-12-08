@@ -11,7 +11,7 @@ import DemandForecastChart from '../components/DemandForecastChart';
 import AnomalyAlerts from '../components/AnomalyAlerts';
 import SalesTimeSeriesChart from '../components/SalesTimeSeriesChart';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
 interface BackfillStatus {
   running: boolean;

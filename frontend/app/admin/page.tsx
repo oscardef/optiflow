@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Anchor, Product, StoreConfig, ModeResponse, SimulationStatus, AnchorValidation, ConfigMode } from '@/src/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<'mode' | 'anchors' | 'products' | 'store' | 'system'>('mode');

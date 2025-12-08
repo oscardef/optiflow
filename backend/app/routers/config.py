@@ -230,8 +230,8 @@ def send_mqtt_control(command: str):
         import paho.mqtt.publish as publish
         
         # Get MQTT config from environment (same as simulation.py)
-        mqtt_broker = os.getenv("MQTT_BROKER", "172.20.10.4")
-        mqtt_port = int(os.getenv("MQTT_PORT", "1883"))
+        mqtt_broker = os.environ["MQTT_BROKER"]
+        mqtt_port = int(os.environ["MQTT_PORT"])
         
         # Determine topic based on current mode
         current_mode = config_state.mode
