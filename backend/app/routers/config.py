@@ -215,8 +215,10 @@ class MQTTControlResponse(BaseModel):
 @router.post("/mqtt/control", response_model=MQTTControlResponse)
 def send_mqtt_control(command: str):
     """
-    Send START or STOP command to MQTT broker to control hardware signal collection
-    Command is published to 'store/control' topic
+    Send START or STOP command to MQTT broker to control signal collection
+    Mode-aware: publishes to simulation or production control topic based on current mode
+    - SIMULATION mode: 'store/control' topic
+    - REAL mode: 'store/production/control' topic
     """
     if command not in ["START", "STOP"]:
         raise HTTPException(
@@ -231,20 +233,27 @@ def send_mqtt_control(command: str):
         mqtt_broker = os.getenv("MQTT_BROKER", "172.20.10.4")
         mqtt_port = int(os.getenv("MQTT_PORT", "1883"))
         
+        # Determine topic based on current mode
+        current_mode = config_state.mode
+        if current_mode == ConfigMode.REAL:
+            control_topic = "store/production/control"
+        else:
+            control_topic = "store/control"
+        
         # Publish control message
         publish.single(
-            topic="store/control",
+            topic=control_topic,
             payload=command,
             hostname=mqtt_broker,
             port=mqtt_port,
             qos=1
         )
         
-        logger.info(f"Sent MQTT control command: {command} to {mqtt_broker}:{mqtt_port}")
+        logger.info(f"Sent MQTT control command: {command} to {mqtt_broker}:{mqtt_port} on topic {control_topic} (mode: {current_mode.value})")
         
         return {
             "success": True,
-            "message": f"Successfully sent {command} command to MQTT broker",
+            "message": f"Successfully sent {command} command to {control_topic} (mode: {current_mode.value})",
             "command": command
         }
     
