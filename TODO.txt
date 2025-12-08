@@ -8,7 +8,7 @@ Classic AI : clustering anomaly detections
 restock threshold : rename
 
 
-make sure we are storing the timestamps 
+make sure we are storing the timestamps (we use the timestamp that is the utc of reception on the server)
 
 
 every time we receive an mqtt publish : append to DB (for persistence) and notify the client with these data. 

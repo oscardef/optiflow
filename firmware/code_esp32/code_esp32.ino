@@ -51,7 +51,7 @@
 // WiFi Configuration - UPDATE THESE
 const char* WIFI_SSID = "Oscar";              // Your WiFi name
 const char* WIFI_PASSWORD = "password";        // Your WiFi password
-const char* MQTT_SERVER = "172.20.10.3";       // Your MacBook IP
+const char* MQTT_SERVER = "172.20.10.4";       // Your MacBook IP
 const int MQTT_PORT = 1883;
 
 // MQTT Topics

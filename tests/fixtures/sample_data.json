@@ -1,0 +1,118 @@
+{
+  "sample_hardware_packet": {
+    "polling_cycle": 1,
+    "timestamp": 123456,
+    "uwb": {
+      "n_anchors": 2,
+      "anchors": [
+        {
+          "mac_address": "0x0001",
+          "average_distance_cm": 150.5,
+          "measurements": 3,
+          "total_sessions": 5
+        },
+        {
+          "mac_address": "0x0002",
+          "average_distance_cm": 200.3,
+          "measurements": 4,
+          "total_sessions": 5
+        }
+      ]
+    },
+    "rfid": {
+      "tag_count": 2,
+      "tags": [
+        {
+          "epc": "30396062c38d79c000287fa1",
+          "rssi_dbm": -45,
+          "pc": "3000"
+        },
+        {
+          "epc": "30396062c38e018000287287",
+          "rssi_dbm": -52,
+          "pc": "3000"
+        }
+      ]
+    }
+  },
+  "sample_backend_packet": {
+    "timestamp": "2025-12-08T10:00:00Z",
+    "detections": [
+      {
+        "product_id": "30396062c38d79c000287fa1",
+        "product_name": "Product A",
+        "status": "present",
+        "x_position": 500.0,
+        "y_position": 400.0
+      }
+    ],
+    "uwb_measurements": [
+      {
+        "mac_address": "0x0001",
+        "distance_cm": 245.5,
+        "status": "0x01"
+      },
+      {
+        "mac_address": "0x0002",
+        "distance_cm": 312.0,
+        "status": "0x01"
+      }
+    ]
+  },
+  "sample_anchors": [
+    {
+      "mac_address": "0x0001",
+      "name": "Front Left",
+      "x_position": 0,
+      "y_position": 0,
+      "is_active": true
+    },
+    {
+      "mac_address": "0x0002",
+      "name": "Front Right",
+      "x_position": 1000,
+      "y_position": 0,
+      "is_active": true
+    },
+    {
+      "mac_address": "0x0003",
+      "name": "Back Right",
+      "x_position": 1000,
+      "y_position": 800,
+      "is_active": true
+    },
+    {
+      "mac_address": "0x0004",
+      "name": "Back Left",
+      "x_position": 0,
+      "y_position": 800,
+      "is_active": true
+    }
+  ],
+  "sample_products": [
+    {
+      "sku": "ELEC001",
+      "name": "Smartphone X",
+      "category": "Electronics",
+      "unit_price": 699.99,
+      "reorder_threshold": 10,
+      "optimal_stock_level": 50
+    },
+    {
+      "sku": "FOOD001",
+      "name": "Organic Apple",
+      "category": "Food",
+      "unit_price": 1.99,
+      "reorder_threshold": 100,
+      "optimal_stock_level": 500
+    },
+    {
+      "sku": "CLOTH001",
+      "name": "T-Shirt Blue",
+      "category": "Clothing",
+      "unit_price": 24.99,
+      "reorder_threshold": 20,
+      "optimal_stock_level": 100
+    }
+  ]
+}

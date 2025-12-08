@@ -8,13 +8,16 @@ Validates data format from: rfid_uwb_mqtt.ino
 - RFID: JRD-100 UHF RFID reader (EPC, RSSI, PC fields)
 - UWB: DWM3001CDK positioning (MAC address, average distance, measurement counts)
 
+Test Type: Integration + Hardware
+Requires: MQTT broker running, ESP32 hardware (optional)
+
 Usage:
-    python test_mqtt.py [--broker BROKER] [--port PORT] [--topic TOPIC]
+    python tests/integration/test_mqtt_hardware.py [--broker BROKER] [--port PORT] [--topic TOPIC]
 
 Examples:
-    python test_mqtt.py                          # Use defaults (172.20.10.4)
-    python test_mqtt.py --broker 192.168.1.100   # Custom broker
-    python test_mqtt.py --topic "store/aisle1"   # Specific aisle
+    python tests/integration/test_mqtt_hardware.py                          # Use defaults (172.20.10.4)
+    python tests/integration/test_mqtt_hardware.py --broker 192.168.1.100   # Custom broker
+    python tests/integration/test_mqtt_hardware.py --topic "store/aisle1"   # Specific aisle
     
 To start ESP32 publishing, send:
     mosquitto_pub -h 172.20.10.4 -t store/control -m 'START'
@@ -28,9 +31,13 @@ from typing import Dict, List, Tuple
 
 try:
     import paho.mqtt.client as mqtt
+    MQTT_AVAILABLE = True
 except ImportError:
-    print("❌ paho-mqtt not installed. Run: pip install paho-mqtt")
-    sys.exit(1)
+    MQTT_AVAILABLE = False
+    # Only exit if running as standalone script, not during pytest collection
+    if __name__ == "__main__":
+        print("❌ paho-mqtt not installed. Run: pip install paho-mqtt")
+        sys.exit(1)
 
 
 # Expected hardware data format from ESP32 rfid_uwb_mqtt.ino
@@ -46,7 +53,7 @@ EXPECTED_HARDWARE_FORMAT = """
     "n_anchors": 2,                      // Count of valid anchors (with readings)
     "anchors": [
       {
-        "mac_address": "0xABCD",         // String "0x" + 4 hex chars
+        "mac_address": "0x0001",         // String "0x" + 4 hex chars
         "average_distance_cm": 150.5,    // float - averaged distance
         "measurements": 3,               // uint32_t - successful readings
         "total_sessions": 5              // uint32_t - total attempts
@@ -57,7 +64,7 @@ EXPECTED_HARDWARE_FORMAT = """
     "tag_count": 2,                      // uint8_t - number of tags
     "tags": [
       {
-        "epc": "E200001234567890ABCD",   // String - Electronic Product Code
+        "epc": "30396062c38d79c000287fa1",   // String - 24 hex chars (EPC-96)
         "rssi_dbm": -45,                 // int8_t - signal strength
         "pc": "3000"                     // String - Protocol Control word
       }
@@ -308,6 +315,10 @@ class MQTTValidator:
 
 
 def main():
+    if not MQTT_AVAILABLE:
+        print("❌ paho-mqtt not installed. Run: pip install paho-mqtt")
+        sys.exit(1)
+    
     parser = argparse.ArgumentParser(
         description="MQTT Data Validator for OptiFlow ESP32 Hardware",
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -1,0 +1,23 @@
+# Test dependencies for OptiFlow
+# Install with: pip install -r tests/requirements.txt
+
+# Core testing framework
+pytest
+pytest-cov
+pytest-timeout
+pytest-asyncio
+
+# HTTP testing
+requests
+
+# MQTT testing
+paho-mqtt
+
+# Mocking and fixtures
+pytest-mock
+faker
+
+# Code quality
+flake8
+black
+mypy
