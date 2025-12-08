@@ -347,17 +347,25 @@ Zones are automatically created for simulation mode:
 
 ### Running the Simulation
 
+**Via Admin Panel (Recommended)**
+
+1. Navigate to Admin Panel
+2. Ensure Mode is set to "SIMULATION"
+3. Click "Clear Data" to remove any existing inventory
+4. Set item count (50-5000) and click "Generate Items"
+5. Click "Start Simulation"
+
+**Via Command Line**
+
 ```bash
-# Basic simulation with analytics
-python3 -m simulation.main --analytics
-
-# Custom speed (2x faster)
-python3 -m simulation.main --analytics --speed 2.0
-
-# Custom item count
+# Generate inventory
 python3 -m simulation.generate_inventory --items 5000
-python3 -m simulation.main --analytics
+
+# Run simulation
+python3 -m simulation.main --analytics --speed 2.0
 ```
+
+**Note:** "Generate Items" always ADDS to existing inventory. Always clear data first for a fresh start.
 
 ### Dashboard Features
 
@@ -376,9 +384,10 @@ python3 -m simulation.main --analytics
 
 **Admin Panel**
 - Mode toggle: Switch between simulation and real hardware
-- Item count: Configure number of items for simulation
+- Item count: Configure number of items for simulation (50-5000)
 - Start/Stop: Control simulation execution
-- Clear items: Reset inventory data
+- Clear Data: Completely removes all products and inventory items from database
+- Generate Items: Creates new inventory (requires database to be empty first)
 
 ### Generating Historical Data
 

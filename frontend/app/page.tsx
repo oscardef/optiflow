@@ -403,7 +403,7 @@ export default function Home() {
   const confirmClearData = async () => {
     setShowClearDataModal(false);
     try {
-      await fetch(`${API_URL}/data/clear`, { method: 'DELETE' });
+      await fetch(`${API_URL}/data/clear?delete_items=true`, { method: 'DELETE' });
       
       // Clear all state
       setPositions([]);
