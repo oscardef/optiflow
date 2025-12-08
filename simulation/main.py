@@ -177,7 +177,7 @@ def main():
                        default="realistic", help="Simulation mode (default: realistic)")
     parser.add_argument("--speed", type=float, default=1.0, 
                        help="Speed multiplier (default: 1.0, range: 0.5-5.0)")
-    parser.add_argument("--broker", default="172.20.10.3", 
+    parser.add_argument("--broker", default="172.20.10.4", 
                        help="MQTT broker address")
     parser.add_argument("--api", default="http://localhost:8000", 
                        help="Backend API URL")

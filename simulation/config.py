@@ -42,7 +42,7 @@ class StoreLayout:
 @dataclass
 class MQTTConfig:
     """MQTT broker configuration"""
-    broker: str = "172.20.10.3"
+    broker: str = "172.20.10.4"
     port: int = 1883
     topic_data: str = "store/aisle1"
     topic_status: str = "store/status"

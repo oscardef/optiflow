@@ -199,9 +199,10 @@ class InventoryGenerator:
         target_count = self.config.target_item_count
         min_dup, max_dup = self.config.duplicates_per_sku
         
-        # Calculate how many SKUs we need to reach target count
+        # Calculate how many SKUs we need to reach target count (with buffer)
         avg_duplicates = (min_dup + max_dup) / 2
-        num_skus_needed = int(target_count / avg_duplicates)
+        # Add 20% buffer to ensure we have enough SKUs
+        num_skus_needed = int(target_count / avg_duplicates * 1.2)
         
         # Select SKUs to use (cycle through catalog if needed)
         selected_products = []
@@ -209,36 +210,40 @@ class InventoryGenerator:
             product = PRODUCT_CATALOG[i % len(PRODUCT_CATALOG)]
             selected_products.append(product)
         
-        # Generate items with random duplication within range
+        # Generate items with random duplication within range, but stop at target
         items = []
         for product in selected_products:
+            if len(items) >= target_count:
+                break
+                
             num_duplicates = random.randint(min_dup, max_dup)
-            for _ in range(num_duplicates):
-                # We'll assign positions later in distribute_items()
-                item = Item(
-                    rfid_tag=f"RFID_{self.rfid_counter:04d}",
-                    product=product,
-                    x=0,  # Placeholder
-                    y=0   # Placeholder
-                )
-                items.append(item)
-                self.rfid_counter += 1
+            # Don't exceed target count
+            num_duplicates = min(num_duplicates, target_count - len(items))
+            
+            # Only generate if we need items
+            if num_duplicates > 0:
+                for _ in range(num_duplicates):
+                    # We'll assign positions later in distribute_items()
+                    item = Item(
+                        rfid_tag=f"RFID_{self.rfid_counter:04d}",
+                        product=product,
+                        x=0,  # Placeholder
+                        y=0   # Placeholder
+                    )
+                    items.append(item)
+                    self.rfid_counter += 1
         
-        # Trim or pad to reach exact target count
-        if len(items) > target_count:
-            items = random.sample(items, target_count)
-        elif len(items) < target_count:
-            # Add more random items to reach target
-            while len(items) < target_count:
-                product = random.choice(PRODUCT_CATALOG)
-                item = Item(
-                    rfid_tag=f"RFID_{self.rfid_counter:04d}",
-                    product=product,
-                    x=0,
-                    y=0
-                )
-                items.append(item)
-                self.rfid_counter += 1
+        # Pad to reach exact target count if needed
+        while len(items) < target_count:
+            product = random.choice(PRODUCT_CATALOG)
+            item = Item(
+                rfid_tag=f"RFID_{self.rfid_counter:04d}",
+                product=product,
+                x=0,
+                y=0
+            )
+            items.append(item)
+            self.rfid_counter += 1
         
         # Distribute items across store shelves
         self.distribute_items(items)

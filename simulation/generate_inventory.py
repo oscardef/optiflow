@@ -347,7 +347,7 @@ def create_inventory_items_batch(api_url: str, items: List[Dict]) -> int:
 
 def main():
     parser = argparse.ArgumentParser(description='Generate realistic store inventory')
-    parser.add_argument('--items', type=int, default=3000, help='Target number of inventory items')
+    parser.add_argument('--items', type=int, default=1000, help='Target number of inventory items')
     parser.add_argument('--api', type=str, default='http://localhost:8000', help='Backend API URL')
     parser.add_argument('--templates', type=str, nargs='*', help='Specific templates to use (default: all)')
     parser.add_argument('--dry-run', action='store_true', help='Show what would be generated without creating')
@@ -391,12 +391,35 @@ def main():
     positions = generate_store_layout_positions(args.items)
     position_idx = 0
     
+    # Calculate total optimal stock to determine scaling factor
+    total_optimal_stock = sum(p['optimal_stock_level'] for p in all_products)
+    
+    # Scale items per product to hit target exactly using remainder accumulation
+    remainder = 0.0
     for product in all_products:
-        # Number of physical items for this product
-        num_items = max(1, round(product['optimal_stock_level']))
+        if len(all_items) >= args.items:
+            break
+            
+        # Calculate proportional number of items for this product
+        proportion = product['optimal_stock_level'] / total_optimal_stock
+        exact_items = proportion * args.items + remainder
+        num_items = int(exact_items)
+        remainder = exact_items - num_items
         
-        for _ in range(num_items):
+        # Ensure we don't exceed target
+        num_items = min(num_items, args.items - len(all_items))
+        
+        # Skip if no items for this product
+        if num_items <= 0:
+            continue
+        
+        for i in range(num_items):
+            # Double-check we haven't exceeded target
+            if len(all_items) >= args.items:
+                break
+                
             if position_idx >= len(positions):
+                print(f"\n⚠️  WARNING: Ran out of positions at {position_idx}/{len(positions)}")
                 break
             
             x, y = positions[position_idx]
@@ -414,19 +437,18 @@ def main():
                 '_sim_y': y   # Internal position for simulation
             })
             rfid_counter += 1
-            
-            if len(all_items) >= args.items:
-                break
-        
-        if len(all_items) >= args.items:
-            break
     
-    print(f"   ✅ Generated {len(all_items)} RFID-tagged items")
+    print(f"   ✅ Generated {len(all_items)} RFID-tagged items (target: {args.items})")
+    
+    # Verify we hit the target exactly
+    if len(all_items) != args.items:
+        print(f"   ⚠️  WARNING: Generated {len(all_items)} items but target was {args.items}")
+        print(f"   Difference: {len(all_items) - args.items}")
     
     # Summary
     print(f"\n📊 Generation Summary:")
     print(f"   Products: {len(all_products)}")
-    print(f"   Items: {len(all_items)}")
+    print(f"   Items: {len(all_items)} (target: {args.items})")
     
     categories = {}
     for p in all_products:

@@ -43,7 +43,7 @@ services:
       DATABASE_URL_REAL: postgresql://${POSTGRES_USER:-optiflow}:${POSTGRES_PASSWORD:-optiflow_dev}@postgres-real:5432/optiflow_real
       MQTT_BROKER_HOST: ${MQTT_BROKER_HOST:-host.docker.internal}
       MQTT_BROKER_PORT: ${MQTT_BROKER_PORT:-1883}
-      MQTT_BROKER: ${MQTT_BROKER:-172.20.10.3}
+      MQTT_BROKER: ${MQTT_BROKER:-172.20.10.4}
       MQTT_PORT: ${MQTT_PORT:-1883}
       REQUIRED_WIFI_SSID: ${REQUIRED_WIFI_SSID:-}
     ports:

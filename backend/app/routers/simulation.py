@@ -83,7 +83,7 @@ def get_wifi_ssid() -> Optional[str]:
 def get_connection_status():
     """Check MQTT connectivity status"""
     # Get MQTT broker from config (default from simulation config)
-    mqtt_broker = os.getenv("MQTT_BROKER", "172.20.10.3")
+    mqtt_broker = os.getenv("MQTT_BROKER", "172.20.10.4")
     mqtt_port = int(os.getenv("MQTT_PORT", "1883"))
     
     # Check MQTT connection
@@ -448,7 +448,7 @@ def control_hardware(request: HardwareControlRequest):
             detail="Invalid command. Use 'START' or 'STOP'."
         )
     
-    mqtt_broker = os.getenv("MQTT_BROKER", "172.20.10.3")
+    mqtt_broker = os.getenv("MQTT_BROKER", "172.20.10.4")
     mqtt_port = int(os.getenv("MQTT_PORT", "1883"))
     topic = "store/control"
     

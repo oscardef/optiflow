@@ -709,12 +709,12 @@ export default function AdminPanel() {
           <div className="p-6">
             {/* Mode Control Tab */}
             {activeTab === 'mode' && (
-              <div className="space-y-6">
+              <div className="space-y-3">
                 <div>
-                  <h2 className="text-xl font-semibold mb-4">Operating Mode</h2>
-                  <div className="flex items-center gap-4 mb-6">
-                    <span className="text-sm text-gray-600 font-medium">Current Mode:</span>
-                    <span className={`px-4 py-2 rounded-lg font-semibold text-sm ${
+                  <h2 className="text-lg font-semibold mb-2">Operating Mode</h2>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-xs text-gray-600 font-medium">Current:</span>
+                    <span className={`px-3 py-1 rounded-lg font-semibold text-xs ${
                       mode?.mode === 'SIMULATION' 
                         ? 'bg-blue-100 text-blue-800 border border-blue-200' 
                         : 'bg-green-100 text-green-800 border border-green-200'
@@ -723,79 +723,96 @@ export default function AdminPanel() {
                     </span>
                   </div>
 
-                  <div className="flex gap-3">
+                  <div className="flex gap-2">
                     <button
                       onClick={() => switchMode('SIMULATION')}
                       disabled={mode?.mode === 'SIMULATION' || loading}
-                      className="px-6 py-2.5 text-sm font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      className="px-4 py-2 text-xs font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                     >
-                      Switch to Simulation
+                      Simulation Mode
                     </button>
                     <button
                       onClick={() => switchMode('REAL')}
                       disabled={mode?.mode === 'REAL' || loading}
-                      className="px-6 py-2.5 text-sm font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      className="px-4 py-2 text-xs font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                     >
-                      Switch to Real Hardware
+                      Real Hardware
                     </button>
                   </div>
                 </div>
 
                 {mode?.mode === 'SIMULATION' && (
-                  <div className="border-t pt-6">
-                    <h2 className="text-xl font-semibold mb-4">Simulation Control</h2>
+                  <div className="border-t pt-4">
+                    <h2 className="text-lg font-semibold mb-3">Simulation Control</h2>
                     
-                    <div className="grid grid-cols-2 gap-6 mb-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Number of Items
-                        </label>
-                        <input
-                          type="number"
-                          min="50"
-                          max="5000"
-                          step="50"
-                          value={simItemCount}
-                          onChange={(e) => setSimItemCount(Math.max(50, Math.min(5000, parseInt(e.target.value) || 100)))}
-                          disabled={simulationStatus?.running || loading || regeneratingInventory}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">
-                          Number of inventory items to simulate (50-5000)
-                        </p>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Speed Multiplier: {simSpeedMultiplier}x
-                        </label>
-                        <input
-                          type="range"
-                          min="0.5"
-                          max="5"
-                          step="0.5"
-                          value={simSpeedMultiplier}
-                          onChange={(e) => setSimSpeedMultiplier(parseFloat(e.target.value))}
-                          disabled={simulationStatus?.running || loading}
-                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#0055A4] disabled:cursor-not-allowed"
-                        />
-                        <div className="relative h-4 text-xs text-gray-500 mt-1">
-                          <span className="absolute left-0">0.5x</span>
-                          <span className="absolute" style={{ left: '11.1%' }}>1x</span>
-                          <span className="absolute" style={{ left: '33.3%' }}>2x</span>
-                          <span className="absolute" style={{ left: '55.6%' }}>3x</span>
-                          <span className="absolute" style={{ left: '77.8%' }}>4x</span>
-                          <span className="absolute right-0">5x</span>
+                    {/* Parameters Section */}
+                    <div className="space-y-3 mb-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Number of Items
+                          </label>
+                          <input
+                            type="number"
+                            min="50"
+                            max="5000"
+                            step="50"
+                            value={simItemCount}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              // Allow empty string for easier editing
+                              if (val === '') {
+                                setSimItemCount('' as any);
+                              } else {
+                                const numVal = parseInt(val);
+                                if (!isNaN(numVal)) {
+                                  setSimItemCount(numVal);
+                                }
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const val = e.target.value;
+                              if (val === '' || isNaN(parseInt(val))) {
+                                setSimItemCount(1000);
+                              } else {
+                                const numVal = parseInt(val);
+                                if (numVal < 50 || numVal > 5000) {
+                                  showMessage('error', 'Item count must be between 50 and 5000');
+                                  setSimItemCount(1000);
+                                }
+                              }
+                            }}
+                            disabled={simulationStatus?.running || loading || regeneratingInventory}
+                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                          />
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            Recommended: 50-5000 items
+                          </p>
                         </div>
-                        <p className="text-xs text-gray-500 mt-2">
-                          Controls how fast shoppers move and items are scanned
-                        </p>
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 gap-6 mb-6">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Speed: {simSpeedMultiplier}x
+                          </label>
+                          <input
+                            type="range"
+                            min="0.5"
+                            max="5"
+                            step="0.5"
+                            value={simSpeedMultiplier}
+                            onChange={(e) => setSimSpeedMultiplier(parseFloat(e.target.value))}
+                            disabled={simulationStatus?.running || loading}
+                            className="w-full h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-[#0055A4] disabled:cursor-not-allowed"
+                          />
+                          <div className="flex justify-between text-xs text-gray-500 mt-0.5 px-0.5">
+                            <span>0.5x</span>
+                            <span>5x</span>
+                          </div>
+                        </div>
+                      </div>
+
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                           Disappearance Rate: {simDisappearanceRate}%
                         </label>
                         <input
@@ -806,123 +823,99 @@ export default function AdminPanel() {
                           value={simDisappearanceRate}
                           onChange={(e) => setSimDisappearanceRate(parseFloat(e.target.value))}
                           disabled={simulationStatus?.running || loading}
-                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#0055A4] disabled:cursor-not-allowed"
+                          className="w-full h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-[#0055A4] disabled:cursor-not-allowed"
                         />
-                        <div className="relative h-4 text-xs text-gray-500 mt-1">
-                          <span className="absolute left-0">0%</span>
-                          <span className="absolute" style={{ left: '25%' }}>2.5%</span>
-                          <span className="absolute" style={{ left: '50%' }}>5%</span>
-                          <span className="absolute" style={{ left: '75%' }}>7.5%</span>
-                          <span className="absolute right-0">10%</span>
+                        <div className="flex justify-between text-xs text-gray-500 mt-0.5 px-0.5">
+                          <span>0%</span>
+                          <span>10%</span>
                         </div>
-                        <p className="text-xs text-gray-500 mt-2">
-                          Controls how quickly items go missing during simulation
-                        </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 mb-4">
-                      <button
-                        onClick={startSimulation}
-                        disabled={simulationStatus?.running || loading || checkingConnection}
-                        className="px-6 py-2.5 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {checkingConnection ? 'Checking Connection...' : 'Start Simulation'}
-                      </button>
-                      <button
-                        onClick={stopSimulation}
-                        disabled={!simulationStatus?.running || loading}
-                        className="px-6 py-2.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                      >
-                        Stop Simulation
-                      </button>
-                      <button
-                        onClick={checkConnectionStatus}
-                        disabled={loading || checkingConnection}
-                        className="px-6 py-2.5 text-sm font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                      >
-                        Test Connection
-                      </button>
-                      {simulationStatus?.running && (
-                        <div className="flex items-center gap-2 ml-4">
-                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                          <span className="text-sm text-gray-600 font-medium">Simulation Running</span>
-                          {simulationStatus.pid && (
-                            <span className="text-xs text-gray-500">(PID: {simulationStatus.pid})</span>
-                          )}
-                        </div>
-                      )}
+                    {/* Control Buttons */}
+                    <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        <button
+                          onClick={startSimulation}
+                          disabled={simulationStatus?.running || loading || checkingConnection}
+                          className="px-4 py-2 text-sm font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {checkingConnection ? 'Checking...' : 'Start'}
+                        </button>
+                        <button
+                          onClick={stopSimulation}
+                          disabled={!simulationStatus?.running || loading}
+                          className="px-4 py-2 text-sm font-medium bg-gray-400 text-white rounded-lg hover:bg-gray-500 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Stop
+                        </button>
+                        <button
+                          onClick={checkConnectionStatus}
+                          disabled={loading || checkingConnection}
+                          className="px-4 py-2 text-sm font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Test Connection
+                        </button>
+                        {simulationStatus?.running && (
+                          <div className="flex items-center gap-1.5 ml-2">
+                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                            <span className="text-xs text-gray-600 font-medium">Running</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => setShowClearDataModal(true)}
+                          disabled={simulationStatus?.running || loading}
+                          className="px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Clear Data
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (products.length > 0) {
+                              showMessage('error', `⚠️ You have ${products.length} existing products. Click "Clear Data" first to start fresh!`);
+                              return;
+                            }
+                            regenerateInventory();
+                          }}
+                          disabled={simulationStatus?.running || loading || regeneratingInventory}
+                          className="px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                          title="Generate inventory items (must clear data first if items exist)"
+                        >
+                          {regeneratingInventory ? 'Generating...' : 'Generate Items'}
+                        </button>
+                      </div>
                     </div>
 
                     {connectionStatus && (
-                      <div className={`mb-4 p-4 rounded-lg border ${
+                      <div className={`p-3 rounded-lg border text-xs space-y-1 mb-3 ${
                         connectionStatus.mqtt_connected
                           ? 'bg-green-50 border-green-200'
                           : 'bg-red-50 border-red-200'
                       }`}>
-                        <h4 className="text-sm font-semibold mb-2">Connection Status</h4>
-                        <div className="space-y-1 text-sm">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${connectionStatus.mqtt_connected ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                            <span className="font-medium">MQTT Broker:</span>
-                            <span className="text-gray-700">{connectionStatus.mqtt_broker}</span>
-                            <span className={connectionStatus.mqtt_connected ? 'text-green-600' : 'text-red-600'}>
-                              {connectionStatus.mqtt_connected ? '✓ Connected' : '✗ Disconnected'}
-                            </span>
-                          </div>
-                          {connectionStatus.mqtt_error && (
-                            <div className="text-red-600 text-xs ml-4">{connectionStatus.mqtt_error}</div>
-                          )}
-                          {connectionStatus.wifi_ssid && (
-                            <div className="flex items-center gap-2 text-gray-600">
-                              <span className="w-2 h-2 rounded-full bg-gray-400"></span>
-                              <span className="font-medium">WiFi Network:</span>
-                              <span className="text-gray-700">{connectionStatus.wifi_ssid}</span>
-                              <span className="text-xs text-gray-500">(Info only)</span>
-                            </div>
-                          )}
-                          {!connectionStatus.mqtt_connected && (
-                            <div className="text-xs text-gray-600 ml-4 mt-2 bg-white p-2 rounded border border-gray-200">
-                              💡 Tip: The MQTT broker at {connectionStatus.mqtt_broker} requires connection to a specific network (e.g., 'Oscar' hotspot). 
-                              Make sure you're connected to the correct WiFi network.
-                            </div>
-                          )}
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${connectionStatus.mqtt_connected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                          <span className="font-medium">MQTT:</span>
+                          <span className="text-gray-600">{connectionStatus.mqtt_broker}</span>
+                          <span className={connectionStatus.mqtt_connected ? 'text-green-600 ml-auto' : 'text-red-600 ml-auto'}>
+                            {connectionStatus.mqtt_connected ? '✓ Connected' : '✗ Disconnected'}
+                          </span>
                         </div>
+                        {connectionStatus.mqtt_error && (
+                          <div className="text-red-600 ml-4">{connectionStatus.mqtt_error}</div>
+                        )}
+                        {connectionStatus.wifi_ssid && (
+                          <div className="flex items-center gap-2 text-gray-600 ml-4">
+                            <span>WiFi: {connectionStatus.wifi_ssid}</span>
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {/* Data Management Section */}
-                    <div className="border-t pt-6 mt-6">
-                      <h3 className="text-lg font-semibold mb-4">Data Management</h3>
-                      <div className="flex items-center gap-3 mb-4">
-                        <button
-                          onClick={() => setShowClearDataModal(true)}
-                          disabled={simulationStatus?.running || loading}
-                          className="px-6 py-2.5 text-sm font-medium bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                        >
-                          Clear All Data
-                        </button>
-                        <button
-                          onClick={regenerateInventory}
-                          disabled={simulationStatus?.running || loading || regeneratingInventory}
-                          className="px-6 py-2.5 text-sm font-medium bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {regeneratingInventory ? 'Generating...' : `Generate ${simItemCount} Items`}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500">
-                        <strong>Clear All Data:</strong> Deletes all items, products, detections, and analytics data for a fresh start.
-                        <br />
-                        <strong>Generate Items:</strong> Creates new inventory items with the specified count.
-                      </p>
-                    </div>
-
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mt-4">
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        <strong>Note:</strong> Simulation parameters can only be changed when the simulation is stopped. 
-                        The simulation generates synthetic RFID and UWB data to test the system without physical hardware.
-                        Connection checks are performed automatically when starting the simulation.
-                      </p>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-gray-700 leading-relaxed">
+                      <strong>How to use:</strong> Set parameters above, then click Start to begin simulation. Sliders can only be adjusted when stopped. The system will auto-check your connection when starting.
                     </div>
                   </div>
                 )}
@@ -965,23 +958,23 @@ export default function AdminPanel() {
                 )}
 
                 {mode?.mode === 'REAL' && (
-                  <div className="border-t pt-6">
-                    <h2 className="text-xl font-semibold mb-4">Anchor Validation</h2>
+                  <div className="border-t pt-3">
+                    <h2 className="text-lg font-semibold mb-2">Anchor Validation</h2>
                     <button
                       onClick={validateAnchors}
                       disabled={loading}
-                      className="px-6 py-2.5 text-sm font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 transition-colors mb-4"
+                      className="px-4 py-2 text-xs font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 transition-colors mb-2"
                     >
                       Validate Anchors
                     </button>
 
                     {validation && (
-                      <div className={`p-4 rounded-lg ${
+                      <div className={`p-3 rounded-lg text-xs ${
                         validation.valid ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'
                       }`}>
-                        <p className="font-medium mb-2">{validation.message}</p>
+                        <p className="font-medium mb-1">{validation.message}</p>
                         {validation.warnings.length > 0 && (
-                          <ul className="list-disc list-inside space-y-1 text-sm">
+                          <ul className="list-disc list-inside space-y-0.5 text-xs">
                             {validation.warnings.map((warning: string, i: number) => (
                               <li key={i}>{warning}</li>
                             ))}
