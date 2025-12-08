@@ -204,8 +204,7 @@ The firmware outputs data in a structured JSON format that matches the reference
     "tags": [
       {
         "epc": "E200001234567890ABCD",
-        "rssi_dbm": -45,
-        "pc": "3000"
+        "rssi_dbm": -45
       }
     ]
   }
@@ -231,7 +230,6 @@ The firmware outputs data in a structured JSON format that matches the reference
 | `rfid.tags[]` | Array | List of detected RFID tags |
 | `rfid.tags[].epc` | String | Electronic Product Code (24 hex characters) |
 | `rfid.tags[].rssi_dbm` | Integer | Signal strength in dBm (typically -70 to -30) |
-| `rfid.tags[].pc` | String | Protocol Control word (4 hex characters) |
 
 ### Example: No UWB Data Available
 

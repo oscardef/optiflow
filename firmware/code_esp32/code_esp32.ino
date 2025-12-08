@@ -106,7 +106,6 @@ struct UWBSession {
 struct RFIDTagData {
     String epc;
     int8_t rssi;
-    String pc;
     unsigned long timestamp;
 };
 
@@ -298,7 +297,6 @@ void rfidTask(void *parameter) {
             for (uint8_t i = 0; i < tagCount && i < RFID_MAX_TAGS; i++) {
                 currentRfidTags[i].epc = rfid.cards[i].epc_str;
                 currentRfidTags[i].rssi = (int8_t)rfid.cards[i].rssi;
-                currentRfidTags[i].pc = rfid.cards[i].pc_str;
                 currentRfidTags[i].timestamp = millis();
             }
             
@@ -503,8 +501,7 @@ void combineDataFromPollingAndSend(uint32_t cycleCount) {
     for (uint8_t i = 0; i < tagCount; i++) {
         Serial.println("      {");
         Serial.printf("        \"epc\": \"%s\",\n", tags[i].epc.c_str());
-        Serial.printf("        \"rssi_dbm\": %d,\n", tags[i].rssi);
-        Serial.printf("        \"pc\": \"%s\"\n", tags[i].pc.c_str());
+        Serial.printf("        \"rssi_dbm\": %d\n", tags[i].rssi);
         Serial.print("      }");
         if (i < tagCount - 1) Serial.println(",");
         else Serial.println();
@@ -548,7 +545,6 @@ void combineDataFromPollingAndSend(uint32_t cycleCount) {
         JsonObject tag = tagsArray.createNestedObject();
         tag["epc"] = tags[i].epc;
         tag["rssi_dbm"] = tags[i].rssi;
-        tag["pc"] = tags[i].pc;
     }
     
     // Publish to MQTT if START signal received and we have data
