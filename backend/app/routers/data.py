@@ -24,8 +24,15 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
     """
     Receive combined RFID detections and UWB measurements from devices
     Automatically calculates position if 2+ anchors available
+    
+    NOTE: This endpoint accepts data from BOTH simulation and real hardware,
+    but the mqtt_bridge filters messages based on current mode to prevent overlap.
+    Additional validation here ensures data integrity.
     """
     try:
+        # Log incoming data source for debugging
+        logger.info(f"Received data packet: {len(packet.detections)} detections, {len(packet.uwb_measurements)} UWB measurements (Mode: {config_state.mode.value})")
+        
         timestamp = datetime.fromisoformat(packet.timestamp.replace('Z', '+00:00'))
         detection_ids = []
         uwb_ids = []

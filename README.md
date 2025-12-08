@@ -6,6 +6,7 @@ Real-time inventory tracking system combining UWB (Ultra-Wideband) positioning a
 
 - [Overview](#overview)
 - [Architecture](#architecture)
+- [Mode Separation](#mode-separation)
 - [Data Models](#data-models)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
@@ -192,6 +193,71 @@ OptiFlow is a full-stack inventory management solution that tracks:
                         │   timestamp: 2025-12-08T...    │
                         └────────────────────────────────┘
 ```
+
+---
+
+## Mode Separation
+
+OptiFlow operates in two distinct modes to **prevent data contamination** between simulation and real hardware:
+
+### Operating Modes
+
+| Mode | Data Source | MQTT Topic | Use Case |
+|------|-------------|------------|----------|
+| **SIMULATION** | Python simulation | `store/simulation` | Development, testing, demonstrations |
+| **REAL** | ESP32 hardware | `store/production` | Production deployment with actual sensors |
+
+### How It Works
+
+The system enforces complete data separation through **mode-aware MQTT filtering**:
+
+1. **Admin Panel** - Switch modes via UI toggle at `http://localhost:3000/admin`
+2. **MQTT Bridge** - Automatically filters messages based on current mode
+3. **No Overlap** - Simulation data never intersects with hardware data
+
+```
+┌─────────────────────┐
+│  Switch Mode        │
+│  (Admin Panel)      │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  MQTT Bridge        │
+│  Checks Mode        │
+└──────────┬──────────┘
+           │
+    ┌──────┴──────┐
+    │             │
+    ▼             ▼
+SIMULATION     REAL
+Accept:        Accept:
+store/         store/
+simulation     production
+```
+
+### Quick Commands
+
+```bash
+# Switch to SIMULATION mode
+curl -X POST http://localhost:8000/config/mode \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "SIMULATION"}'
+
+# Switch to REAL mode
+curl -X POST http://localhost:8000/config/mode \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "REAL"}'
+
+# Check current mode
+curl http://localhost:8000/config/mode
+```
+
+### Documentation
+
+- **📖 [MODE_SEPARATION.md](MODE_SEPARATION.md)** - Complete architecture and troubleshooting
+- **📋 [QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick command reference
+- **📝 [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Implementation details
 
 ---
 

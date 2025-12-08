@@ -10,12 +10,20 @@ from datetime import datetime
 # Configuration from environment variables
 MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
 MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", 1883))
-MQTT_TOPIC = os.getenv("MQTT_TOPIC", "store/aisle1")
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+
+# Mode-aware topic configuration
+TOPIC_SIMULATION = "store/simulation"
+TOPIC_PRODUCTION = "store/production"
+
+# Cache for current system mode
+_cached_mode = None
+_last_mode_check = 0
+MODE_CHECK_INTERVAL = 5  # seconds
 
 print(f"🔌 MQTT Bridge starting...")
 print(f"   Broker: {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
-print(f"   Topic: {MQTT_TOPIC}")
+print(f"   Mode-aware topics: {TOPIC_SIMULATION}, {TOPIC_PRODUCTION}")
 print(f"   API: {API_URL}")
 
 
@@ -104,6 +112,30 @@ def transform_hardware_to_backend(hardware_data: dict) -> dict:
     }
 
 
+def get_system_mode() -> str:
+    """Get current system mode from backend API with caching"""
+    global _cached_mode, _last_mode_check
+    
+    current_time = time.time()
+    
+    # Use cache if recent
+    if _cached_mode and (current_time - _last_mode_check) < MODE_CHECK_INTERVAL:
+        return _cached_mode
+    
+    try:
+        response = requests.get(f"{API_URL}/config/mode", timeout=2)
+        if response.status_code == 200:
+            mode = response.json().get('mode', 'SIMULATION')
+            _cached_mode = mode
+            _last_mode_check = current_time
+            return mode
+    except Exception as e:
+        # If can't reach backend, return cached or default
+        pass
+    
+    return _cached_mode or "SIMULATION"
+
+
 def is_hardware_format(data: dict) -> bool:
     """Check if data is in hardware format (has rfid/uwb structure) vs simulation format"""
     return "rfid" in data or ("uwb" in data and "anchors" in data.get("uwb", {}))
@@ -113,19 +145,33 @@ def on_connect(client, userdata, flags, rc):
     """Callback when connected to MQTT broker"""
     if rc == 0:
         print(f"✅ Connected to MQTT broker")
-        client.subscribe(MQTT_TOPIC)
-        client.subscribe("store/#")  # Also subscribe to all store topics
-        print(f"📡 Subscribed to topic: {MQTT_TOPIC}")
-        print(f"📡 Subscribed to topic: store/#")
+        # Subscribe to both simulation and production topics
+        # Messages will be filtered based on current mode in on_message
+        client.subscribe(TOPIC_SIMULATION)
+        client.subscribe(TOPIC_PRODUCTION)
+        print(f"📡 Subscribed to topic: {TOPIC_SIMULATION}")
+        print(f"📡 Subscribed to topic: {TOPIC_PRODUCTION}")
+        print(f"🔍 Mode-aware filtering enabled: Messages filtered by system mode")
     else:
         print(f"❌ Failed to connect to MQTT broker. Return code: {rc}")
 
 def on_message(client, userdata, msg):
     """Callback when message received from MQTT"""
     try:
+        # Get current system mode
+        current_mode = get_system_mode()
+        
         # Decode and parse the message
         payload = msg.payload.decode('utf-8')
-        print(f"\n📥 Received message on {msg.topic}")
+        print(f"\n📥 Received message on {msg.topic} (System mode: {current_mode})")
+        
+        # Filter messages based on mode
+        if current_mode == "SIMULATION" and msg.topic != TOPIC_SIMULATION:
+            print(f"   ⏭️  Skipping {msg.topic} message (system in SIMULATION mode, expecting {TOPIC_SIMULATION})")
+            return
+        elif current_mode == "REAL" and msg.topic != TOPIC_PRODUCTION:
+            print(f"   ⏭️  Skipping {msg.topic} message (system in REAL mode, expecting {TOPIC_PRODUCTION})")
+            return
         
         data = json.loads(payload)
         

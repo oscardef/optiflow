@@ -55,9 +55,9 @@ const char* MQTT_SERVER = "172.20.10.4";       // Your MacBook IP
 const int MQTT_PORT = 1883;
 
 // MQTT Topics
-const char* TOPIC_DATA = "store/aisle1";       // Main data topic
-const char* TOPIC_CONTROL = "store/control";   // Control signals (START/STOP)
-const char* TOPIC_STATUS = "store/status";     // Status updates
+const char* TOPIC_DATA = "store/production";   // Main data topic for real hardware
+const char* TOPIC_CONTROL = "store/production/control";   // Control signals (START/STOP)
+const char* TOPIC_STATUS = "store/production/status";     // Status updates
 
 // RFID Configuration
 #define RFID_RX_PIN         6
@@ -347,6 +347,12 @@ void outputTask(void *parameter) {
     DEBUG_PRINTLN("===========================\n");
     
     while (true) {
+        // WiFi keepalive - reconnect if disconnected
+        if (WiFi.status() != WL_CONNECTED) {
+            DEBUG_PRINTLN("\n[WiFi] Connection lost! Reconnecting...");
+            setupWiFi();
+        }
+        
         // MQTT keepalive (runs on Core 0 with WiFi/network stack)
         reconnectMQTT(); // Non-blocking retry logic
         
@@ -888,20 +894,14 @@ void setupWiFi() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+    while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         DEBUG_PRINT(".");
-        attempts++;
     }
     
-    if (WiFi.status() == WL_CONNECTED) {
-        DEBUG_PRINTLN("\n[WiFi] ✓ Connected!");
-        DEBUG_PRINT("[WiFi] IP: ");
-        DEBUG_PRINTLN(WiFi.localIP());
-    } else {
-        DEBUG_PRINTLN("\n[WiFi] ✗ Failed to connect!");
-    }
+    DEBUG_PRINTLN("\n[WiFi] ✓ Connected!");
+    DEBUG_PRINT("[WiFi] IP: ");
+    DEBUG_PRINTLN(WiFi.localIP());
 }
 
 void reconnectMQTT() {

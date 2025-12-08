@@ -44,10 +44,10 @@ class MQTTConfig:
     """MQTT broker configuration"""
     broker: str = "172.20.10.4"
     port: int = 1883
-    topic_data: str = "store/aisle1"
-    topic_status: str = "store/status"
-    topic_control: str = "store/control"
-    topic_restock: str = "store/restock"  # New topic for restock commands
+    topic_data: str = "store/simulation"  # Simulation-specific topic
+    topic_status: str = "store/simulation/status"
+    topic_control: str = "store/simulation/control"
+    topic_restock: str = "store/simulation/restock"  # New topic for restock commands
 
 
 @dataclass
