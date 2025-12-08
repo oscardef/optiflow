@@ -198,19 +198,16 @@ export default function StoreMap({
       ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
       ctx.fill();
       
-      // Draw count text
-      ctx.fillStyle = depletionPct > 0.5 ? '#ffffff' : '#000000';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      
+      // Draw count text only if items are missing
       if (itemsMissing > 0) {
-        // Show missing count
+        ctx.fillStyle = depletionPct > 0.5 ? '#ffffff' : '#000000';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Show missing count as "-X"
         ctx.fillText(`-${itemsMissing}`, pos.x, pos.y);
-      } else {
-        // Show checkmark or count for fully stocked
-        ctx.fillText('✓', pos.x, pos.y);
       }
+      // If all items present (itemsMissing === 0), show nothing - just the green dot
     });
     
     // Draw legend

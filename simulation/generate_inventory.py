@@ -388,23 +388,28 @@ def main():
     print(f"\n🏷️  Generating RFID-tagged items...")
     all_items = []
     rfid_counter = 1
+    
+    # Calculate how many products we can have with target items
+    # Target: 3-10 items per product, average ~6.5
+    avg_items_per_product = 6.5
+    num_products_to_use = int(args.items / avg_items_per_product)
+    
+    # Randomly select products to use (ensures variety)
+    selected_products = random.sample(all_products, min(num_products_to_use, len(all_products)))
+    
+    print(f"   📊 Creating 3-10 items each for {len(selected_products)} products (from {len(all_products)} total variants)")
+    
+    # Generate positions for all items upfront
     positions = generate_store_layout_positions(args.items)
     position_idx = 0
     
-    # Calculate total optimal stock to determine scaling factor
-    total_optimal_stock = sum(p['optimal_stock_level'] for p in all_products)
-    
-    # Scale items per product to hit target exactly using remainder accumulation
-    remainder = 0.0
-    for product in all_products:
+    # Create 3-10 items for each selected product
+    for product in selected_products:
         if len(all_items) >= args.items:
             break
-            
-        # Calculate proportional number of items for this product
-        proportion = product['optimal_stock_level'] / total_optimal_stock
-        exact_items = proportion * args.items + remainder
-        num_items = int(exact_items)
-        remainder = exact_items - num_items
+        
+        # Determine number of items for this product (3-10 range)
+        num_items = random.randint(3, 10)
         
         # Ensure we don't exceed target
         num_items = min(num_items, args.items - len(all_items))

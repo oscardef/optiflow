@@ -55,6 +55,69 @@ router = APIRouter(
     }
 )
 
+@router.get("/stock-heatmap")
+def get_stock_heatmap(db: Session = Depends(get_db)):
+    """
+    Get stock depletion heatmap for visualization on the main dashboard.
+    Returns items with depletion percentage based on how many items of that product are missing.
+    
+    Depletion calculation:
+    - 0% (green) = all items of this product are present
+    - 100% (red) = all items of this product are missing
+    - Gradient for partial depletion (e.g., 50% = half missing)
+    """
+    # Get all items that have positions
+    items = db.query(InventoryItem).filter(
+        InventoryItem.x_position.isnot(None),
+        InventoryItem.y_position.isnot(None)
+    ).all()
+    
+    if not items:
+        logger.info("No items with positions found for heatmap")
+        return []
+    
+    # Group items by product to calculate depletion percentage
+    from collections import defaultdict
+    product_stats = defaultdict(lambda: {'total': 0, 'present': 0, 'items': []})
+    
+    for item in items:
+        product_stats[item.product_id]['total'] += 1
+        if item.status == "present":
+            product_stats[item.product_id]['present'] += 1
+        product_stats[item.product_id]['items'].append(item)
+    
+    # Calculate depletion for each item based on product stats
+    result = []
+    for product_id, stats in product_stats.items():
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            continue
+        
+        # Calculate depletion: (missing items / total items) * 100
+        missing = stats['total'] - stats['present']
+        depletion_percentage = (missing / stats['total'] * 100) if stats['total'] > 0 else 0.0
+        
+        # Add each item with the product's overall depletion percentage
+        for item in stats['items']:
+            result.append({
+                "product_id": item.product_id,
+                "product_name": product.name,
+                "product_category": product.category,
+                "item_id": item.id,
+                "rfid_tag": item.rfid_tag,
+                "x": item.x_position,
+                "y": item.y_position,
+                "status": item.status,
+                "depletion_percentage": round(depletion_percentage, 1),
+                "current_count": stats['present'],
+                "total_count": stats['total'],
+                "missing_count": missing,
+                "is_present": item.status == "present"
+            })
+    
+    logger.info(f"Generated heatmap with {len(result)} items")
+    return result
+
 @router.get(
     "/overview",
     summary="Get Analytics Overview",
