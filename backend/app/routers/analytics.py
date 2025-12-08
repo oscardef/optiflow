@@ -1,20 +1,18 @@
-"""Analytics and heatmap router"""
+"""Analytics router"""
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
-from collections import defaultdict
-from statistics import mean
 from pydantic import BaseModel
 import subprocess
 import sys
+import re
 from pathlib import Path
 from typing import Optional
-import math
 
 from ..database import get_db
 from ..models import (
-    InventoryItem, ProductLocationHistory, Product,
+    InventoryItem, Product,
     PurchaseEvent
 )
 from ..core import logger
@@ -48,9 +46,6 @@ def get_date_range(
     start = now - timedelta(days=days)
     return (start, now)
 
-# Grid cell size for spatial clustering (in cm)
-GRID_CELL_SIZE = 50  # 50cm x 50cm cells
-
 router = APIRouter(
     prefix="/analytics",
     tags=["Analytics"],
@@ -59,200 +54,6 @@ router = APIRouter(
         500: {"description": "Internal server error"}
     }
 )
-
-def position_to_grid(x: float, y: float) -> tuple:
-    """Convert x/y position to grid cell coordinates"""
-    if x is None or y is None:
-        return (None, None)
-    grid_x = math.floor(x / GRID_CELL_SIZE)
-    grid_y = math.floor(y / GRID_CELL_SIZE)
-    return (grid_x, grid_y)
-
-@router.get("/stock-heatmap")
-def get_stock_heatmap(db: Session = Depends(get_db)):
-    """
-    Get stock depletion heatmap based on spatial clustering of items.
-    Uses grid-based clustering (50cm x 50cm cells) to group items by:
-    - Product type
-    - Spatial location
-    
-    Tracks:
-    - present_count: items with status='present'
-    - total_count: all items detected at this location
-    - max_items_seen: historical maximum from ProductLocationHistory
-    
-    Depletion = (max_items_seen - present_count) / max_items_seen * 100
-    Green (0%) = fully stocked, Red (100%) = fully depleted
-    """
-    # Get all items that have ever been detected (have positions)
-    items = db.query(InventoryItem).filter(
-        InventoryItem.x_position.isnot(None),
-        InventoryItem.y_position.isnot(None)
-    ).all()
-    
-    if not items:
-        logger.info("No items with positions found for heatmap")
-        return []
-    
-    # Group items by product and spatial grid cell
-    product_stats = defaultdict(lambda: {
-        'x_positions': [],
-        'y_positions': [],
-        'present_count': 0,
-        'total_count': 0,
-        'grid_x': None,
-        'grid_y': None,
-        'rfid_tags': []
-    })
-    
-    for item in items:
-        grid_x, grid_y = position_to_grid(item.x_position, item.y_position)
-        if grid_x is None or grid_y is None:
-            continue
-        
-        # Key: (product_id, grid_x, grid_y)
-        key = (item.product_id, grid_x, grid_y)
-        product_stats[key]['x_positions'].append(item.x_position)
-        product_stats[key]['y_positions'].append(item.y_position)
-        product_stats[key]['total_count'] += 1
-        product_stats[key]['rfid_tags'].append(item.rfid_tag)
-        product_stats[key]['grid_x'] = grid_x
-        product_stats[key]['grid_y'] = grid_y
-        
-        # Count present items
-        if item.status == "present":
-            product_stats[key]['present_count'] += 1
-    
-    # Calculate cluster centers and prepare stats
-    current_stats = []
-    for (product_id, grid_x, grid_y), stats in product_stats.items():
-        if stats['total_count'] > 0 and stats['x_positions']:
-            current_stats.append({
-                'product_id': product_id,
-                'grid_x': grid_x,
-                'grid_y': grid_y,
-                'x_center': mean(stats['x_positions']),
-                'y_center': mean(stats['y_positions']),
-                'present_count': stats['present_count'],
-                'total_count': stats['total_count']
-            })
-    
-    # Update ProductLocationHistory to track historical max
-    for stat in current_stats:
-        location_history = db.query(ProductLocationHistory).filter(
-            ProductLocationHistory.product_id == stat['product_id'],
-            ProductLocationHistory.grid_x == stat['grid_x'],
-            ProductLocationHistory.grid_y == stat['grid_y']
-        ).first()
-        
-        if location_history:
-            location_history.current_count = stat['present_count']
-            location_history.x_center = stat['x_center']
-            location_history.y_center = stat['y_center']
-            # Update max if we've seen more items in this cluster
-            if stat['total_count'] > location_history.max_items_seen:
-                location_history.max_items_seen = stat['total_count']
-            location_history.last_updated = datetime.utcnow()
-        else:
-            location_history = ProductLocationHistory(
-                product_id=stat['product_id'],
-                grid_x=stat['grid_x'],
-                grid_y=stat['grid_y'],
-                x_center=stat['x_center'],
-                y_center=stat['y_center'],
-                current_count=stat['present_count'],
-                max_items_seen=stat['total_count'],
-                last_updated=datetime.utcnow()
-            )
-            db.add(location_history)
-    
-    db.commit()
-    
-    # Build result with depletion calculation
-    result = []
-    for stat in current_stats:
-        product = db.query(Product).filter(Product.id == stat['product_id']).first()
-        if not product:
-            continue
-        
-        # Get historical max from ProductLocationHistory
-        location_history = db.query(ProductLocationHistory).filter(
-            ProductLocationHistory.product_id == stat['product_id'],
-            ProductLocationHistory.grid_x == stat['grid_x'],
-            ProductLocationHistory.grid_y == stat['grid_y']
-        ).first()
-        
-        # Calculate depletion based on historical max
-        max_items = location_history.max_items_seen if location_history else stat['total_count']
-        max_items = max(max_items, 1)  # Avoid division by zero
-        
-        items_missing = max_items - stat['present_count']
-        depletion = (items_missing / max_items * 100)
-        
-        result.append({
-            "product_id": stat['product_id'],
-            "product_name": product.name,
-            "product_category": product.category,
-            "grid_x": stat['grid_x'],
-            "grid_y": stat['grid_y'],
-            "x": stat['x_center'],
-            "y": stat['y_center'],
-            "current_count": stat['present_count'],
-            "total_detected": stat['total_count'],
-            "max_items_seen": max_items,
-            "items_missing": items_missing,
-            "depletion_percentage": round(depletion, 1)
-        })
-    
-    logger.info(f"Generated heatmap with {len(result)} product clusters from {len(items)} items")
-    
-    return result
-
-@router.get("/purchase-heatmap")
-def get_purchase_heatmap(hours: int = 24, db: Session = Depends(get_db)):
-    """
-    Get purchase density heatmap using spatial grid clustering.
-    Returns purchase count per grid cell for the last N hours.
-    Grid cells are 50cm x 50cm.
-    """
-    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
-    
-    # Get recent purchases with positions
-    purchases = db.query(PurchaseEvent).filter(
-        PurchaseEvent.purchased_at >= cutoff_time,
-        PurchaseEvent.x_position.isnot(None),
-        PurchaseEvent.y_position.isnot(None)
-    ).all()
-    
-    # Group by grid cells
-    grid_stats = defaultdict(lambda: {
-        'x_positions': [],
-        'y_positions': [],
-        'count': 0
-    })
-    
-    for purchase in purchases:
-        grid_x, grid_y = position_to_grid(purchase.x_position, purchase.y_position)
-        if grid_x is None or grid_y is None:
-            continue
-        
-        key = (grid_x, grid_y)
-        grid_stats[key]['x_positions'].append(purchase.x_position)
-        grid_stats[key]['y_positions'].append(purchase.y_position)
-        grid_stats[key]['count'] += 1
-    
-    # Build result
-    result = []
-    for (grid_x, grid_y), stats in grid_stats.items():
-        result.append({
-            "grid_x": grid_x,
-            "grid_y": grid_y,
-            "x_center": mean(stats['x_positions']),
-            "y_center": mean(stats['y_positions']),
-            "purchase_count": stats['count']
-        })
-    
-    return result
 
 @router.get(
     "/overview",
@@ -714,39 +515,6 @@ def get_category_performance(
     
     return sorted(category_data, key=lambda x: x['sales_30_days'], reverse=True)
 
-@router.get("/stock-trends/{product_id}")
-def get_stock_trends(product_id: int, days: int = 7, db: Session = Depends(get_db)):
-    """
-    Get historical stock level trends for a specific product
-    """
-    from ..models import StockSnapshot
-    
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
-    
-    snapshots = db.query(StockSnapshot).filter(
-        StockSnapshot.product_id == product_id,
-        StockSnapshot.timestamp >= cutoff_date
-    ).order_by(StockSnapshot.timestamp).all()
-    
-    product = db.query(Product).filter(Product.id == product_id).first()
-    
-    if not product:
-        return {'error': 'Product not found'}
-    
-    return {
-        'product_id': product_id,
-        'sku': product.sku,
-        'name': product.name,
-        'data_points': [
-            {
-                'timestamp': s.timestamp.isoformat(),
-                'present_count': s.present_count,
-                'missing_count': s.missing_count
-            }
-            for s in snapshots
-        ]
-    }
-
 @router.get(
     "/ai/clusters",
     summary="AI Product Clustering",
@@ -837,78 +605,6 @@ def get_anomaly_detection(lookback_days: int = 7, db: Session = Depends(get_db))
         'count': len(anomalies),
         'timestamp': datetime.utcnow().isoformat()
     }
-
-@router.get("/ai/abc-analysis")
-def get_abc_analysis(db: Session = Depends(get_db)):
-    """
-    ABC classification of products based on revenue contribution
-    A = top revenue generators, B = medium, C = low
-    """
-    from ..services.ai_analytics import AIAnalyticsService
-    
-    ai_service = AIAnalyticsService(db)
-    classification = ai_service.abc_analysis()
-    
-    return {
-        'A': {'classification': 'A', 'products': classification['A']},
-        'B': {'classification': 'B', 'products': classification['B']},
-        'C': {'classification': 'C', 'products': classification['C']},
-        'timestamp': datetime.utcnow().isoformat()
-    }
-
-@router.get("/ai/product-affinity")
-def get_product_affinity(min_support: float = 0.05, db: Session = Depends(get_db)):
-    """
-    Find products frequently purchased together
-    Useful for cross-selling recommendations
-    """
-    from ..services.ai_analytics import AIAnalyticsService
-    
-    ai_service = AIAnalyticsService(db)
-    affinities = ai_service.product_affinity(min_support)
-    
-    return {
-        'affinities': affinities,
-        'count': len(affinities),
-        'timestamp': datetime.utcnow().isoformat()
-    }
-
-@router.get("/slow-movers")
-def get_slow_movers(velocity_threshold: float = 0.1, days: int = 30, db: Session = Depends(get_db)):
-    """
-    Identify slow-moving inventory (low velocity products)
-    """
-    from ..models import StockLevel
-    
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
-    products = db.query(Product).all()
-    
-    slow_movers = []
-    for product in products:
-        sales = db.query(PurchaseEvent).filter(
-            PurchaseEvent.product_id == product.id,
-            PurchaseEvent.purchased_at >= cutoff_date
-        ).count()
-        
-        velocity = sales / days
-        
-        if velocity < velocity_threshold:
-            stock = db.query(StockLevel).filter(
-                StockLevel.product_id == product.id
-            ).first()
-            
-            slow_movers.append({
-                'product_id': product.id,
-                'sku': product.sku,
-                'name': product.name,
-                'category': product.category,
-                'current_stock': stock.current_count if stock else 0,
-                'sales_last_30_days': sales,
-                'velocity_daily': round(velocity, 3),
-                'recommendation': 'Consider discount or promotion' if stock and stock.current_count > 10 else 'Monitor'
-            })
-    
-    return sorted(slow_movers, key=lambda x: x['current_stock'], reverse=True)
 
 @router.post(
     "/bulk/purchases",
@@ -1128,12 +824,15 @@ def trigger_backfill(params: BackfillParams, background_tasks: BackgroundTasks):
             detail=f"Backfill script not found at {backfill_script}"
         )
     
-    # Build command
+    # Build command with API URL (use localhost since script runs on host or in same container)
+    # The backend is accessible at localhost:8000 from within the container
+    api_url = "http://localhost:8000"
     cmd = [
         sys.executable,
         str(backfill_script),
         "--days", str(params.days),
-        "--density", params.density
+        "--density", params.density,
+        "--api", api_url
     ]
     
     try:
@@ -1156,27 +855,36 @@ def trigger_backfill(params: BackfillParams, background_tasks: BackgroundTasks):
         if result.returncode == 0:
             # Parse output for record counts
             output = result.stdout
-            records = 0
-            if "Generated" in output:
-                # Try to extract record count from output
-                for line in output.split('\n'):
-                    if "purchase events" in line.lower() or "snapshots" in line.lower():
-                        try:
-                            records += int(''.join(filter(str.isdigit, line.split()[0])))
-                        except:
-                            pass
+            purchases = 0
+            snapshots = 0
+            
+            # Look for "Purchases uploaded: X" and "Snapshots uploaded: X" lines
+            import re
+            for line in output.split('\n'):
+                if 'purchases uploaded' in line.lower():
+                    match = re.search(r'uploaded:\s*(\d+)', line.lower())
+                    if match:
+                        purchases = int(match.group(1))
+                elif 'snapshots uploaded' in line.lower():
+                    match = re.search(r'uploaded:\s*(\d+)', line.lower())
+                    if match:
+                        snapshots = int(match.group(1))
+            
+            records = purchases + snapshots
             
             _backfill_status = {
                 "running": False,
-                "message": f"Successfully generated {params.days} days of data",
+                "message": f"Successfully generated {params.days} days of data ({purchases:,} purchases, {snapshots:,} snapshots)",
                 "records": records
             }
             
-            logger.info(f"Backfill completed: {params.days} days, {params.density} density")
+            logger.info(f"Backfill completed: {params.days} days, {params.density} density - {purchases} purchases, {snapshots} snapshots")
             return {
                 "status": "success",
                 "message": _backfill_status["message"],
                 "records": records,
+                "purchases": purchases,
+                "snapshots": snapshots,
                 "density": params.density,
                 "days": params.days
             }
@@ -1297,7 +1005,7 @@ def get_backfill_status():
 @router.post(
     "/clear",
     summary="Clear analytics data",
-    description="Deletes all purchase events and stock snapshots from the database",
+    description="Deletes all purchase events and stock snapshots (but keeps products and items)",
     response_description="Status of clear operation"
 )
 def clear_analytics_data(db: Session = Depends(get_db)):
@@ -1306,6 +1014,9 @@ def clear_analytics_data(db: Session = Depends(get_db)):
     
     This removes all historical data generated by backfill operations,
     allowing you to start fresh with new data generation.
+    
+    NOTE: This keeps Products and InventoryItems intact, as they are needed
+    for the simulation to function. Only historical analytics data is removed.
     
     WARNING: This is a destructive operation and cannot be undone.
     """
@@ -1323,11 +1034,18 @@ def clear_analytics_data(db: Session = Depends(get_db)):
         
         logger.info(f"Cleared {purchase_count} purchase events and {snapshot_count} stock snapshots")
         
+        # Count remaining products and items
+        from ..models import Product, InventoryItem
+        products_remaining = db.query(Product).count()
+        items_remaining = db.query(InventoryItem).count()
+        
         return {
             "status": "success",
-            "message": f"Cleared {purchase_count} purchase events and {snapshot_count} stock snapshots",
+            "message": f"Cleared {purchase_count} purchase events and {snapshot_count} stock snapshots. {products_remaining} products and {items_remaining} items remain.",
             "purchases_deleted": purchase_count,
-            "snapshots_deleted": snapshot_count
+            "snapshots_deleted": snapshot_count,
+            "products_remaining": products_remaining,
+            "items_remaining": items_remaining
         }
     except Exception as e:
         db.rollback()

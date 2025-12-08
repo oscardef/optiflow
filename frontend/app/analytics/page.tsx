@@ -135,7 +135,7 @@ export default function AnalyticsPage() {
   };
 
   const clearData = async () => {
-    if (!confirm('This will delete all purchase events and stock snapshots. Are you sure?')) {
+    if (!confirm('This will delete all purchase events and stock snapshots (but keeps products and items). Are you sure?')) {
       return;
     }
     
