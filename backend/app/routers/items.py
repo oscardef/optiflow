@@ -6,7 +6,7 @@ from typing import Optional
 from datetime import datetime
 
 from ..database import get_db
-from ..models import InventoryItem, Product, Zone
+from ..models import InventoryItem, Product
 from ..core import logger
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -17,19 +17,6 @@ class InventoryItemCreate(BaseModel):
     status: str = "present"
     x_position: Optional[float] = None
     y_position: Optional[float] = None
-    zone_id: Optional[int] = None
-
-
-def get_zone_from_position(db: Session, x: float, y: float) -> Optional[int]:
-    """Get zone_id from x,y position"""
-    if x is None or y is None:
-        return None
-    zones = db.query(Zone).all()
-    for zone in zones:
-        if (zone.x_min <= x <= zone.x_max and 
-            zone.y_min <= y <= zone.y_max):
-            return zone.id
-    return None
 
 
 @router.get("")
@@ -51,11 +38,6 @@ def create_inventory_item(item: InventoryItemCreate, db: Session = Depends(get_d
     if existing:
         raise HTTPException(status_code=400, detail=f"Item with RFID tag {item.rfid_tag} already exists")
     
-    # Auto-assign zone if position is provided but zone is not
-    zone_id = item.zone_id
-    if zone_id is None and item.x_position is not None and item.y_position is not None:
-        zone_id = get_zone_from_position(db, item.x_position, item.y_position)
-    
     # Create item
     new_item = InventoryItem(
         rfid_tag=item.rfid_tag,
@@ -63,7 +45,6 @@ def create_inventory_item(item: InventoryItemCreate, db: Session = Depends(get_d
         status=item.status,
         x_position=item.x_position,
         y_position=item.y_position,
-        zone_id=zone_id,
         last_seen_at=datetime.utcnow()
     )
     

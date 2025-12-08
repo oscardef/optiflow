@@ -4,7 +4,7 @@ from .positions import router as positions_router
 from .data import router as data_router
 from .products import router as products_router
 from .analytics import router as analytics_router
-from .zones import router as zones_router
+# zones router removed - zones system deprecated
 from .config import router as config_router
 from .simulation import router as simulation_router
 from .items import router as items_router

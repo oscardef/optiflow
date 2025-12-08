@@ -71,24 +71,13 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                     db.add(product)
                     db.flush()
                 
-                # Determine zone based on position
-                from ..models import Zone
-                zone = None
-                if detection.x_position and detection.y_position:
-                    zones = db.query(Zone).all()
-                    for z in zones:
-                        if (z.x_min <= detection.x_position <= z.x_max and 
-                            z.y_min <= detection.y_position <= z.y_max):
-                            zone = z
-                            break
-                
+                # Create inventory item with position
                 inventory_item = InventoryItem(
                     rfid_tag=detection.product_id,
                     product_id=product.id,
                     status=status_val,
                     x_position=detection.x_position,
                     y_position=detection.y_position,
-                    zone_id=zone.id if zone else None,
                     last_seen_at=timestamp
                 )
                 db.add(inventory_item)
@@ -100,16 +89,6 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                 # Only update last_seen_at when item is present (detected)
                 if status_val == 'present':
                     inventory_item.last_seen_at = timestamp
-                
-                # Update zone if position changed
-                if detection.x_position and detection.y_position:
-                    from ..models import Zone
-                    zones = db.query(Zone).all()
-                    for z in zones:
-                        if (z.x_min <= detection.x_position <= z.x_max and 
-                            z.y_min <= detection.y_position <= z.y_max):
-                            inventory_item.zone_id = z.id
-                            break
         
         # Store UWB measurements
         for uwb in packet.uwb_measurements:
@@ -486,8 +465,6 @@ def get_stats(db: Session = Depends(get_db)):
 @router.get("/items/{rfid_tag}")
 def get_item_detail(rfid_tag: str, db: Session = Depends(get_db)):
     """Get detailed information about a specific item by RFID tag"""
-    from ..models import Zone
-    
     item = db.query(InventoryItem)\
         .filter(InventoryItem.rfid_tag == rfid_tag)\
         .first()
@@ -517,12 +494,6 @@ def get_item_detail(rfid_tag: str, db: Session = Depends(get_db)):
         .filter(InventoryItem.product_id == item.product_id)\
         .count()
     
-    zone_info = None
-    if item.zone_id:
-        zone = db.query(Zone).filter(Zone.id == item.zone_id).first()
-        if zone:
-            zone_info = zone.to_dict()
-    
     return {
         "rfid_tag": item.rfid_tag,
         "product_id": product.id,
@@ -531,7 +502,6 @@ def get_item_detail(rfid_tag: str, db: Session = Depends(get_db)):
         "y_position": item.y_position,
         "status": item.status,
         "last_seen": item.last_seen_at.isoformat() if item.last_seen_at else None,
-        "zone": zone_info,
         "inventory_summary": {
             "in_stock": same_name_count,
             "missing": missing_count,

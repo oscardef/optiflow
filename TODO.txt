@@ -8,8 +8,6 @@ Classic AI : clustering anomaly detections
 restock threshold : rename
 
 
-remove zones
-
 make sure we are storing the timestamps 
 
 
@@ -32,3 +30,4 @@ in simulaition mode : should ne take into account the mqtt : store/production an
 
 Done:
 * mqtt : whn closing docker container : close mqtt
+* zones system removed from backend and frontend

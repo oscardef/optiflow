@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from ..database import get_db, get_db_simulation, get_db_real
-from ..models import Configuration, Anchor, Zone
+from ..models import Configuration, Anchor
 from ..config import config_state, ConfigMode
 from ..core import logger
 

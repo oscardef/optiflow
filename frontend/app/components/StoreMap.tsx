@@ -278,24 +278,26 @@ export default function StoreMap({
     });
   };
 
-  // Draw heatmap overlay for zones (legacy zone-based view)
+  // Draw heatmap overlay using spatial clustering
   const drawHeatmap = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, data: any[], type: 'stock' | 'purchase') => {
     if (!data || data.length === 0) return;
     
     if (type === 'stock') {
       // Stock depletion heatmap: green (good) -> yellow (warning) -> red (critical)
+      // Data now comes from spatial grid clustering instead of zones
       data.forEach(entry => {
-        const zone = entry.zone;
         const depletionPct = entry.depletion_percentage || 0;
         const currentCount = entry.current_count || 0;
-        const missingCount = entry.missing_count || 0;
-        const totalExpected = entry.total_expected || 0;
+        const missingCount = entry.items_missing || 0;
+        const totalExpected = entry.max_items_seen || entry.total_detected || 0;
         
-        // Convert zone coordinates
-        const topLeft = toCanvasCoords(zone.x_min, zone.y_min, canvas);
-        const bottomRight = toCanvasCoords(zone.x_max, zone.y_max, canvas);
-        const width = bottomRight.x - topLeft.x;
-        const height = bottomRight.y - topLeft.y;
+        // Draw cluster at center position
+        const center = toCanvasCoords(entry.x, entry.y, canvas);
+        const radius = 30; // Fixed radius for cluster visualization
+        
+        const topLeft = { x: center.x - radius, y: center.y - radius };
+        const width = radius * 2;
+        const height = radius * 2;
         
         // Color gradient based on depletion percentage:
         // 0% = Green (fully stocked)
@@ -317,58 +319,59 @@ export default function StoreMap({
         }
         
         // Darker overlay for higher depletion
-        const alpha = 0.4 + (depletionPct / 100) * 0.3;
+        const alpha = 0.5 + (depletionPct / 100) * 0.3;
         ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-        ctx.fillRect(topLeft.x, topLeft.y, width, height);
         
-        // Draw zone border with matching color
+        // Draw circular cluster
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, radius, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        // Draw border with matching color
         ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
-        ctx.lineWidth = 3;
-        ctx.strokeRect(topLeft.x, topLeft.y, width, height);
+        ctx.lineWidth = 2;
+        ctx.stroke();
         
         // Draw stock information
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
-        ctx.font = 'bold 22px sans-serif';
+        ctx.lineWidth = 2;
+        ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'center';
-        
-        const centerX = topLeft.x + width / 2;
-        const centerY = topLeft.y + height / 2;
+        ctx.textBaseline = 'middle';
         
         // Stock status text with outline
         const statusText = `${currentCount}/${totalExpected}`;
-        ctx.strokeText(statusText, centerX, centerY - 8);
-        ctx.fillText(statusText, centerX, centerY - 8);
+        ctx.strokeText(statusText, center.x, center.y - 5);
+        ctx.fillText(statusText, center.x, center.y - 5);
         
         // Depletion percentage
         if (depletionPct > 0) {
-          ctx.font = 'bold 18px sans-serif';
-          const depletionText = `${Math.round(depletionPct)}% depleted`;
-          ctx.strokeText(depletionText, centerX, centerY + 18);
-          ctx.fillText(depletionText, centerX, centerY + 18);
+          ctx.font = 'bold 11px sans-serif';
+          const depletionText = `${Math.round(depletionPct)}%`;
+          ctx.strokeText(depletionText, center.x, center.y + 8);
+          ctx.fillText(depletionText, center.x, center.y + 8);
         } else {
           ctx.font = 'bold 18px sans-serif';
-          const fullText = 'Fully Stocked';
-          ctx.strokeText(fullText, centerX, centerY + 18);
-          ctx.fillText(fullText, centerX, centerY + 18);
+          ctx.font = 'bold 10px sans-serif';
+          const fullText = 'OK';
+          ctx.strokeText(fullText, center.x, center.y + 8);
+          ctx.fillText(fullText, center.x, center.y + 8);
         }
       });
     } else {
       // Purchase heatmap: blue (low) -> yellow -> red (high activity)
+      // Uses spatial grid clustering
       const maxValue = Math.max(...data.map(d => d.purchase_count));
       if (maxValue === 0) return;
       
       data.forEach(entry => {
-        const zone = entry.zone;
         const value = entry.purchase_count;
         const intensity = value / maxValue;
         
-        // Convert zone coordinates
-        const topLeft = toCanvasCoords(zone.x_min, zone.y_min, canvas);
-        const bottomRight = toCanvasCoords(zone.x_max, zone.y_max, canvas);
-        const width = bottomRight.x - topLeft.x;
-        const height = bottomRight.y - topLeft.y;
+        // Draw cluster at center position
+        const center = toCanvasCoords(entry.x_center, entry.y_center, canvas);
+        const radius = 25;
         
         // Heat color: blue (low) -> yellow -> red (high)
         let r, g, b;
@@ -382,24 +385,25 @@ export default function StoreMap({
           b = 0;
         }
         
-        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.4)`;
-        ctx.fillRect(topLeft.x, topLeft.y, width, height);
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.5)`;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, radius, 0, 2 * Math.PI);
+        ctx.fill();
         
-        // Draw zone border
-        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
-        ctx.lineWidth = 3;
-        ctx.strokeRect(topLeft.x, topLeft.y, width, height);
+        // Draw border
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.9)`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
         
-        // Draw value label with outline for readability
+        // Draw value label
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
-        ctx.font = 'bold 24px sans-serif';
+        ctx.lineWidth = 2;
+        ctx.font = 'bold 14px sans-serif';
         ctx.textAlign = 'center';
-        const centerX = topLeft.x + width / 2;
-        const centerY = topLeft.y + height / 2;
-        ctx.strokeText(value.toString(), centerX, centerY);
-        ctx.fillText(value.toString(), centerX, centerY);
+        ctx.textBaseline = 'middle';
+        ctx.strokeText(value.toString(), center.x, center.y);
+        ctx.fillText(value.toString(), center.x, center.y);
       });
     }
   };
