@@ -1,5 +1,7 @@
 import json
 import os
+import signal
+import sys
 import time
 import requests
 import paho.mqtt.client as mqtt
@@ -179,8 +181,26 @@ def on_disconnect(client, userdata, rc):
     if rc != 0:
         print(f"⚠️  Unexpected disconnection from MQTT broker (code: {rc}). Will attempt to reconnect...")
 
+# Global client reference for signal handling
+mqtt_client = None
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals (SIGTERM, SIGINT) for graceful cleanup"""
+    signal_name = signal.Signals(signum).name
+    print(f"\n🛑 Received {signal_name}, shutting down MQTT bridge...")
+    if mqtt_client is not None:
+        mqtt_client.disconnect()
+        mqtt_client.loop_stop()
+    sys.exit(0)
+
 def main():
     """Main function to start MQTT bridge"""
+    global mqtt_client
+    
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
     # Wait for backend to be ready
     print("⏳ Waiting for backend to be ready...")
     max_retries = 30
@@ -198,6 +218,7 @@ def main():
     
     # Create MQTT client
     client = mqtt.Client(client_id="optiflow_bridge")
+    mqtt_client = client  # Store reference for signal handler
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_disconnect = on_disconnect
@@ -212,9 +233,8 @@ def main():
             print("🎧 MQTT Bridge running. Press Ctrl+C to stop.")
             client.loop_forever()
         
-        except KeyboardInterrupt:
-            print("\n🛑 Shutting down MQTT bridge...")
-            client.disconnect()
+        except SystemExit:
+            # Raised by signal handler, exit cleanly
             break
         except Exception as e:
             print(f"❌ MQTT broker connection failed: {e}")
