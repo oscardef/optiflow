@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
+import os
 
 from ..database import get_db, get_db_simulation, get_db_real
 from ..models import Configuration, Anchor
@@ -205,3 +206,51 @@ def validate_anchors(db: Session = Depends(get_db)):
         "warnings": warnings,
         "message": "All anchors validated successfully" if is_valid else "Anchor configuration mismatch detected"
     }
+
+class MQTTControlResponse(BaseModel):
+    success: bool
+    message: str
+    command: str
+
+@router.post("/mqtt/control", response_model=MQTTControlResponse)
+def send_mqtt_control(command: str):
+    """
+    Send START or STOP command to MQTT broker to control hardware signal collection
+    Command is published to 'store/control' topic
+    """
+    if command not in ["START", "STOP"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid command. Must be 'START' or 'STOP'"
+        )
+    
+    try:
+        import paho.mqtt.publish as publish
+        
+        # Get MQTT config from environment (same as simulation.py)
+        mqtt_broker = os.getenv("MQTT_BROKER", "172.20.10.4")
+        mqtt_port = int(os.getenv("MQTT_PORT", "1883"))
+        
+        # Publish control message
+        publish.single(
+            topic="store/control",
+            payload=command,
+            hostname=mqtt_broker,
+            port=mqtt_port,
+            qos=1
+        )
+        
+        logger.info(f"Sent MQTT control command: {command} to {mqtt_broker}:{mqtt_port}")
+        
+        return {
+            "success": True,
+            "message": f"Successfully sent {command} command to MQTT broker",
+            "command": command
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to send MQTT control command: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to send MQTT control command: {str(e)}"
+        )

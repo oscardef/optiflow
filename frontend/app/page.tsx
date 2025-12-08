@@ -206,6 +206,25 @@ export default function Home() {
     }
   };
 
+  const sendMQTTControl = async (command: 'START' | 'STOP') => {
+    try {
+      const response = await fetch(`${API_URL}/config/mqtt/control?command=${command}`, { 
+        method: 'POST' 
+      });
+      const data = await response.json();
+      if (data.success) {
+        setConnected(command === 'START');
+      } else {
+        alert(data.message || `Failed to ${command.toLowerCase()} MQTT signal`);
+      }
+    } catch (error) {
+      alert(`Failed to ${command.toLowerCase()} MQTT signal`);
+    }
+  };
+
+  const toggleMQTTSignal = () => {
+    sendMQTTControl(connected ? 'STOP' : 'START');
+  };
 
 
   const handleSearch = async (query: string) => {
@@ -492,11 +511,15 @@ export default function Home() {
                 </>
               )}
               
-              <div className={`flex items-center gap-2 px-3 py-1.5 border ${
-                connected 
-                  ? 'border-green-200 bg-green-50' 
-                  : 'border-red-200 bg-red-50'
-              }`}>
+              <button
+                onClick={toggleMQTTSignal}
+                className={`flex items-center gap-2 px-3 py-1.5 border transition-all ${
+                  connected 
+                    ? 'border-green-200 bg-green-50 hover:bg-green-100' 
+                    : 'border-red-200 bg-red-50 hover:bg-red-100'
+                } cursor-pointer`}
+                title={connected ? 'Click to stop MQTT signal' : 'Click to start MQTT signal'}
+              >
                 <div className={`w-2 h-2 rounded-full ${
                   connected ? 'bg-green-500' : 'bg-red-500'
                 }`}></div>
@@ -505,7 +528,7 @@ export default function Home() {
                 }`}>
                   {connected ? 'LIVE' : 'OFFLINE'}
                 </span>
-              </div>
+              </button>
             </div>
           </div>
 
