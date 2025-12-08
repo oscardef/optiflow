@@ -29,80 +29,192 @@ class AIAnalyticsService:
     
     def cluster_products(self, n_clusters: int = 4) -> List[Dict]:
         """
-        K-means clustering of products based on velocity, stock level, and category
-        Returns product groups with similar characteristics
+        Enhanced K-means clustering of products based on velocity, stock level, and turnover
+        Groups products by similar inventory behavior for strategic insights
+        
+        Features used:
+        - Velocity (sales per day over 30 days)
+        - Current stock level
+        - Stock-to-sales ratio (inventory efficiency)
+        - Price tier
+        - Turnover rate
+        
+        Returns clusters with descriptive labels and actionable insights
         """
         if not SKLEARN_AVAILABLE:
+            logger.warning("scikit-learn not available for clustering")
             return []
         
-        # Get product metrics
-        products = self.db.query(Product).all()
-        if len(products) < n_clusters:
+        # Get products with stock levels
+        products_query = self.db.query(Product, StockLevel).join(
+            StockLevel, Product.id == StockLevel.product_id, isouter=True
+        ).all()
+        
+        if not products_query:
+            logger.info("No products found for clustering")
+            return []
+        
+        # Adjust n_clusters if we have fewer products
+        actual_n_clusters = min(n_clusters, len(products_query))
+        if actual_n_clusters < 2:
+            logger.info(f"Too few products ({len(products_query)}) for clustering")
             return []
         
         features = []
-        product_ids = []
+        product_data = []
         
-        for product in products:
-            # Calculate velocity (sales per day)
-            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-            sales_count = self.db.query(PurchaseEvent).filter(
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        
+        for product, stock_level in products_query:
+            # Calculate velocity (sales per day over last 30 days)
+            sales_30d = self.db.query(PurchaseEvent).filter(
                 PurchaseEvent.product_id == product.id,
                 PurchaseEvent.purchased_at >= thirty_days_ago
             ).count()
-            velocity = sales_count / 30.0
+            velocity = sales_30d / 30.0
             
-            # Get current stock
-            stock = self.db.query(StockLevel).filter(
-                StockLevel.product_id == product.id
-            ).first()
-            current_stock = stock.current_count if stock else 0
+            # Calculate 7-day velocity for recency
+            sales_7d = self.db.query(PurchaseEvent).filter(
+                PurchaseEvent.product_id == product.id,
+                PurchaseEvent.purchased_at >= seven_days_ago
+            ).count()
+            velocity_7d = sales_7d / 7.0
             
-            # Category encoding (simple hash)
-            category_code = hash(product.category) % 100
+            # Current stock
+            current_stock = stock_level.current_count if stock_level else 0
             
-            # Price
+            # Stock-to-sales ratio (inventory efficiency)
+            stock_to_sales = current_stock / velocity if velocity > 0 else current_stock
+            
+            # Turnover rate (how many times inventory is sold)
+            turnover_rate = velocity / current_stock if current_stock > 0 else 0
+            
+            # Price (normalized to avoid scale issues)
             price = float(product.unit_price) if product.unit_price else 0.0
             
-            features.append([velocity, current_stock, price, category_code])
-            product_ids.append(product.id)
+            # Features: [velocity, stock, stock_to_sales, turnover, price]
+            features.append([velocity, current_stock, stock_to_sales, turnover_rate, price])
+            
+            product_data.append({
+                'product': product,
+                'stock_level': stock_level,
+                'velocity': velocity,
+                'velocity_7d': velocity_7d,
+                'current_stock': current_stock,
+                'stock_to_sales': stock_to_sales,
+                'turnover_rate': turnover_rate,
+                'price': price
+            })
         
-        # Normalize features
+        # Normalize features for better clustering
         scaler = StandardScaler()
         features_scaled = scaler.fit_transform(features)
         
-        # Cluster
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        # Perform K-means clustering
+        kmeans = KMeans(n_clusters=actual_n_clusters, random_state=42, n_init=10)
         cluster_labels = kmeans.fit_predict(features_scaled)
         
-        # Group results
+        # Get cluster centroids in original scale
+        centroids = scaler.inverse_transform(kmeans.cluster_centers_)
+        
+        # Group products by cluster
         clusters = defaultdict(list)
-        for i, product_id in enumerate(product_ids):
-            product = next(p for p in products if p.id == product_id)
-            clusters[int(cluster_labels[i])].append({
-                'product_id': product_id,
+        for i, label in enumerate(cluster_labels):
+            data = product_data[i]
+            product = data['product']
+            
+            clusters[int(label)].append({
+                'product_id': product.id,
                 'sku': product.sku,
                 'name': product.name,
                 'category': product.category,
-                'velocity': features[i][0],
-                'stock': features[i][1],
-                'price': features[i][2]
+                'velocity': round(data['velocity'], 2),
+                'velocity_7d': round(data['velocity_7d'], 2),
+                'stock': data['current_stock'],
+                'price': round(data['price'], 2),
+                'turnover_rate': round(data['turnover_rate'], 3),
+                'stock_to_sales_ratio': round(data['stock_to_sales'], 1)
             })
         
-        # Format output
+        # Create result with cluster descriptions
         result = []
         for cluster_id, items in clusters.items():
-            avg_velocity = np.mean([p['velocity'] for p in items])
-            avg_stock = np.mean([p['stock'] for p in items])
+            centroid = centroids[cluster_id]
+            
+            # Calculate cluster statistics
+            velocities = [p['velocity'] for p in items]
+            stocks = [p['stock'] for p in items]
+            turnovers = [p['turnover_rate'] for p in items]
+            prices = [p['price'] for p in items]
+            
+            avg_velocity = np.mean(velocities)
+            avg_stock = np.mean(stocks)
+            avg_turnover = np.mean(turnovers)
+            avg_price = np.mean(prices)
+            
+            # Determine cluster characteristics and label
+            label, description = self._classify_cluster(
+                avg_velocity, avg_stock, avg_turnover, avg_price
+            )
+            
             result.append({
                 'cluster_id': cluster_id,
+                'label': label,
+                'description': description,
                 'size': len(items),
                 'avg_velocity': round(avg_velocity, 2),
                 'avg_stock': round(avg_stock, 1),
-                'products': items
+                'avg_turnover': round(avg_turnover, 3),
+                'avg_price': round(avg_price, 2),
+                'centroid': {
+                    'velocity': round(centroid[0], 2),
+                    'stock': round(centroid[1], 1),
+                    'stock_to_sales': round(centroid[2], 1),
+                    'turnover': round(centroid[3], 3),
+                    'price': round(centroid[4], 2)
+                },
+                'products': items[:10]  # Limit to top 10 products per cluster for performance
             })
         
+        # Sort by velocity descending
+        result.sort(key=lambda x: x['avg_velocity'], reverse=True)
+        
         return result
+    
+    def _classify_cluster(self, velocity: float, stock: float, turnover: float, price: float) -> Tuple[str, str]:
+        """
+        Classify cluster based on characteristics and provide actionable label
+        
+        Returns: (label, description)
+        """
+        # High velocity, high turnover = Best sellers
+        if velocity > 2 and turnover > 0.1:
+            return "Fast Movers", "High velocity products with strong turnover - maintain stock levels"
+        
+        # Low velocity, high stock = Slow movers
+        elif velocity < 0.5 and stock > 20:
+            return "Slow Movers", "Low velocity with excess stock - consider promotions"
+        
+        # High stock, low turnover = Dead stock risk
+        elif stock > 30 and turnover < 0.05:
+            return "Dead Stock Risk", "High inventory with minimal turnover - review pricing/placement"
+        
+        # Moderate velocity, balanced stock = Steady sellers
+        elif 0.5 <= velocity <= 2 and 10 <= stock <= 30:
+            return "Steady Sellers", "Consistent velocity with balanced inventory - maintain strategy"
+        
+        # Low stock, moderate velocity = Restock priority
+        elif stock < 10 and velocity > 0.5:
+            return "Restock Priority", "Good velocity but low stock - prioritize restocking"
+        
+        # High price items
+        elif price > 50:
+            return "Premium Products", "Higher-priced items requiring careful inventory management"
+        
+        # Default
+        else:
+            return "Mixed Category", "Diverse product mix with varied characteristics"
     
     def forecast_demand(self, product_id: int, days_ahead: int = 7) -> Dict:
         """

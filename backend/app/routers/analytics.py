@@ -1,5 +1,5 @@
 """Analytics and heatmap router"""
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
@@ -18,6 +18,35 @@ from ..models import (
     PurchaseEvent
 )
 from ..core import logger
+
+# Helper function to parse date range parameters
+def get_date_range(
+    days: Optional[int] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+) -> tuple[datetime, datetime]:
+    """
+    Parse date range from either days or start_date/end_date parameters.
+    Returns (start_datetime, end_datetime)
+    """
+    now = datetime.utcnow()
+    
+    if start_date and end_date:
+        try:
+            start = datetime.fromisoformat(start_date)
+            end = datetime.fromisoformat(end_date)
+            # Set end to end of day
+            end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
+            return (start, end)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    
+    # Default to days parameter
+    if days is None:
+        days = 30
+    
+    start = now - timedelta(days=days)
+    return (start, now)
 
 # Grid cell size for spatial clustering (in cm)
 GRID_CELL_SIZE = 50  # 50cm x 50cm cells
@@ -269,11 +298,26 @@ def get_purchase_heatmap(hours: int = 24, db: Session = Depends(get_db)):
         }
     }
 )
-def get_analytics_overview(db: Session = Depends(get_db)):
+def get_analytics_overview(
+    days: Optional[int] = Query(None, description="Number of days to look back"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    interval: str = Query("day", description="Time interval for aggregation"),
+    db: Session = Depends(get_db)
+):
     """
     Get high-level analytics overview with key metrics
+    
+    Args:
+        days: Number of days to look back (7, 30, or 90) - ignored if start_date/end_date provided
+        start_date: Custom start date (YYYY-MM-DD format)
+        end_date: Custom end date (YYYY-MM-DD format)
+        interval: Time interval for aggregation (hour, day, week, month)
     """
     from ..models import StockLevel, InventoryItem
+    
+    # Get date range
+    date_start, date_end = get_date_range(days, start_date, end_date)
     
     # Total products
     total_products = db.query(Product).count()
@@ -289,7 +333,7 @@ def get_analytics_overview(db: Session = Depends(get_db)):
         StockLevel.current_count < Product.reorder_threshold
     ).count()
     
-    # Sales statistics
+    # Sales statistics based on selected date range
     now = datetime.utcnow()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     seven_days_ago = now - timedelta(days=7)
@@ -324,10 +368,95 @@ def get_analytics_overview(db: Session = Depends(get_db)):
         for p, sl in low_stock
     ]
     
+    # Additional KPIs for enhanced dashboard
+    
+    # Low stock items (approaching threshold but not critical)
+    low_stock_items = db.query(Product).join(StockLevel).filter(
+        StockLevel.current_count < Product.reorder_threshold * 1.5,
+        StockLevel.current_count >= Product.reorder_threshold
+    ).count()
+    
+    # Average stock level across all products
+    avg_stock_query = db.query(func.avg(StockLevel.current_count)).first()
+    avg_stock_level = float(avg_stock_query[0] or 0)
+    
+    # Calculate velocity and coverage for products
+    seven_days_ago = now - timedelta(days=7)
+    
+    # Get products with stock and calculate their velocity
+    products_with_stock = db.query(
+        Product.id,
+        StockLevel.current_count,
+        func.count(PurchaseEvent.id).label('sales_7d')
+    ).join(StockLevel).outerjoin(
+        PurchaseEvent,
+        (PurchaseEvent.product_id == Product.id) & 
+        (PurchaseEvent.purchased_at >= seven_days_ago)
+    ).filter(
+        StockLevel.current_count > 0
+    ).group_by(Product.id, StockLevel.current_count).all()
+    
+    # Calculate coverage days and stockout risk
+    coverage_days_list = []
+    stockout_risk_items = 0
+    
+    for product_id, current_count, sales_7d in products_with_stock:
+        if sales_7d > 0:
+            daily_velocity = sales_7d / 7.0
+            days_coverage = current_count / daily_velocity
+            coverage_days_list.append(days_coverage)
+            
+            if days_coverage < 7:
+                stockout_risk_items += 1
+    
+    avg_coverage_days = sum(coverage_days_list) / len(coverage_days_list) if coverage_days_list else 0
+    
+    # Dead stock (no sales in last 30 days with stock > 0)
+    products_with_no_sales = db.query(Product.id).join(StockLevel).outerjoin(
+        PurchaseEvent,
+        (PurchaseEvent.product_id == Product.id) & 
+        (PurchaseEvent.purchased_at >= thirty_days_ago)
+    ).filter(
+        StockLevel.current_count > 0
+    ).group_by(Product.id).having(
+        func.count(PurchaseEvent.id) == 0
+    ).all()
+    
+    dead_stock_count = len(products_with_no_sales)
+    
+    # Calculate average turnover rate (sales / avg stock)
+    products_with_turnover = db.query(
+        func.count(PurchaseEvent.id).label('sales'),
+        func.avg(StockLevel.current_count).label('avg_stock')
+    ).select_from(Product).join(StockLevel).outerjoin(
+        PurchaseEvent,
+        (PurchaseEvent.product_id == Product.id) & 
+        (PurchaseEvent.purchased_at >= seven_days_ago)
+    ).group_by(Product.id).all()
+    
+    turnover_rates = []
+    for sales, avg_stock in products_with_turnover:
+        if avg_stock and avg_stock > 0 and sales:
+            turnover_rates.append(sales / float(avg_stock))
+    
+    avg_turnover_rate = sum(turnover_rates) / len(turnover_rates) if turnover_rates else 0
+    
+    # Total items tracked
+    total_items_tracked = db.query(InventoryItem).count()
+    present_items = db.query(InventoryItem).filter(InventoryItem.status == 'present').count()
+    
     return {
         'total_products': total_products,
         'total_stock_value': round(total_stock_value, 2),
         'items_needing_restock': items_needing_restock,
+        'low_stock_items': low_stock_items,
+        'avg_stock_level': round(avg_stock_level, 2),
+        'avg_coverage_days': round(avg_coverage_days, 1),
+        'stockout_risk_items': stockout_risk_items,
+        'dead_stock_count': dead_stock_count,
+        'avg_turnover_rate': round(avg_turnover_rate, 3),
+        'total_items_tracked': total_items_tracked,
+        'present_items': present_items,
         'sales_today': sales_today,
         'sales_last_7_days': sales_7_days,
         'sales_last_30_days': sales_30_days,
@@ -373,13 +502,26 @@ def get_analytics_overview(db: Session = Depends(get_db)):
         }
     }
 )
-def get_product_velocity(days: int = 7, db: Session = Depends(get_db)):
+def get_product_velocity(
+    days: Optional[int] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    interval: str = Query("day"),
+    db: Session = Depends(get_db)
+):
     """
     Calculate product velocity (turnover rate) for all products
+    
+    Args:
+        days: Number of days to look back (7, 30, or 90)
+        start_date: Custom start date (YYYY-MM-DD)
+        end_date: Custom end date (YYYY-MM-DD)
+        interval: Time interval for aggregation (hour, day, week, month) - for future use
     """
     from ..models import StockLevel
     
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date, end_date_dt = get_date_range(days, start_date, end_date)
+    calc_days = (end_date_dt - cutoff_date).days
     products = db.query(Product).all()
     
     velocity_data = []
@@ -396,7 +538,7 @@ def get_product_velocity(days: int = 7, db: Session = Depends(get_db)):
         ).first()
         
         current_stock = stock.current_count if stock else 0
-        velocity_daily = sales / days if days > 0 else 0
+        velocity_daily = sales / calc_days if calc_days > 0 else 0
         
         # Calculate turnover rate and days until stockout
         turnover_rate = (sales / max(1, current_stock)) if current_stock > 0 else 0
@@ -408,8 +550,8 @@ def get_product_velocity(days: int = 7, db: Session = Depends(get_db)):
             'name': product.name,
             'category': product.category,
             'current_stock': current_stock,
-            'sales_7_days': sales if days == 7 else None,
-            'sales_30_days': sales if days == 30 else None,
+            'sales_7_days': sales if calc_days == 7 else None,
+            'sales_30_days': sales if calc_days == 30 else None,
             'velocity_daily': round(velocity_daily, 2),
             'turnover_rate': round(turnover_rate, 2),
             'days_until_stockout': round(days_until_stockout, 1) if days_until_stockout else None
@@ -418,12 +560,27 @@ def get_product_velocity(days: int = 7, db: Session = Depends(get_db)):
     return sorted(velocity_data, key=lambda x: x['velocity_daily'], reverse=True)
 
 @router.get("/top-products")
-def get_top_products(metric: str = 'sales', days: int = 30, limit: int = 20, db: Session = Depends(get_db)):
+def get_top_products(
+    metric: str = Query('sales'),
+    days: Optional[int] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    interval: str = Query("day"),
+    limit: int = Query(20),
+    db: Session = Depends(get_db)
+):
     """
     Get top performing products by various metrics
-    metric options: 'sales', 'revenue', 'velocity'
+    
+    Args:
+        metric: Metric to rank by ('sales', 'revenue', 'velocity')
+        days: Number of days to look back (7, 30, or 90)
+        start_date: Custom start date (YYYY-MM-DD)
+        end_date: Custom end date (YYYY-MM-DD)
+        interval: Time interval for aggregation (hour, day, week, month) - for future use
+        limit: Maximum number of results to return
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date, _ = get_date_range(days, start_date, end_date)
     
     if metric == 'sales':
         # Top by sales count
@@ -497,13 +654,25 @@ def get_top_products(metric: str = 'sales', days: int = 30, limit: int = 20, db:
     return []
 
 @router.get("/category-performance")
-def get_category_performance(days: int = 30, db: Session = Depends(get_db)):
+def get_category_performance(
+    days: Optional[int] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    interval: str = Query("day"),
+    db: Session = Depends(get_db)
+):
     """
     Aggregate performance metrics by product category
+    
+    Args:
+        days: Number of days to look back (7, 30, or 90)
+        start_date: Custom start date (YYYY-MM-DD)
+        end_date: Custom end date (YYYY-MM-DD)
+        interval: Time interval for aggregation (hour, day, week, month) - for future use
     """
     from ..models import StockLevel
     
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date, _ = get_date_range(days, start_date, end_date)
     categories = db.query(Product.category).distinct().all()
     
     category_data = []
@@ -1044,6 +1213,67 @@ def trigger_backfill(params: BackfillParams, background_tasks: BackgroundTasks):
             status_code=500,
             detail=f"Failed to run backfill: {str(e)}"
         )
+
+@router.get("/sales-time-series")
+def get_sales_time_series(
+    days: Optional[int] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    interval: str = Query("day"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get sales time series data aggregated by interval
+    
+    Args:
+        days: Number of days to look back (7, 30, or 90)
+        start_date: Custom start date (YYYY-MM-DD)
+        end_date: Custom end date (YYYY-MM-DD)
+        interval: Time interval for aggregation (hour, day, week, month)
+    
+    Returns:
+        List of data points with date, sales count, and revenue
+    """
+    cutoff_date, _ = get_date_range(days, start_date, end_date)
+    
+    # Map interval to SQL date truncation
+    if interval == "hour":
+        date_trunc = func.date_trunc('hour', PurchaseEvent.purchased_at)
+    elif interval == "day":
+        date_trunc = func.date_trunc('day', PurchaseEvent.purchased_at)
+    elif interval == "week":
+        date_trunc = func.date_trunc('week', PurchaseEvent.purchased_at)
+    elif interval == "month":
+        date_trunc = func.date_trunc('month', PurchaseEvent.purchased_at)
+    else:
+        date_trunc = func.date_trunc('day', PurchaseEvent.purchased_at)
+    
+    # Query aggregated sales data
+    results = db.query(
+        date_trunc.label('date'),
+        func.count(PurchaseEvent.id).label('sales'),
+        func.coalesce(func.sum(Product.unit_price), 0).label('revenue')
+    ).join(
+        Product, PurchaseEvent.product_id == Product.id
+    ).filter(
+        PurchaseEvent.purchased_at >= cutoff_date
+    ).group_by(
+        date_trunc
+    ).order_by(
+        date_trunc
+    ).all()
+    
+    # Format results
+    time_series = [
+        {
+            'date': row.date.isoformat() if row.date else None,
+            'sales': row.sales,
+            'revenue': float(row.revenue)
+        }
+        for row in results
+    ]
+    
+    return time_series
 
 @router.get(
     "/backfill/status",

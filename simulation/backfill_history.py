@@ -80,21 +80,69 @@ def generate_hourly_activity_pattern() -> List[float]:
     ]
     return patterns
 
-def generate_product_popularity(products: List[Dict]) -> Dict[int, float]:
-    """Assign popularity scores to products (0-1)"""
-    # Simulate realistic distribution: few very popular, many moderately popular, some slow
+def generate_product_popularity(products: List[Dict]) -> Dict[int, Dict]:
+    """Assign popularity profiles to products with trends and special events
+    
+    Returns dict with:
+    - base_popularity: baseline sales rate (0-1)
+    - trend: gradual change over time (-0.02 to +0.02 per day)
+    - has_spike: whether product will have a sudden spike
+    - spike_day: which day the spike occurs (if has_spike)
+    - has_shortage: whether product runs out of stock
+    - shortage_start: day when shortage begins
+    - category_correlation: products in same category trend together
+    """
     popularity = {}
+    
+    # Select 3-5 products for trending up (viral/seasonal)
+    trending_up = random.sample(products, min(5, len(products) // 10))
+    # Select 3-5 products for trending down (going out of season)
+    trending_down = random.sample([p for p in products if p not in trending_up], min(5, len(products) // 10))
+    # Select 5-8 products for sudden spikes (promotions, events)
+    spike_products = random.sample([p for p in products if p not in trending_up + trending_down], min(8, len(products) // 8))
+    # Select 3-5 products that will experience shortages
+    shortage_products = random.sample(products, min(5, len(products) // 15))
+    
     for product in products:
-        # Categories have different base popularity
         category = product['category']
-        if category in ['Sports', 'Footwear']:
-            base = random.uniform(0.5, 1.0)  # More popular
-        elif category == 'Fitness':
-            base = random.uniform(0.3, 0.8)  # Medium
-        else:
-            base = random.uniform(0.1, 0.6)  # Accessories less popular
         
-        popularity[product['id']] = base
+        # Base popularity by category
+        if category in ['Sports', 'Footwear']:
+            base = random.uniform(0.5, 1.0)
+        elif category == 'Fitness':
+            base = random.uniform(0.3, 0.8)
+        else:
+            base = random.uniform(0.1, 0.6)
+        
+        # Determine trend
+        if product in trending_up:
+            trend = random.uniform(0.01, 0.03)  # 1-3% increase per day
+        elif product in trending_down:
+            trend = random.uniform(-0.03, -0.01)  # 1-3% decrease per day
+        else:
+            trend = random.uniform(-0.005, 0.005)  # Slight random walk
+        
+        # Spike configuration
+        has_spike = product in spike_products
+        spike_day = random.randint(5, 25) if has_spike else None
+        spike_magnitude = random.uniform(3, 8) if has_spike else 1  # 3-8x normal sales
+        
+        # Shortage configuration
+        has_shortage = product in shortage_products
+        shortage_start = random.randint(10, 20) if has_shortage else None
+        shortage_duration = random.randint(3, 7) if has_shortage else 0
+        
+        popularity[product['id']] = {
+            'base_popularity': base,
+            'trend': trend,
+            'has_spike': has_spike,
+            'spike_day': spike_day,
+            'spike_magnitude': spike_magnitude,
+            'has_shortage': has_shortage,
+            'shortage_start': shortage_start,
+            'shortage_duration': shortage_duration,
+            'category': category
+        }
     
     return popularity
 
@@ -149,8 +197,44 @@ def generate_historical_purchases(
             num_purchases = max(0, int(random.gauss(expected_purchases, expected_purchases * 0.3)))
             
             for _ in range(num_purchases):
-                # Select product based on popularity
-                product = random.choices(products, weights=[popularity[p['id']] for p in products])[0]
+                # Calculate day number for trend/spike calculations
+                day_num = (current_date - start_date).days
+                
+                # Calculate adjusted popularity for each product based on trends, spikes, shortages
+                adjusted_weights = []
+                available_products = []
+                
+                for product in products:
+                    profile = popularity[product['id']]
+                    
+                    # Check if product is in shortage period
+                    if profile['has_shortage']:
+                        if profile['shortage_start'] <= day_num < profile['shortage_start'] + profile['shortage_duration']:
+                            continue  # Skip this product, it's out of stock
+                    
+                    # Base popularity
+                    weight = profile['base_popularity']
+                    
+                    # Apply trend (compounds daily)
+                    trend_multiplier = 1 + (profile['trend'] * day_num)
+                    weight *= max(0.1, trend_multiplier)  # Don't go below 0.1
+                    
+                    # Apply spike if this is spike day (±1 day window for realism)
+                    if profile['has_spike'] and abs(day_num - profile['spike_day']) <= 1:
+                        weight *= profile['spike_magnitude']
+                    
+                    # Category-wide boost on weekends for Sports/Fitness
+                    if profile['category'] in ['Sports', 'Fitness'] and weekend_multiplier > 1:
+                        weight *= 1.2
+                    
+                    adjusted_weights.append(max(0.01, weight))
+                    available_products.append(product)
+                
+                if not available_products:
+                    continue  # All products out of stock (unlikely)
+                
+                # Select product based on adjusted popularity
+                product = random.choices(available_products, weights=adjusted_weights)[0]
                 
                 # Timestamp within this hour
                 minute = random.randint(0, 59)
@@ -217,9 +301,15 @@ def generate_stock_snapshots(
     
     # Initialize stock levels for each product
     product_stocks = {}
+    last_restock_day = {}
+    
     for product in products:
-        # Random initial stock (5-20 items per product)
-        product_stocks[product['id']] = random.randint(8, 20)
+        # Random initial stock (10-30 items per product)
+        product_stocks[product['id']] = random.randint(15, 30)
+        last_restock_day[product['id']] = -10  # Last restocked 10 days before start
+    
+    # Fetch popularity profiles (needed for realistic depletion rates)
+    popularity = generate_product_popularity(products)
     
     end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
@@ -229,18 +319,51 @@ def generate_stock_snapshots(
     snapshot_count = 0
     
     while current_date < end_date:
+        day_num = (current_date - start_date).days
+        
         for product in products:
-            # Simulate stock changes (gradual depletion, occasional restocks)
+            profile = popularity[product['id']]
             current_stock = product_stocks[product['id']]
             
-            # Small chance of restock
-            if random.random() < 0.05:  # 5% chance per snapshot
-                restock_amount = random.randint(10, 20)
-                current_stock += restock_amount
+            # Calculate realistic depletion based on product popularity and trends
+            base_depletion_rate = profile['base_popularity'] * snapshot_interval_hours * 0.5
             
-            # Gradual depletion (simulate sales)
-            depletion = max(0, int(random.gauss(0.3, 0.2)))  # Average 0.3 items sold per hour
+            # Apply trend
+            trend_multiplier = 1 + (profile['trend'] * day_num)
+            depletion_rate = base_depletion_rate * max(0.1, trend_multiplier)
+            
+            # Spike causes faster depletion
+            if profile['has_spike'] and abs(day_num - profile['spike_day']) <= 1:
+                depletion_rate *= profile['spike_magnitude']
+            
+            # Simulate depletion with variance
+            depletion = max(0, int(random.gauss(depletion_rate, depletion_rate * 0.3)))
             current_stock = max(0, current_stock - depletion)
+            
+            # Intelligent restocking logic
+            days_since_restock = day_num - last_restock_day[product['id']]
+            restock_threshold = 5  # Restock when below 5 items
+            
+            # Restock if low AND it's been at least 3 days since last restock
+            if current_stock <= restock_threshold and days_since_restock >= 3:
+                # Don't restock during shortage period
+                if not (profile['has_shortage'] and 
+                       profile['shortage_start'] <= day_num < profile['shortage_start'] + profile['shortage_duration']):
+                    # Restock amount based on popularity
+                    if profile['base_popularity'] > 0.7:
+                        restock_amount = random.randint(20, 35)  # Popular items get more stock
+                    elif profile['base_popularity'] > 0.4:
+                        restock_amount = random.randint(15, 25)
+                    else:
+                        restock_amount = random.randint(10, 20)  # Slow movers get less
+                    
+                    current_stock += restock_amount
+                    last_restock_day[product['id']] = day_num
+            
+            # If in shortage period, force stock to 0
+            if profile['has_shortage']:
+                if profile['shortage_start'] <= day_num < profile['shortage_start'] + profile['shortage_duration']:
+                    current_stock = 0
             
             product_stocks[product['id']] = current_stock
             
@@ -371,6 +494,14 @@ Configuration:
     
     elapsed = (datetime.now() - start_time).total_seconds()
     
+    # Generate pattern summary report
+    popularity = generate_product_popularity(products)
+    
+    trending_up = [p for p in products if popularity[p['id']]['trend'] > 0.01]
+    trending_down = [p for p in products if popularity[p['id']]['trend'] < -0.01]
+    spike_products = [p for p in products if popularity[p['id']]['has_spike']]
+    shortage_products = [p for p in products if popularity[p['id']]['has_shortage']]
+    
     print(f"""
 ╔══════════════════════════════════════════════════════════╗
 ║     ✅ Backfill Complete!                                ║
@@ -385,10 +516,36 @@ Summary:
   - Snapshots uploaded: {total_snapshots:,}
   - Rate: {(total_purchases + total_snapshots) / elapsed:.0f} records/sec
 
+📈 Generated Patterns:
+  🔥 Trending UP: {len(trending_up)} products (growing 1-3% daily)""")
+    
+    if trending_up[:3]:
+        for p in trending_up[:3]:
+            print(f"     - {p['name']} ({p['category']})")
+    
+    print(f"""  📉 Trending DOWN: {len(trending_down)} products (declining 1-3% daily)""")
+    if trending_down[:3]:
+        for p in trending_down[:3]:
+            print(f"     - {p['name']} ({p['category']})")
+    
+    print(f"""  ⚡ Spike Events: {len(spike_products)} products (3-8x sales surge)""")
+    if spike_products[:3]:
+        for p in spike_products:
+            profile = popularity[p['id']]
+            print(f"     - {p['name']} on day {profile['spike_day']} ({profile['spike_magnitude']:.1f}x normal)")
+    
+    print(f"""  🚫 Shortages: {len(shortage_products)} products (stockouts)""")
+    if shortage_products[:3]:
+        for p in shortage_products:
+            profile = popularity[p['id']]
+            print(f"     - {p['name']} days {profile['shortage_start']}-{profile['shortage_start'] + profile['shortage_duration']}")
+    
+    print(f"""
 Next steps:
   1. View analytics at http://localhost:3000/analytics
-  2. Verify data: docker compose exec postgres-simulation psql -U optiflow -d optiflow_simulation
-  3. Start simulation to generate real-time data
+  2. Check KPIs to see trending/shortage impacts
+  3. Look for spike patterns in the AI Insights tab
+  4. Start simulation to generate real-time data
     """)
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ import CategoryDonut from '../components/CategoryDonut';
 import AIClusterView from '../components/AIClusterView';
 import DemandForecastChart from '../components/DemandForecastChart';
 import AnomalyAlerts from '../components/AnomalyAlerts';
+import SalesTimeSeriesChart from '../components/SalesTimeSeriesChart';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -18,12 +19,23 @@ interface BackfillStatus {
   records: number;
 }
 
+interface SetupStatus {
+  products: number;
+  stock_levels: number;
+  inventory_items: number;
+  purchase_events: number;
+  stock_snapshots: number;
+  setup_complete: boolean;
+  has_analytics_data: boolean;
+}
+
 type TabType = 'kpis' | 'overview' | 'products' | 'ai-insights';
 
 export default function AnalyticsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>('kpis');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [analyticsOverview, setAnalyticsOverview] = useState<any>(null);
   const [productVelocity, setProductVelocity] = useState<any[]>([]);
   const [topProducts, setTopProducts] = useState<any[]>([]);
@@ -32,6 +44,21 @@ export default function AnalyticsPage() {
   const [anomalies, setAnomalies] = useState<any>(null);
   const [selectedProductForForecast, setSelectedProductForForecast] = useState<number | null>(null);
   const [demandForecast, setDemandForecast] = useState<any>(null);
+  const [salesTimeSeries, setSalesTimeSeries] = useState<any[]>([]);
+
+  // Date range and interval controls
+  const [dateRange, setDateRange] = useState<'7' | '30' | '90' | 'custom'>('30');
+  const [timeInterval, setTimeInterval] = useState<'hour' | 'day' | 'week' | 'month'>('day');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+
+  // Helper to get date range for API calls
+  const getDateParams = () => {
+    if (dateRange === 'custom' && customStartDate && customEndDate) {
+      return `start_date=${customStartDate}&end_date=${customEndDate}`;
+    }
+    return `days=${dateRange}`;
+  };
 
   // Backfill controls
   const [showBackfill, setShowBackfill] = useState(false);
@@ -39,16 +66,31 @@ export default function AnalyticsPage() {
   const [backfillDays, setBackfillDays] = useState(30);
   const [backfillStatus, setBackfillStatus] = useState<BackfillStatus | null>(null);
   const [isBackfilling, setIsBackfilling] = useState(false);
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+
+  const fetchSetupStatus = async () => {
+    try {
+      const response = await fetch(`${API_URL}/setup/status`);
+      const status = await response.json();
+      setSetupStatus(status);
+    } catch (error) {
+      console.error('Error fetching setup status:', error);
+    }
+  };
 
   const fetchAnalyticsData = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const [overview, velocity, top, category, clusters, anomaliesData] = await Promise.all([
-        fetch(`${API_URL}/analytics/overview?days=30`).then(r => r.ok ? r.json() : null),
-        fetch(`${API_URL}/analytics/product-velocity?days=7`).then(r => r.ok ? r.json() : []),
-        fetch(`${API_URL}/analytics/top-products?limit=20&metric=sales`).then(r => r.ok ? r.json() : []),
-        fetch(`${API_URL}/analytics/category-performance?days=30`).then(r => r.ok ? r.json() : []),
+      const dateParams = getDateParams();
+      const [overview, velocity, top, category, clusters, anomaliesData, timeSeries] = await Promise.all([
+        fetch(`${API_URL}/analytics/overview?${dateParams}&interval=${timeInterval}`).then(r => r.ok ? r.json() : null),
+        fetch(`${API_URL}/analytics/product-velocity?${dateParams}&interval=${timeInterval}`).then(r => r.ok ? r.json() : []),
+        fetch(`${API_URL}/analytics/top-products?limit=20&metric=sales&${dateParams}&interval=${timeInterval}`).then(r => r.ok ? r.json() : []),
+        fetch(`${API_URL}/analytics/category-performance?${dateParams}&interval=${timeInterval}`).then(r => r.ok ? r.json() : []),
         fetch(`${API_URL}/analytics/ai/clusters?n_clusters=4`).then(r => r.ok ? r.json() : null),
-        fetch(`${API_URL}/analytics/ai/anomalies?days=7`).then(r => r.ok ? r.json() : null),
+        fetch(`${API_URL}/analytics/ai/anomalies?${dateParams}`).then(r => r.ok ? r.json() : null),
+        fetch(`${API_URL}/analytics/sales-time-series?${dateParams}&interval=${timeInterval}`).then(r => r.ok ? r.json() : []),
       ]);
 
       setAnalyticsOverview(overview);
@@ -57,13 +99,15 @@ export default function AnalyticsPage() {
       setCategoryPerformance(category || []);
       setAiClusters(clusters);
       setAnomalies(anomaliesData);
+      setSalesTimeSeries(timeSeries || []);
 
       // Auto-select first product for forecast if available
       if (top && top.length > 0 && !selectedProductForForecast) {
         setSelectedProductForForecast(top[0].product_id);
       }
-    } catch (error) {
-      console.error('Error fetching analytics:', error);
+    } catch (err) {
+      console.error('Error fetching analytics:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch analytics data');
       setAnalyticsOverview(null);
       setProductVelocity([]);
       setTopProducts([]);
@@ -87,6 +131,26 @@ export default function AnalyticsPage() {
   const triggerBackfill = async () => {
     setIsBackfilling(true);
     try {
+      // First, verify and fix any setup issues
+      const setupResponse = await fetch(`${API_URL}/setup/verify-and-fix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const setupResult = await setupResponse.json();
+      
+      // Check if there are critical issues (no products)
+      const noProductsIssue = setupResult.issues?.find((i: any) => i.issue === 'no_products');
+      if (noProductsIssue) {
+        setBackfillStatus({
+          running: false,
+          message: 'No products found. Please run product generation first: docker compose exec backend bash -c "cd /simulation && python generate_inventory.py --items 100"',
+          records: 0
+        });
+        return;
+      }
+      
+      // Run backfill
       const response = await fetch(`${API_URL}/analytics/backfill`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,8 +164,9 @@ export default function AnalyticsPage() {
       setBackfillStatus(result);
       
       if (result.status === 'success') {
-        // Refresh analytics data after backfill
+        // Refresh setup status and analytics data after backfill
         setTimeout(() => {
+          fetchSetupStatus();
           fetchAnalyticsData();
         }, 1000);
       }
@@ -118,10 +183,17 @@ export default function AnalyticsPage() {
   };
 
   useEffect(() => {
+    fetchSetupStatus();
     fetchAnalyticsData();
-    const interval = setInterval(fetchAnalyticsData, 5000); // Refresh every 5s
-    return () => clearInterval(interval);
+    // Removed auto-refresh - users can manually refresh via the refresh button
   }, []);
+
+  useEffect(() => {
+    // Refetch when date range changes
+    if (!loading) {
+      fetchAnalyticsData();
+    }
+  }, [dateRange, timeInterval, customStartDate, customEndDate]);
 
   useEffect(() => {
     if (selectedProductForForecast) {
@@ -141,26 +213,60 @@ export default function AnalyticsPage() {
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       <div className="flex-shrink-0 px-6 pt-6 pb-4">
         {/* Header */}
-        <div className="max-w-7xl mx-auto mb-4 flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
-            <p className="text-gray-600 mt-1">AI-powered insights and performance metrics</p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowBackfill(!showBackfill)}
-              className="px-4 py-2 text-sm font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] rounded-lg transition-colors"
-            >
-              {showBackfill ? 'Hide' : 'Generate Data'}
-            </button>
-            <button
+        <div className="max-w-7xl mx-auto mb-4">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
+              <p className="text-gray-600 mt-1">AI-powered insights and performance metrics</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowBackfill(!showBackfill)}
+                className="px-4 py-2 text-sm font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] rounded-lg transition-colors"
+              >
+                {showBackfill ? 'Hide' : 'Generate Data'}
+              </button>
+              <button
               onClick={() => router.push('/')}
               className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors flex items-center gap-2"
             >
-              ← Back to Dashboard
+              Back to Dashboard
             </button>
           </div>
+          </div>
         </div>
+
+        {/* Setup Status */}
+        {showBackfill && setupStatus && (
+          <div className="max-w-7xl mx-auto mb-4 bg-white rounded-lg shadow p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">System Status</h3>
+            <div className="grid grid-cols-5 gap-3 text-sm">
+              <div className="flex flex-col">
+                <span className="text-gray-500">Products</span>
+                <span className="font-semibold text-gray-900">{setupStatus.products.toLocaleString()}</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-gray-500">Items</span>
+                <span className="font-semibold text-gray-900">{setupStatus.inventory_items.toLocaleString()}</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-gray-500">Purchases</span>
+                <span className="font-semibold text-gray-900">{setupStatus.purchase_events.toLocaleString()}</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-gray-500">Snapshots</span>
+                <span className="font-semibold text-gray-900">{setupStatus.stock_snapshots.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center">
+                <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                  setupStatus.setup_complete ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                }`}>
+                  {setupStatus.setup_complete ? '✓ Ready' : '⚠ Setup Needed'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Backfill Controls */}
         {showBackfill && (
@@ -224,36 +330,114 @@ export default function AnalyticsPage() {
       <div className="flex-1 px-6 pb-6 overflow-hidden">
         <div className="max-w-7xl mx-auto h-full flex flex-col">
           <div className="bg-white rounded-lg shadow h-full flex flex-col overflow-hidden">
-            {/* Tab Navigation */}
+            {/* Tab Navigation with Date Controls */}
             <div className="flex-shrink-0 border-b border-gray-200">
-              <nav className="flex -mb-px">
-                {[
-                  { id: 'kpis', label: 'KPIs' },
-                  { id: 'overview', label: 'Performance' },
-                  { id: 'products', label: 'Products' },
-                  { id: 'ai-insights', label: 'AI Insights' },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as TabType)}
-                    className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-                      activeTab === tab.id
-                        ? 'border-[#0055A4] text-[#0055A4]'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </nav>
+              <div className="flex justify-between items-center">
+                <nav className="flex -mb-px">
+                  {[
+                    { id: 'kpis', label: 'KPIs' },
+                    { id: 'overview', label: 'Performance' },
+                    { id: 'products', label: 'Products' },
+                    { id: 'ai-insights', label: 'AI Insights' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id as TabType)}
+                      className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                        activeTab === tab.id
+                          ? 'border-[#0055A4] text-[#0055A4]'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </nav>
+
+                {/* Date Range and Interval Controls */}
+                <div className="flex items-center gap-4 pr-4">
+                  {/* Quick Range Buttons */}
+                  <div className="flex gap-1">
+                    {(['7', '30', '90'] as const).map((days) => (
+                      <button
+                        key={days}
+                        onClick={() => {
+                          setDateRange(days);
+                          setCustomStartDate('');
+                          setCustomEndDate('');
+                        }}
+                        className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                          dateRange === days
+                            ? 'bg-[#0055A4] text-white'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        {days}d
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setDateRange('custom')}
+                      className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                        dateRange === 'custom'
+                          ? 'bg-[#0055A4] text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      Custom
+                    </button>
+                  </div>
+
+                  {/* Custom Date Inputs */}
+                  {dateRange === 'custom' && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        value={customStartDate}
+                        onChange={(e) => setCustomStartDate(e.target.value)}
+                        className="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#0055A4]"
+                      />
+                      <span className="text-xs text-gray-500">to</span>
+                      <input
+                        type="date"
+                        value={customEndDate}
+                        onChange={(e) => setCustomEndDate(e.target.value)}
+                        className="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#0055A4]"
+                      />
+                    </div>
+                  )}
+
+                  {/* Interval Selector */}
+                  <div className="flex gap-1 border-l border-gray-200 pl-4">
+                    {(['day', 'week', 'month'] as const).map((interval) => (
+                      <button
+                        key={interval}
+                        onClick={() => setTimeInterval(interval)}
+                        className={`px-2 py-1.5 text-xs font-medium rounded transition-colors ${
+                          timeInterval === interval
+                            ? 'bg-[#0055A4] text-white'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                        title={`Aggregate by ${interval}`}
+                      >
+                        {interval.charAt(0).toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Tab Content */}
             <div className="flex-1 p-6 overflow-auto">
               {/* KPIs Tab */}
               {activeTab === 'kpis' && (
-                <div className="h-full">
+                <div className="h-full space-y-6">
                   <AnalyticsOverview data={analyticsOverview} />
+                  <SalesTimeSeriesChart 
+                    data={salesTimeSeries} 
+                    interval={timeInterval}
+                    isLoading={loading}
+                  />
                 </div>
               )}
 
@@ -279,7 +463,12 @@ export default function AnalyticsPage() {
               {/* Product Analysis Tab */}
               {activeTab === 'products' && (
                 <div className="h-full">
-                  <TopProductsTable data={topProducts} />
+                  <TopProductsTable 
+                    data={productVelocity} 
+                    onRefresh={fetchAnalyticsData}
+                    isLoading={loading}
+                    error={error}
+                  />
                 </div>
               )}
 

@@ -98,7 +98,8 @@ from .routers import (
     analytics_router,
     config_router,
     simulation_router,
-    items_router
+    items_router,
+    setup_router
 )
 
 app = FastAPI(
@@ -158,6 +159,7 @@ app.include_router(analytics_router)
 app.include_router(config_router)
 app.include_router(simulation_router)
 app.include_router(items_router)
+app.include_router(setup_router)
 
 @app.get("/")
 def health_check():
