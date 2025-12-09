@@ -120,7 +120,7 @@ export default function StoreMap({
     
     // Heatmap parameters
     const heatRadius = 80;  // Radius of each heat circle in pixels
-    const baseOpacity = 0.1; // Opacity per circle (10 overlaps = full intensity)
+    const baseOpacity = 0.3; // Opacity per circle (4 overlaps = full intensity)
     
     // Use additive blending for heat effect
     ctx.globalCompositeOperation = 'source-over';
@@ -135,11 +135,10 @@ export default function StoreMap({
         pos.x, pos.y, heatRadius
       );
       
-      // Purple color with opacity (will blend additively)
-      // Base purple: rgb(128, 0, 128) -> blends toward yellow rgb(255, 255, 0)
-      gradient.addColorStop(0, `rgba(180, 50, 180, ${baseOpacity})`);
-      gradient.addColorStop(0.5, `rgba(160, 40, 160, ${baseOpacity * 0.6})`);
-      gradient.addColorStop(1, 'rgba(140, 30, 140, 0)');
+      // Vibrant purple color with higher opacity
+      gradient.addColorStop(0, `rgba(180, 0, 220, ${baseOpacity})`);
+      gradient.addColorStop(0.5, `rgba(160, 40, 200, ${baseOpacity * 0.7})`);
+      gradient.addColorStop(1, 'rgba(140, 30, 180, 0)');
       
       ctx.fillStyle = gradient;
       ctx.beginPath();
@@ -160,10 +159,10 @@ export default function StoreMap({
         pos.x, pos.y, heatRadius
       );
       
-      // Yellow overlay that makes dense areas appear more yellow/sunny
-      gradient.addColorStop(0, `rgba(255, 220, 50, ${baseOpacity * 0.8})`);
-      gradient.addColorStop(0.5, `rgba(255, 200, 30, ${baseOpacity * 0.4})`);
-      gradient.addColorStop(1, 'rgba(255, 180, 0, 0)');
+      // Brighter yellow/orange overlay for density
+      gradient.addColorStop(0, `rgba(255, 200, 50, ${baseOpacity})`);
+      gradient.addColorStop(0.5, `rgba(255, 180, 30, ${baseOpacity * 0.6})`);
+      gradient.addColorStop(1, 'rgba(255, 150, 0, 0)');
       
       ctx.fillStyle = gradient;
       ctx.beginPath();

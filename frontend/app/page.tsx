@@ -374,6 +374,17 @@ export default function Home() {
     if (viewMode === 'stock-heatmap') fetchStockHeatmap();
   }, [viewMode]);
 
+  // Poll heatmap data while in heatmap view (every 2 seconds)
+  useEffect(() => {
+    if (viewMode !== 'stock-heatmap') return;
+    
+    const interval = setInterval(() => {
+      fetchStockHeatmap();
+    }, 2000);
+    
+    return () => clearInterval(interval);
+  }, [viewMode]);
+
   // Generate proper MAC address format: 0x0001, 0x0002, ..., 0x000A, 0x000B, etc.
   const generateMacAddress = (index: number): string => {
     const hex = (index + 1).toString(16).toUpperCase().padStart(4, '0');
