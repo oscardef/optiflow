@@ -1012,6 +1012,118 @@ Map displays last known positions:
 - Red dots: Items with status "not present" showing their last position before disappearing
 - All items display their most recent (x, y) coordinates from `inventory_items` table
 
+### Missing Item Detection
+
+The system uses an intelligent inference algorithm to detect missing items with 5 safety checks to prevent false positives:
+
+#### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    MISSING ITEM DETECTION FLOW                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+    1. Hardware Packet Arrives (RFID + UWB Data)
+                    │
+                    ▼
+    2. Calculate Employee Position (Triangulation)
+                    │
+                    ▼
+    3. Query ALL Present Items with Known Positions
+                    │
+                    ▼
+    4. For Each Item in Database:
+       │
+       ├─► Was it detected in packet? ──YES──► Reset miss counter
+       │                                │
+       │                               NO
+       │                                │
+       └─► Calculate Distance to Employee Position
+           │
+           ├─► Distance > 50cm? ──YES──► Reset miss counter (too far)
+           │                      
+           NO (within 50cm)
+           │
+           ▼
+       ┌─────────────────────────────────────────────────────┐
+       │          5 SAFETY CHECKS APPLIED                     │
+       ├─────────────────────────────────────────────────────┤
+       │ ✓ CHECK 1: Only items within 50cm range            │
+       │ ✓ CHECK 2: Increment consecutive miss counter      │
+       │ ✓ CHECK 3: Each item has randomized threshold      │
+       │             (3-5 consecutive misses required)       │
+       │ ✓ CHECK 4: Mark missing only after threshold met   │
+       │ ✓ CHECK 5: Max 2 items marked missing per scan     │
+       └─────────────────────────────────────────────────────┘
+                    │
+                    ▼
+           Item Marked as "not present"
+           Miss counter reset
+```
+
+#### Key Parameters
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `CLOSE_RANGE_CM` | 50 cm | Maximum distance to consider for inference |
+| `MIN_CONSECUTIVE_MISSES` | 3 | Minimum misses before marking missing |
+| `MAX_CONSECUTIVE_MISSES` | 5 | Maximum misses before marking missing |
+| `MAX_INFERENCES_PER_PASS` | 2 | Maximum items marked missing per scan |
+
+#### Example Timeline
+
+```
+Packet #1 arrives (Employee at x=400, y=300)
+├─ Item A (RFID: E200...001) at (405, 295) - Distance: 7cm
+│  └─ NOT detected → Miss count: 1/4 → Status: present
+├─ Item B (RFID: E200...002) at (420, 310) - Distance: 24cm
+│  └─ Detected ✓ → Miss count: 0/3 → Status: present
+└─ Item C (RFID: E200...003) at (380, 290) - Distance: 22cm
+   └─ NOT detected → Miss count: 1/5 → Status: present
+
+Packet #2 arrives (Employee at x=402, y=298)
+├─ Item A at (405, 295) - Distance: 5cm
+│  └─ NOT detected → Miss count: 2/4 → Status: present
+├─ Item B at (420, 310) - Distance: 26cm
+│  └─ Detected ✓ → Miss count: 0/3 → Status: present
+└─ Item C at (380, 290) - Distance: 24cm
+   └─ NOT detected → Miss count: 2/5 → Status: present
+
+Packet #3 arrives (Employee at x=398, y=302)
+├─ Item A at (405, 295) - Distance: 11cm
+│  └─ NOT detected → Miss count: 3/4 → Status: present
+├─ Item B at (420, 310) - Distance: 24cm
+│  └─ NOT detected → Miss count: 1/3 → Status: present
+└─ Item C at (380, 290) - Distance: 22cm
+   └─ NOT detected → Miss count: 3/5 → Status: present
+
+Packet #4 arrives (Employee at x=400, y=300)
+├─ Item A at (405, 295) - Distance: 7cm
+│  └─ NOT detected → Miss count: 4/4 ❌ THRESHOLD MET
+│     └─ Marked as "not present"
+├─ Item B at (420, 310) - Distance: 24cm
+│  └─ NOT detected → Miss count: 2/3 → Status: present
+└─ Item C at (380, 290) - Distance: 22cm
+   └─ NOT detected → Miss count: 4/5 → Status: present
+```
+
+#### Important Notes
+
+- **Database Query Scope**: Every packet triggers a query of ALL present items with known positions (potentially thousands of items)
+- **Persistent Counters**: Miss counters persist across packets using function-level attributes (`receive_data._detection_misses`)
+- **Randomized Thresholds**: Each item gets a random threshold (3-5 misses) to add variability and prevent synchronized mass disappearance
+- **Distance-Based**: Only items within 50cm of employee position are considered for inference
+- **Rate Limiting**: Maximum 2 items can be marked missing per scan to prevent mass false positives
+- **Counter Reset**: Miss counter resets to 0 when item is detected OR when employee moves too far away (>50cm)
+
+#### Why This Approach?
+
+The multi-layered safety system balances sensitivity and reliability:
+- **High Sensitivity**: Detects items within 50cm that aren't scanned (theft, removal)
+- **Low False Positives**: Multiple consecutive misses required before marking missing
+- **Adaptive**: Randomized thresholds prevent edge cases where all items disappear simultaneously
+- **Scalable**: Works with large inventories (1000+ items) by filtering on proximity first
+
 ### Mode Switching
 
 The system supports two operational modes:

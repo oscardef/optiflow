@@ -199,8 +199,7 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         # Safety parameters
                         RFID_DETECTION_RANGE_CM = 60.0  # Match simulation config
                         CLOSE_RANGE_CM = 50.0  # Only infer for items clearly in range
-                        MIN_CONSECUTIVE_MISSES = 3  # Minimum misses before considering
-                        MAX_CONSECUTIVE_MISSES = 5  # Maximum misses (randomized per item)
+                        MIN_CONSECUTIVE_MISSES = 4  # Minimum misses before considering
                         MAX_INFERENCES_PER_PASS = 2  # Max items to mark missing per scan
                         
                         import random
@@ -255,14 +254,8 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                                 current_misses = receive_data._detection_misses.get(item.rfid_tag, 0)
                                 receive_data._detection_misses[item.rfid_tag] = current_misses + 1
                                 
-                                # SAFETY CHECK 3: Each item has randomized threshold (3-5 misses)
-                                if item.rfid_tag not in receive_data._item_thresholds:
-                                    receive_data._item_thresholds[item.rfid_tag] = random.randint(MIN_CONSECUTIVE_MISSES, MAX_CONSECUTIVE_MISSES)
-                                
-                                item_threshold = receive_data._item_thresholds[item.rfid_tag]
-                                
-                                # SAFETY CHECK 4: Mark missing after threshold is met
-                                if receive_data._detection_misses[item.rfid_tag] >= item_threshold:
+                                # SAFETY CHECK 3: Mark missing after fixed threshold is met
+                                if receive_data._detection_misses[item.rfid_tag] >= MIN_CONSECUTIVE_MISSES:
                                     inference_candidates.append((item, distance, receive_data._detection_misses[item.rfid_tag]))
                             else:
                                 # Item too far away, reset counter
