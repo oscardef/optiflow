@@ -162,6 +162,20 @@ def on_message(client, userdata, msg):
         # Get current system mode
         current_mode = get_system_mode()
         
+        # If in SIMULATION mode and receiving simulation topic messages,
+        # check if simulation is actually running
+        if current_mode == "SIMULATION" and msg.topic == TOPIC_SIMULATION:
+            try:
+                status_response = requests.get(f"{API_URL}/simulation/status", timeout=0.5)
+                if status_response.status_code == 200:
+                    status = status_response.json()
+                    if not status.get("running", False):
+                        # Simulation is stopped - drop this queued message
+                        return
+            except:
+                # If can't check status, continue processing (fail-safe)
+                pass
+        
         # Decode and parse the message
         payload = msg.payload.decode('utf-8')
         print(f"\n📥 Received message on {msg.topic} (System mode: {current_mode})")
