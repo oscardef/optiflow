@@ -283,7 +283,6 @@ def get_product_items(product_id: int, db: Session = Depends(get_db)):
             "status": item.status,
             "x_position": item.x_position,
             "y_position": item.y_position,
-            "zone_id": item.zone_id,
             "last_seen_at": item.last_seen_at.isoformat() if item.last_seen_at else None,
             "created_at": item.created_at.isoformat()
         }

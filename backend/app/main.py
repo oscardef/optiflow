@@ -175,7 +175,7 @@ def startup_event():
     # Initialize both databases
     init_db()
     
-    # Initialize simulation database with default zones
+    # Initialize simulation database
     db_sim = SessionLocal_simulation()
     try:
         # Create configuration if doesn't exist

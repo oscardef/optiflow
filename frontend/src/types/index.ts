@@ -42,18 +42,6 @@ export interface Product {
   current_stock?: number;
 }
 
-export interface Zone {
-  id: number;
-  name: string;
-  description?: string;
-  x_min: number;
-  y_min: number;
-  x_max: number;
-  y_max: number;
-  zone_type?: string;
-  created_at: string;
-}
-
 export type ConfigMode = 'SIMULATION' | 'PRODUCTION';
 
 export interface ModeResponse {
@@ -72,7 +60,6 @@ export interface StoreLayout {
   mode: ConfigMode;
   store_width: number;
   store_height: number;
-  zones: Zone[];
   anchors: Anchor[];
 }
 
@@ -101,18 +88,3 @@ export interface AnchorValidation {
 }
 
 export type ViewMode = 'live' | 'stock-heatmap' | 'restock-queue';
-
-export interface HeatmapEntry {
-  product_id: number;
-  product_name: string;
-  product_category: string;
-  zone_id: number;
-  zone_name: string;
-  zone: Zone;
-  x: number;
-  y: number;
-  current_count: number;
-  max_items_seen: number;
-  items_missing: number;
-  depletion_percentage: number;
-}

@@ -154,16 +154,14 @@ def update_store_config(
 
 @router.get("/layout")
 def get_full_layout(db: Session = Depends(get_db)):
-    """Get complete store layout including dimensions, zones, and anchors"""
+    """Get complete store layout including dimensions and anchors"""
     config = db.query(Configuration).first()
-    zones = db.query(Zone).all()
     anchors = db.query(Anchor).filter(Anchor.is_active == True).all()
     
     return {
         "mode": config_state.mode.value,
         "store_width": config.store_width if config else config_state.store_width,
         "store_height": config.store_height if config else config_state.store_height,
-        "zones": [z.to_dict() for z in zones],
         "anchors": [a.to_dict() for a in anchors]
     }
 

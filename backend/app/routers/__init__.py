@@ -16,7 +16,6 @@ __all__ = [
     "data_router",
     "products_router",
     "analytics_router",
-    "zones_router",
     "config_router",
     "simulation_router",
     "items_router",
