@@ -6,7 +6,7 @@ import paho.mqtt.publish as publish
 from typing import Optional
 import os
 
-from ..database import get_db, get_db_simulation, get_db_real
+from ..database import get_db, get_db_simulation, get_db_production
 from ..models import Configuration, Anchor
 from ..config import config_state, ConfigMode
 from ..core import logger
@@ -43,7 +43,7 @@ def get_current_mode():
 @router.post("/mode/switch")
 def switch_mode(switch: ModeSwitch):
     """
-    Switch between SIMULATION and REAL modes
+    Switch between SIMULATION and PRODUCTION modes
     Requires confirmation as it changes which database is active
     All data for each mode is preserved and can be resumed
     """
@@ -58,7 +58,7 @@ def switch_mode(switch: ModeSwitch):
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid mode. Must be '{ConfigMode.SIMULATION.value}' or '{ConfigMode.REAL.value}'"
+            detail=f"Invalid mode. Must be '{ConfigMode.SIMULATION.value}' or '{ConfigMode.PRODUCTION.value}'"
         )
     
     old_mode = config_state.mode
@@ -70,12 +70,12 @@ def switch_mode(switch: ModeSwitch):
             "mode": new_mode.value
         }
     
-    # Stop simulation if running when switching to REAL mode
-    if new_mode == ConfigMode.REAL and config_state.simulation_running:
+    # Stop simulation if running when switching to PRODUCTION mode
+    if new_mode == ConfigMode.PRODUCTION and config_state.simulation_running:
         # Import here to avoid circular dependency
         from .simulation import stop_simulation_process
         stop_simulation_process()
-        logger.info("Stopped simulation before switching to REAL mode")
+        logger.info("Stopped simulation before switching to PRODUCTION mode")
     
     # Switch mode
     config_state.mode = new_mode
@@ -219,7 +219,7 @@ def send_mqtt_control(command: str):
     Send START or STOP command to MQTT broker to control signal collection
     Mode-aware: publishes to simulation or production control topic based on current mode
     - SIMULATION mode: 'store/control' topic
-    - REAL mode: 'store/production/control' topic
+    - PRODUCTION mode: 'store/production/control' topic
     """
     if command not in ["START", "STOP"]:
         raise HTTPException(
@@ -235,7 +235,7 @@ def send_mqtt_control(command: str):
         
         # Determine topic based on current mode
         current_mode = config_state.mode
-        if current_mode == ConfigMode.REAL:
+        if current_mode == ConfigMode.PRODUCTION:
             control_topic = "store/production/control"
         else:
             control_topic = "store/control"

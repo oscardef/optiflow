@@ -16,17 +16,17 @@ services:
       timeout: 5s
       retries: 5
 
-  postgres-real:
+  postgres-production:
     image: postgres:15-alpine
-    container_name: optiflow-db-real
+    container_name: optiflow-db-production
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: optiflow_real
+      POSTGRES_DB: optiflow_production
     ports:
       - "5433:5432"
     volumes:
-      - postgres_real_data:/var/lib/postgresql/data
+      - postgres_production_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U optiflow"]
       interval: 5s
@@ -40,7 +40,7 @@ services:
     container_name: optiflow-backend
     environment:
       DATABASE_URL_SIMULATION: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-simulation:5432/optiflow_simulation
-      DATABASE_URL_REAL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-real:5432/optiflow_real
+      DATABASE_URL_PRODUCTION: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-production:5432/optiflow_production
       MQTT_BROKER_HOST: ${MQTT_BROKER_HOST}
       MQTT_BROKER_PORT: ${MQTT_BROKER_PORT}
       MQTT_BROKER: ${MQTT_BROKER}
@@ -51,7 +51,7 @@ services:
     depends_on:
       postgres-simulation:
         condition: service_healthy
-      postgres-real:
+      postgres-production:
         condition: service_healthy
     volumes:
       - ./backend:/app
@@ -93,5 +93,5 @@ services:
 
 volumes:
   postgres_simulation_data:
-  postgres_real_data:
+  postgres_production_data:
   optiflow_state:

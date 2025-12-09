@@ -55,10 +55,10 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [highlightedItem, setHighlightedItem] = useState<string | null>(null);
-  const [currentMode, setCurrentMode] = useState<'SIMULATION' | 'REAL'>('SIMULATION');
+  const [currentMode, setCurrentMode] = useState<'SIMULATION' | 'PRODUCTION'>('SIMULATION');
   const [simulationRunning, setSimulationRunning] = useState(false);
   
-  // Anchor placement modal state for REAL mode
+  // Anchor placement modal state for PRODUCTION mode
   const [pendingAnchor, setPendingAnchor] = useState<{x: number, y: number, index: number} | null>(null);
   const [anchorMacInput, setAnchorMacInput] = useState('');
   const [anchorNameInput, setAnchorNameInput] = useState('');
@@ -306,8 +306,8 @@ export default function Home() {
   };
 
   const handleAnchorPlace = async (x: number, y: number, index: number) => {
-    if (currentMode === 'REAL') {
-      // In REAL mode, show modal with pre-filled sequential MAC address
+    if (currentMode === 'PRODUCTION') {
+      // In PRODUCTION mode, show modal with pre-filled sequential MAC address
       const suggestedMac = generateMacAddress(index);
       setPendingAnchor({ x, y, index });
       setAnchorMacInput(suggestedMac);
@@ -972,7 +972,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* Anchor Placement Modal for REAL mode */}
+      {/* Anchor Placement Modal for PRODUCTION mode */}
       {pendingAnchor && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 w-[420px] max-w-[90vw]">

@@ -1,5 +1,5 @@
 -- Migration 008: Remove zones system entirely
--- Zones were designed for predefined store layouts (aisles) which don't apply to real mode
+-- Zones were designed for predefined store layouts (aisles) which don't apply to production mode
 -- Replace with spatial clustering based on x/y positions
 
 -- Remove zone_id foreign keys from all tables

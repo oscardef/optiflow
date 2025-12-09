@@ -25,7 +25,7 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
     Receive combined RFID detections and UWB measurements from devices
     Automatically calculates position if 2+ anchors available
     
-    NOTE: This endpoint accepts data from BOTH simulation and real hardware,
+    NOTE: This endpoint accepts data from BOTH simulation and production hardware,
     but the mqtt_bridge filters messages based on current mode to prevent overlap.
     Additional validation here ensures data integrity.
     """
@@ -149,9 +149,9 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         )
                         db.add(position)
                         
-                        # Only update inventory item positions with triangulated position in REAL mode
+                        # Only update inventory item positions with triangulated position in PRODUCTION mode
                         # In SIMULATION mode, items have predefined shelf positions that should be preserved
-                        if config_state.mode == ConfigMode.REAL:
+                        if config_state.mode == ConfigMode.PRODUCTION:
                             # Get the set of currently detected RFID tags
                             detected_rfid_tags = {detection.product_id for detection in packet.detections}
                             
@@ -163,9 +163,9 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                                 if inventory_item:
                                     inventory_item.x_position = x
                                     inventory_item.y_position = y
-                                    logger.info(f"[REAL] Updated position for {detection.product_id}: ({x:.1f}, {y:.1f})")
+                                    logger.info(f"[PRODUCTION] Updated position for {detection.product_id}: ({x:.1f}, {y:.1f})")
                             
-                            # MISSING ITEM DETECTION for REAL mode:
+                            # MISSING ITEM DETECTION for PRODUCTION mode:
                             # Find items that were previously seen near this location but are NOT in current detections
                             # This handles the case where an item was removed since the last visit
                             DETECTION_RADIUS = 150.0  # cm - radius to consider "same location"
@@ -194,10 +194,10 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                                 if distance <= DETECTION_RADIUS and item.rfid_tag not in detected_rfid_tags:
                                     item.status = 'not present'
                                     missing_count += 1
-                                    logger.info(f"[REAL] Item {item.rfid_tag} marked as 'not present' - was at ({item.x_position:.1f}, {item.y_position:.1f}), employee at ({x:.1f}, {y:.1f}), distance: {distance:.1f}cm")
+                                    logger.info(f"[PRODUCTION] Item {item.rfid_tag} marked as 'not present' - was at ({item.x_position:.1f}, {item.y_position:.1f}), employee at ({x:.1f}, {y:.1f}), distance: {distance:.1f}cm")
                             
                             if missing_count > 0:
-                                logger.info(f"[REAL] Marked {missing_count} items as 'not present' (not detected within {DETECTION_RADIUS}cm radius)")
+                                logger.info(f"[PRODUCTION] Marked {missing_count} items as 'not present' (not detected within {DETECTION_RADIUS}cm radius)")
                         
                         db.commit()
                         position_calculated = True

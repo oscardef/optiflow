@@ -169,8 +169,8 @@ def on_message(client, userdata, msg):
         if current_mode == "SIMULATION" and msg.topic != TOPIC_SIMULATION:
             print(f"   ⏭️  Skipping {msg.topic} message (system in SIMULATION mode, expecting {TOPIC_SIMULATION})")
             return
-        elif current_mode == "REAL" and msg.topic != TOPIC_PRODUCTION:
-            print(f"   ⏭️  Skipping {msg.topic} message (system in REAL mode, expecting {TOPIC_PRODUCTION})")
+        elif current_mode == "PRODUCTION" and msg.topic != TOPIC_PRODUCTION:
+            print(f"   ⏭️  Skipping {msg.topic} message (system in PRODUCTION mode, expecting {TOPIC_PRODUCTION})")
             return
         
         data = json.loads(payload)

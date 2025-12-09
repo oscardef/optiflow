@@ -164,7 +164,7 @@ def start_simulation(params: Optional[SimulationParams] = None):
     if config_state.mode != ConfigMode.SIMULATION:
         raise HTTPException(
             status_code=400,
-            detail="Cannot start simulation in REAL mode. Switch to SIMULATION mode first."
+            detail="Cannot start simulation in PRODUCTION mode. Switch to SIMULATION mode first."
         )
     
     # Check if already running

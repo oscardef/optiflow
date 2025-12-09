@@ -166,14 +166,14 @@ class TestSystemIntegration:
         assert test_missing["status"] == "not present"
     
     def test_mode_switching(self):
-        """Should switch between SIMULATION and REAL modes"""
+        """Should switch between SIMULATION and PRODUCTION modes"""
         # Get current mode
         response = requests.get(f"{API_BASE_URL}/config/mode", timeout=TIMEOUT)
         assert response.status_code == 200
         current_mode = response.json()["mode"]
         
-        # Switch mode (API expects "SIMULATION" or "REAL")
-        new_mode = "REAL" if current_mode == "SIMULATION" else "SIMULATION"
+        # Switch mode (API expects "SIMULATION" or "PRODUCTION")
+        new_mode = "PRODUCTION" if current_mode == "SIMULATION" else "SIMULATION"
         response = requests.post(
             f"{API_BASE_URL}/config/mode/switch",
             json={"mode": new_mode, "confirm": True},

@@ -55,7 +55,7 @@ const char* MQTT_SERVER = "172.20.10.4";       // Your MacBook IP
 const int MQTT_PORT = 1883;
 
 // MQTT Topics
-const char* TOPIC_DATA = "store/production";   // Main data topic for real hardware
+const char* TOPIC_DATA = "store/production";   // Main data topic for production hardware
 const char* TOPIC_CONTROL = "store/production/control";   // Control signals (START/STOP)
 const char* TOPIC_STATUS = "store/production/status";     // Status updates
 

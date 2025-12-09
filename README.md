@@ -198,14 +198,14 @@ OptiFlow is a full-stack inventory management solution that tracks:
 
 ## Mode Separation
 
-OptiFlow operates in two distinct modes to **prevent data contamination** between simulation and real hardware:
+OptiFlow operates in two distinct modes to **prevent data contamination** between simulation and production hardware:
 
 ### Operating Modes
 
 | Mode | Data Source | MQTT Topic | Use Case |
 |------|-------------|------------|----------|
 | **SIMULATION** | Python simulation | `store/simulation` | Development, testing, demonstrations |
-| **REAL** | ESP32 hardware | `store/production` | Production deployment with actual sensors |
+| **PRODUCTION** | ESP32 hardware | `store/production` | Production deployment with actual sensors |
 
 ### How It Works
 
@@ -230,7 +230,7 @@ The system enforces complete data separation through **mode-aware MQTT filtering
     ┌──────┴──────┐
     │             │
     ▼             ▼
-SIMULATION     REAL
+SIMULATION     PRODUCTION
 Accept:        Accept:
 store/         store/
 simulation     production
@@ -244,10 +244,10 @@ curl -X POST http://localhost:8000/config/mode \
   -H "Content-Type: application/json" \
   -d '{"mode": "SIMULATION"}'
 
-# Switch to REAL mode
+# Switch to PRODUCTION mode
 curl -X POST http://localhost:8000/config/mode \
   -H "Content-Type: application/json" \
-  -d '{"mode": "REAL"}'
+  -d '{"mode": "PRODUCTION"}'
 
 # Check current mode
 curl http://localhost:8000/config/mode
@@ -445,7 +445,7 @@ curl http://localhost:8000/config/mode
     │                         page.tsx (Main)                         │
     │  ┌──────────────────────────────────────────────────────────┐  │
     │  │  State Management                                         │  │
-    │  │  - Mode (simulation/real)                                 │  │
+    │  │  - Mode (simulation/production)                           │  │
     │  │  - Items, Positions, Anchors                              │  │
     │  │  - Simulation Status                                      │  │
     │  └──────────────────────────────────────────────────────────┘  │
@@ -558,7 +558,7 @@ open http://localhost:3000
 | Backend API | 8000 | http://localhost:8000 |
 | API Documentation | 8000 | http://localhost:8000/docs |
 | Simulation Database | 5432 | postgresql://localhost:5432/optiflow_simulation |
-| Production Database | 5433 | postgresql://localhost:5433/optiflow_real |
+| Production Database | 5433 | postgresql://localhost:5433/optiflow_production |
 
 ---
 
@@ -1067,7 +1067,7 @@ mosquitto_pub -h localhost -t test -m "hello"
 docker compose ps
 
 # Restart databases
-docker compose restart postgres-simulation postgres-real
+docker compose restart postgres-simulation postgres-production
 
 # View database logs
 docker compose logs postgres-simulation

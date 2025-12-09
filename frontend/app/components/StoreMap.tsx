@@ -928,16 +928,6 @@ export default function StoreMap({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       />
-      
-      {setupMode && (
-        <div className="absolute top-4 right-4 bg-[#0055A4] text-white px-4 py-2 text-sm font-medium rounded-lg shadow-lg">
-          <div className="font-semibold">Setup Mode</div>
-          <div className="text-blue-100 text-xs mt-1">
-            Click to place Anchor #{anchors.length + 1}<br/>
-            Drag anchors to reposition
-          </div>
-        </div>
-      )}
 
     </div>
   );

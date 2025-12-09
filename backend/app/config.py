@@ -10,7 +10,7 @@ import os
 class ConfigMode(str, Enum):
     """Operating mode for the system"""
     SIMULATION = "SIMULATION"
-    REAL = "REAL"
+    PRODUCTION = "PRODUCTION"
 
 class ConfigState:
     """Manages persistent configuration state"""

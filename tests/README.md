@@ -130,7 +130,7 @@ pytest -m "not slow"
 
 ### Hardware Tests
 
-**Purpose:** Validate real hardware communication  
+**Purpose:** Validate production hardware communication  
 **Speed:** Variable  
 **Dependencies:** Physical ESP32 devices, MQTT broker  
 **Location:** `tests/integration/test_mqtt_hardware.py`

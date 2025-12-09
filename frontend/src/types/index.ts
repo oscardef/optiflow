@@ -54,7 +54,7 @@ export interface Zone {
   created_at: string;
 }
 
-export type ConfigMode = 'SIMULATION' | 'REAL';
+export type ConfigMode = 'SIMULATION' | 'PRODUCTION';
 
 export interface ModeResponse {
   mode: ConfigMode;
@@ -85,9 +85,9 @@ export interface SimulationStatus {
 
 export interface SystemInfo {
   simulation_db_items: number;
-  real_db_items: number;
+  production_db_items: number;
   simulation_db_products: number;
-  real_db_products: number;
+  production_db_products: number;
   api_status: string;
   current_mode: ConfigMode;
 }

@@ -19,7 +19,7 @@ export default function AdminPanel() {
   const [changedProducts, setChangedProducts] = useState<Map<number, any>>(new Map());
   const [expandedProducts, setExpandedProducts] = useState<Set<number>>(new Set());
   const [productItems, setProductItems] = useState<Map<number, any[]>>(new Map());
-  const [simSpeedMultiplier, setSimSpeedMultiplier] = useState<number>(1.0);
+  const [simSpeedMultiplier, setSimSpeedMultiplier] = useState<number>(5.0);
   const [simMode, setSimMode] = useState<string>('REALISTIC');
   const [simDisappearanceRate, setSimDisappearanceRate] = useState<number>(1.5);
   const [simItemCount, setSimItemCount] = useState<number>(1000);
@@ -631,8 +631,8 @@ export default function AdminPanel() {
               Switch to {pendingModeSwitch} Mode?
             </h3>
             <p className="text-gray-600 mb-6">
-              {pendingModeSwitch === 'REAL' 
-                ? 'This will switch to real hardware mode. The simulation will be stopped and the system will listen for data from physical RFID/UWB devices.'
+              {pendingModeSwitch === 'PRODUCTION' 
+                ? 'This will switch to production hardware mode. The simulation will be stopped and the system will listen for data from physical RFID/UWB devices.'
                 : 'This will switch to simulation mode. You can run the inventory simulation to test the system.'}
             </p>
             <p className="text-sm text-gray-500 mb-6">
@@ -732,11 +732,11 @@ export default function AdminPanel() {
                       Simulation Mode
                     </button>
                     <button
-                      onClick={() => switchMode('REAL')}
-                      disabled={mode?.mode === 'REAL' || loading}
+                      onClick={() => switchMode('PRODUCTION')}
+                      disabled={mode?.mode === 'PRODUCTION' || loading}
                       className="px-4 py-2 text-xs font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                     >
-                      Real Hardware
+                      Production Mode
                     </button>
                   </div>
                 </div>
@@ -957,7 +957,7 @@ export default function AdminPanel() {
                   </div>
                 )}
 
-                {mode?.mode === 'REAL' && (
+                {mode?.mode === 'PRODUCTION' && (
                   <div className="border-t pt-3">
                     <h2 className="text-lg font-semibold mb-2">Anchor Validation</h2>
                     <button
@@ -1000,11 +1000,11 @@ export default function AdminPanel() {
                   </button>
                 </div>
                 
-                {mode?.mode === 'REAL' && (
+                {mode?.mode === 'PRODUCTION' && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                    <h4 className="font-medium text-blue-900 mb-2">Real Mode - Hardware Configuration</h4>
+                    <h4 className="font-medium text-blue-900 mb-2">Production Mode - Hardware Configuration</h4>
                     <p className="text-sm text-blue-800 mb-2">
-                      For real mode, you need to enter the actual MAC addresses from your DWM3001CDK devices.
+                      For production mode, you need to enter the actual MAC addresses from your DWM3001CDK devices.
                     </p>
                     <p className="text-sm text-blue-700">
                       <strong>Finding your anchor MAC:</strong> Connect to your DWM3001CDK via USB, open a serial terminal, 
@@ -1088,7 +1088,7 @@ export default function AdminPanel() {
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm font-mono"
                           />
                           <p className="text-xs text-gray-500 mt-1">
-                            {mode?.mode === 'REAL' 
+                            {mode?.mode === 'PRODUCTION' 
                               ? 'Enter the actual MAC address from your DWM3001CDK device'
                               : 'Format: 0xXXXX (e.g., 0x0001, 0x0002)'}
                           </p>

@@ -5,7 +5,7 @@ Main application entry point with FastAPI
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import init_db, SessionLocal_simulation, SessionLocal_real
+from .database import init_db, SessionLocal_simulation, SessionLocal_production
 from .models import Configuration, InventoryItem, Product
 from .config import config_state, ConfigMode
 from .core import logger
@@ -194,19 +194,19 @@ def startup_event():
     finally:
         db_sim.close()
     
-    # Initialize real database with configuration
-    db_real = SessionLocal_real()
+    # Initialize production database with configuration
+    db_production = SessionLocal_production()
     try:
-        config = db_real.query(Configuration).first()
+        config = db_production.query(Configuration).first()
         if not config:
             config = Configuration(
                 store_width=config_state.store_width,
                 store_height=config_state.store_height
             )
-            db_real.add(config)
-            db_real.commit()
-            logger.info("Created default configuration in real database")
+            db_production.add(config)
+            db_production.commit()
+            logger.info("Created default configuration in production database")
     finally:
-        db_real.close()
+        db_production.close()
     
     logger.info("Both databases initialized successfully")
