@@ -490,7 +490,7 @@ export default function StoreMap({
       ctx.strokeRect(backCrossTopEdge.x, backCrossTopEdge.y, backCrossBottomEdge.x - backCrossTopEdge.x, backCrossBottomEdge.y - backCrossTopEdge.y);
       
       // Draw aisles (4 vertical aisles closer together, wider) - single unified shape
-      const aisleX = [200, 415, 630, 845];
+      const aisleX = [180, 395, 610, 825];
       const aisleStartY = 120;  // All aisles same length - no border crossing
       const aisleEndY = 700;
       const aisleWidth = 180;

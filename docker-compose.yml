@@ -41,11 +41,8 @@ services:
     environment:
       DATABASE_URL_SIMULATION: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-simulation:5432/optiflow_simulation
       DATABASE_URL_PRODUCTION: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-production:5432/optiflow_production
-      MQTT_BROKER_HOST: ${MQTT_BROKER_HOST}
-      MQTT_BROKER_PORT: ${MQTT_BROKER_PORT}
       MQTT_BROKER: ${MQTT_BROKER}
       MQTT_PORT: ${MQTT_PORT}
-      REQUIRED_WIFI_SSID: ${REQUIRED_WIFI_SSID}
     ports:
       - "8000:8000"
     depends_on:
@@ -81,9 +78,8 @@ services:
       dockerfile: Dockerfile
     container_name: optiflow-mqtt-bridge
     environment:
-      MQTT_BROKER_HOST: ${MQTT_BROKER_HOST}
-      MQTT_BROKER_PORT: ${MQTT_BROKER_PORT}
-      MQTT_TOPIC: ${MQTT_TOPIC}  # Legacy - now uses mode-aware topics
+      MQTT_BROKER: ${MQTT_BROKER}
+      MQTT_PORT: ${MQTT_PORT}
       API_URL: http://backend:8000
     depends_on:
       - backend
