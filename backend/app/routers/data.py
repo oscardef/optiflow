@@ -209,6 +209,47 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         db.commit()
                         position_calculated = True
                         
+                        # === MISSING ITEM INFERENCE ===
+                        # Infer items that should have been detected but weren't
+                        # This happens when the scanner passes by an item's known position
+                        # but the item is no longer there (taken/missing)
+                        RFID_DETECTION_RANGE_CM = 60.0  # Must match simulation config
+                        
+                        # Get the set of RFID tags that were detected in this packet
+                        detected_tags = {d.product_id for d in packet.detections}
+                        
+                        # Find items that:
+                        # 1. Are currently marked as 'present'
+                        # 2. Have known positions
+                        # 3. Are within detection range of the scanner
+                        # 4. Were NOT detected in this packet
+                        present_items_in_range = db.query(InventoryItem).filter(
+                            InventoryItem.status == 'present',
+                            InventoryItem.x_position.isnot(None),
+                            InventoryItem.y_position.isnot(None)
+                        ).all()
+                        
+                        newly_missing_items = []
+                        for item in present_items_in_range:
+                            # Skip if this item was detected
+                            if item.rfid_tag in detected_tags:
+                                continue
+                            
+                            # Calculate distance from scanner to item's known position
+                            dx = item.x_position - x
+                            dy = item.y_position - y
+                            distance = math.sqrt(dx * dx + dy * dy)
+                            
+                            # If item is within detection range but wasn't detected, it's missing
+                            if distance <= RFID_DETECTION_RANGE_CM:
+                                item.status = 'not present'
+                                newly_missing_items.append(item)
+                                logger.info(f"   📦❌ Inferred MISSING: {item.rfid_tag} (was {distance:.0f}cm from scanner)")
+                        
+                        if newly_missing_items:
+                            db.commit()
+                            logger.info(f"   🧮 Marked {len(newly_missing_items)} item(s) as 'not present' based on detection inference")
+                        
                         # Broadcast real-time updates to WebSocket clients
                         await ws_manager.broadcast_position_update({
                             "timestamp": timestamp.isoformat(),
@@ -219,7 +260,7 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                             "num_anchors": len(measurements)
                         })
                         
-                        # Broadcast updated items
+                        # Broadcast updated items (detected + newly missing)
                         updated_items = []
                         for detection in packet.detections:
                             inv_item = db.query(InventoryItem).filter(
@@ -234,6 +275,17 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                                     "y": inv_item.y_position,
                                     "status": inv_item.status
                                 })
+                        
+                        # Also include newly missing items in the broadcast
+                        for item in newly_missing_items:
+                            prod = db.query(Product).filter(Product.id == item.product_id).first()
+                            updated_items.append({
+                                "rfid_tag": item.rfid_tag,
+                                "product_name": prod.name if prod else "Unknown",
+                                "x": item.x_position,
+                                "y": item.y_position,
+                                "status": item.status
+                            })
                         
                         if updated_items:
                             await ws_manager.broadcast_item_update(updated_items)

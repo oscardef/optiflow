@@ -207,7 +207,7 @@ class ShopperSimulator:
             
             for item in items_to_disappear:
                 item.missing = True
-                print(f"   📦❌ Item {item.epc} ({item.product.name}) marked as MISSING")
+                print(f"   📦❌ Item {item.rfid_tag} ({item.product.name}) marked as MISSING")
     
     def get_status_info(self) -> dict:
         """Get current status for display"""
