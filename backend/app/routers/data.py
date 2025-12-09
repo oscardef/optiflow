@@ -201,7 +201,6 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         CLOSE_RANGE_CM = 50.0  # Only infer for items clearly in range
                         MIN_CONSECUTIVE_MISSES = 3  # Minimum misses before considering
                         MAX_CONSECUTIVE_MISSES = 5  # Maximum misses (randomized per item)
-                        INFERENCE_PROBABILITY = 0.15  # Only 15% chance to infer even after threshold
                         MAX_INFERENCES_PER_PASS = 2  # Max items to mark missing per scan
                         
                         import random
@@ -262,19 +261,15 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                                 
                                 item_threshold = receive_data._item_thresholds[item.rfid_tag]
                                 
-                                # SAFETY CHECK 4: Only mark missing after threshold + random probability
+                                # SAFETY CHECK 4: Mark missing after threshold is met
                                 if receive_data._detection_misses[item.rfid_tag] >= item_threshold:
-                                    # SAFETY CHECK 5: Random probability to prevent mass inference
-                                    if random.random() < INFERENCE_PROBABILITY:
-                                        inference_candidates.append((item, distance, receive_data._detection_misses[item.rfid_tag]))
+                                    inference_candidates.append((item, distance, receive_data._detection_misses[item.rfid_tag]))
                             else:
                                 # Item too far away, reset counter
                                 receive_data._detection_misses[item.rfid_tag] = 0
+                           
                         
-                        # SAFETY CHECK 6: Limit number of inferences per pass to prevent mass disappearance
-                        if inference_candidates:
-                            # Sort by miss count (highest first) and take only first N
-                            inference_candidates.sort(key=lambda x: x[2], reverse=True)
+                        # SAFETY CHECK 5: Limit number of inferences per pass to prevent mass disappearance
                             selected = inference_candidates[:MAX_INFERENCES_PER_PASS]
                             
                             for item, distance, misses in selected:
