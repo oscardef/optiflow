@@ -18,10 +18,11 @@ class ShopperSimulator:
         self.config = config
         self.items = items
         
-        # Starting position (left side of Aisle 1, at top)
+        # Starting position (left edge of Aisle 1, at top)
         aisle_width = config.store.aisles[0]['width']
-        self.x = config.store.aisles[0]['x'] - aisle_width / 4  # Left side of aisle
-        self.y = config.store.aisles[0]['y_start']
+        # Position very close to left wall - 60cm from center (very close to shelves)
+        self.x = config.store.aisles[0]['x'] - 60  # Very close to left wall
+        self.y = config.store.aisles[0]['y_start'] + 20  # Small margin from top
         
         # Movement state
         self.current_aisle = 0
@@ -30,7 +31,7 @@ class ShopperSimulator:
         # Phases: 'going_down_left', 'going_up_right', 'entering_cross', 'crossing', 'exiting_cross'
         self.movement_phase = 'going_down_left'
         self.target_x = self.x
-        self.target_y = config.store.aisles[0]['y_end']
+        self.target_y = config.store.aisles[0]['y_end'] - 20  # Small margin from bottom
         
         # Navigation tracking
         self.first_pass_complete = False
@@ -53,6 +54,9 @@ class ShopperSimulator:
             self._reached_target()
             return
         
+        # Calculate movement distance based on speed and time
+        move_distance = self.speed * dt
+        
         # Move toward target (only one axis at a time for grid-like movement)
         # For entering/exiting cross aisle, move vertically first
         # For crossing, move horizontally
@@ -73,8 +77,6 @@ class ShopperSimulator:
                 else:
                     self.x += math.copysign(move_distance, dx)
             else:
-                self.x = self.target_xysign(move_distance, dx)
-            else:
                 self.x = self.target_x
     
     def _reached_target(self):
@@ -86,30 +88,21 @@ class ShopperSimulator:
             # Reached bottom of aisle on left side
             self.aisles_visited.add(self.current_aisle)
             
-            # Check if we can move to next aisle
-            if self.direction == 'forward' and self.current_aisle < len(aisles) - 1:
-                # Move to cross aisle
-                self.movement_phase = 'entering_cross'
-                self.target_y = cross_y
-            elif self.direction == 'backward' and self.current_aisle > 0:
-                # Move to cross aisle
-                self.movement_phase = 'entering_cross'
-                self.target_y = cross_y
-            else:
-                # Can't go further, switch to right side and go up
-                self._switch_to_right_side()
+            # ALWAYS switch to right side and go back up on EVERY aisle
+            # This ensures we walk both edges of every aisle
+            self._switch_to_right_side()
         
         elif self.movement_phase == 'entering_cross':
             # Now in the cross aisle, move horizontally to next aisle
             self.movement_phase = 'crossing'
             if self.direction == 'forward':
                 next_aisle = aisles[self.current_aisle + 1]
-                # Target left side of next aisle
-                self.target_x = next_aisle['x'] - next_aisle['width'] / 4
+                # Target very close to left wall of next aisle (60cm from center)
+                self.target_x = next_aisle['x'] - 60
             else:
                 next_aisle = aisles[self.current_aisle - 1]
-                # Target left side of previous aisle
-                self.target_x = next_aisle['x'] - next_aisle['width'] / 4
+                # Target very close to left wall of previous aisle (60cm from center)
+                self.target_x = next_aisle['x'] - 60
         
         elif self.movement_phase == 'crossing':
             # Reached the next aisle's X position, now exit cross aisle
@@ -120,58 +113,68 @@ class ShopperSimulator:
             
             # Exit cross aisle by going up to the aisle start (left side)
             self.movement_phase = 'exiting_cross'
-            self.target_y = aisles[self.current_aisle]['y_start']
+            self.target_y = aisles[self.current_aisle]['y_start'] + 20  # Small margin from top
             self.side = 'left'
         
         elif self.movement_phase == 'exiting_cross':
             # Exited cross aisle, now at top of new aisle (left side), go down
             self.movement_phase = 'going_down_left'
-            self.target_y = aisles[self.current_aisle]['y_end']
+            self.target_y = aisles[self.current_aisle]['y_end'] - 20  # Small margin from bottom
         
         elif self.movement_phase == 'going_up_right':
             # Reached top of aisle on right side
-            # Complete a pass
-            if not self.first_pass_complete:
-                self.first_pass_complete = True
-                print(f"✅ First pass complete! Items can now go missing randomly")
-                self._check_for_missing_items()
+            # Now decide: move to next aisle or complete pass
+            
+            # Check if we can move to next aisle
+            if self.direction == 'forward' and self.current_aisle < len(aisles) - 1:
+                # Move to cross aisle to go to next aisle
+                self.movement_phase = 'entering_cross'
+                self.target_y = cross_y
+            elif self.direction == 'backward' and self.current_aisle > 0:
+                # Move to cross aisle to go to previous aisle
+                self.movement_phase = 'entering_cross'
+                self.target_y = cross_y
             else:
-                self._check_for_missing_items()
-            
-            self.pass_count += 1
-            self.aisles_visited.clear()
-            
-            # Check if we need to reverse direction
-            if self.direction == 'forward' and self.current_aisle == len(aisles) - 1:
-                # At last aisle going forward, reverse
-                self.direction = 'backward'
-                print(f"\n🔄 Pass {self.pass_count} complete - Reversing direction (← Backward)")
-            elif self.direction == 'backward' and self.current_aisle == 0:
-                # At first aisle going backward, reverse
-                self.direction = 'forward'
-                print(f"\n🔄 Pass {self.pass_count} complete - Reversing direction (→ Forward)")
-            
-            # Switch to left side and go down
-            aisle_width = aisles[self.current_aisle]['width']
-            self.x = aisles[self.current_aisle]['x'] - aisle_width / 4
-            self.side = 'left'
-            self.movement_phase = 'going_down_left'
-            self.target_x = self.x
-            self.target_y = aisles[self.current_aisle]['y_end']
+                # Can't go further - we're at the end (aisle 1 or 4)
+                # Complete a pass
+                if not self.first_pass_complete:
+                    self.first_pass_complete = True
+                    print(f"✅ First pass complete! Items can now go missing randomly")
+                    self._check_for_missing_items()
+                else:
+                    self._check_for_missing_items()
+                
+                self.pass_count += 1
+                self.aisles_visited.clear()
+                
+                # Reverse direction
+                if self.direction == 'forward':
+                    self.direction = 'backward'
+                    print(f"\n🔄 Pass {self.pass_count} complete - Reversing direction (← Backward)")
+                else:
+                    self.direction = 'forward'
+                    print(f"\n🔄 Pass {self.pass_count} complete - Reversing direction (→ Forward)")
+                
+                # Switch to left side and go down
+                # Position very close to left wall - 60cm from center
+                self.x = aisles[self.current_aisle]['x'] - 60
+                self.side = 'left'
+                self.movement_phase = 'going_down_left'
+                self.target_x = self.x
+                self.target_y = aisles[self.current_aisle]['y_end'] - 20  # Small margin from bottom
     
     def _switch_to_right_side(self):
         """Switch from left side to right side of current aisle and go up"""
         aisles = self.config.store.aisles
-        aisle_width = aisles[self.current_aisle]['width']
         
-        # Move to right side
-        self.x = aisles[self.current_aisle]['x'] + aisle_width / 4
+        # Move very close to right wall - 60cm from center (very close to shelves)
+        self.x = aisles[self.current_aisle]['x'] + 60  # Very close to right wall
         self.target_x = self.x
         self.side = 'right'
         
         # Go up the aisle
         self.movement_phase = 'going_up_right'
-        self.target_y = aisles[self.current_aisle]['y_start']
+        self.target_y = aisles[self.current_aisle]['y_start'] + 20  # Small margin from top
     
     def _check_for_missing_items(self):
         """Randomly mark some items as missing based on disappearance_rate"""
@@ -213,20 +216,8 @@ class ShopperSimulator:
             "movement": direction_info,
             "position": (self.x, self.y),
             "side": self.side
-        }   direction_info = "↓ Enter Cross"
-        elif self.movement_phase == 'crossing':
-            direction_info = "→ Cross" if self.direction == 'forward' else "← Cross"
-        elif self.movement_phase == 'exiting_cross':
-            direction_info = "↑ Exit Cross"
-        else:
-            direction_info = "→ Cross"
-        
-        dir_arrow = "→" if self.direction == 'forward' else "←"
-        
-        return {
-            "pass": self.pass_count + 1,
-            "direction_arrow": dir_arrow,
-            "aisle": aisle_info,
-            "movement": direction_info,
-            "position": (self.x, self.y)
         }
+    
+    def get_position(self):
+        """Return current shopper position"""
+        return self.x, self.y

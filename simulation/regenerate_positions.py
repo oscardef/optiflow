@@ -8,10 +8,10 @@ from typing import List, Tuple
 
 # Store configuration matching simulation/config.py
 AISLES = [
-    {'x': 200, 'y_start': 150, 'y_end': 700, 'width': 80},  # Aisle 1
-    {'x': 400, 'y_start': 120, 'y_end': 700, 'width': 80},  # Aisle 2
-    {'x': 600, 'y_start': 120, 'y_end': 700, 'width': 80},  # Aisle 3
-    {'x': 800, 'y_start': 120, 'y_end': 700, 'width': 80},  # Aisle 4
+    {'x': 180, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 1
+    {'x': 395, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 2
+    {'x': 610, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 3
+    {'x': 825, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 4
 ]
 CROSS_AISLE_Y = 400
 
@@ -21,8 +21,8 @@ def generate_positions(num_items: int) -> List[Tuple[float, float]]:
     
     # Generate shelf positions in all aisles
     for aisle in AISLES:
-        # 4 shelves per aisle, both sides
-        for side_offset in [-25, 25]:  # Left and right of aisle center
+        # 4 shelves per aisle, both sides (closer to walls)
+        for side_offset in [-60, 60]:  # Close to left and right walls
             for shelf_level in range(4):
                 x_pos = aisle['x'] + side_offset
                 

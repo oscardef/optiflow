@@ -15,12 +15,12 @@ Usage:
     python tests/integration/test_mqtt_hardware.py [--broker BROKER] [--port PORT] [--topic TOPIC]
 
 Examples:
-    python tests/integration/test_mqtt_hardware.py                          # Use defaults (172.20.10.4)
+    python tests/integration/test_mqtt_hardware.py                          # Use MQTT_BROKER env var
     python tests/integration/test_mqtt_hardware.py --broker 192.168.1.100   # Custom broker
     python tests/integration/test_mqtt_hardware.py --topic "store/aisle1"   # Specific aisle
     
 To start ESP32 publishing, send:
-    mosquitto_pub -h 172.20.10.4 -t store/control -m 'START'
+    mosquitto_pub -h $MQTT_BROKER -t store/control -m 'START'
 """
 
 import argparse
@@ -324,8 +324,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=EXPECTED_HARDWARE_FORMAT
     )
-    parser.add_argument("--broker", default="172.20.10.4", 
-                       help="MQTT broker address (default: 172.20.10.4)")
+    parser.add_argument("--broker", default=os.getenv("MQTT_BROKER"), 
+                       help="MQTT broker address (from MQTT_BROKER env var)")
     parser.add_argument("--port", type=int, default=1883,
                        help="MQTT broker port (default: 1883)")
     parser.add_argument("--topic", default="store/#",

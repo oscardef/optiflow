@@ -1,6 +1,7 @@
 """Data ingestion and retrieval router"""
 import math
-from fastapi import APIRouter, Depends, HTTPException
+import json
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import List
@@ -16,14 +17,36 @@ from ..schemas import (
 from ..triangulation import TriangulationService
 from ..config import config_state, ConfigMode
 from ..core import logger
+from ..websocket_manager import manager as ws_manager
 
 router = APIRouter(tags=["data"])
 
+@router.websocket("/ws/live")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time data streaming.
+    Clients connect here to receive live position and detection updates.
+    """
+    await ws_manager.connect(websocket)
+    try:
+        # Keep connection alive and handle incoming messages if needed
+        while True:
+            # Wait for any client messages (ping/pong, etc.)
+            data = await websocket.receive_text()
+            # Echo back for keep-alive
+            await websocket.send_text(json.dumps({"type": "pong"}))
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        ws_manager.disconnect(websocket)
+
 @router.post("/data", status_code=201)
-def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
+async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
     """
     Receive combined RFID detections and UWB measurements from devices
     Automatically calculates position if 2+ anchors available
+    Broadcasts updates to WebSocket clients in real-time
     
     NOTE: This endpoint accepts data from BOTH simulation and production hardware,
     but the mqtt_bridge filters messages based on current mode to prevent overlap.
@@ -78,24 +101,23 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                     db.add(product)
                     db.flush()
                 
-                # Create inventory item with position
+                # Create inventory item - position will be set by triangulation later
                 inventory_item = InventoryItem(
                     rfid_tag=detection.product_id,
                     product_id=product.id,
                     status=status_val,
-                    x_position=detection.x_position,
-                    y_position=detection.y_position,
+                    x_position=None,  # Will be set by triangulation
+                    y_position=None,  # Will be set by triangulation
                     last_seen_at=timestamp
                 )
                 db.add(inventory_item)
             else:
-                # Update existing inventory item
+                # Update existing inventory item status
                 inventory_item.status = status_val
-                inventory_item.x_position = detection.x_position
-                inventory_item.y_position = detection.y_position
                 # Only update last_seen_at when item is present (detected)
                 if status_val == 'present':
                     inventory_item.last_seen_at = timestamp
+                # Position will be updated by triangulation below if available
         
         # Store UWB measurements
         for uwb in packet.uwb_measurements:
@@ -112,6 +134,9 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
         db.commit()
         
         # Try to calculate position if we have enough data
+        calculated_x = None
+        calculated_y = None
+        
         try:
             anchors = db.query(Anchor).filter(Anchor.is_active == True).all()
             logger.info(f"Position calculation: {len(anchors)} anchors configured, {len(packet.uwb_measurements)} UWB measurements received")
@@ -139,6 +164,8 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                     result = TriangulationService.calculate_position(measurements)
                     if result:
                         x, y, confidence = result
+                        
+                        # Store the employee/tag position
                         position = TagPosition(
                             timestamp=timestamp,
                             tag_id="employee",
@@ -148,59 +175,65 @@ def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                             num_anchors=len(measurements)
                         )
                         db.add(position)
+                        position_calculated = True
+                        logger.info(f"✅ Employee position calculated: ({x:.1f}, {y:.1f}) confidence={confidence:.2f}")
                         
-                        # Only update inventory item positions with triangulated position in PRODUCTION mode
-                        # In SIMULATION mode, items have predefined shelf positions that should be preserved
-                        if config_state.mode == ConfigMode.PRODUCTION:
-                            # Get the set of currently detected RFID tags
-                            detected_rfid_tags = {detection.product_id for detection in packet.detections}
+                        # Update detected items' positions based on mode
+                        for detection in packet.detections:
+                            inventory_item = db.query(InventoryItem).filter(
+                                InventoryItem.rfid_tag == detection.product_id
+                            ).first()
                             
-                            # Update positions for detected items
-                            for detection in packet.detections:
-                                inventory_item = db.query(InventoryItem).filter(
-                                    InventoryItem.rfid_tag == detection.product_id
-                                ).first()
-                                if inventory_item:
+                            if inventory_item and detection.status == 'present':
+                                # SIMULATION MODE: Items already have shelf positions in database
+                                # Just mark them as detected, don't override their positions
+                                # The simulation generated items with shelf positions
+                                
+                                # PRODUCTION MODE: Set position to where employee detected it
+                                # (real hardware - item found at employee's location)
+                                if config_state.mode == ConfigMode.PRODUCTION:
                                     inventory_item.x_position = x
                                     inventory_item.y_position = y
-                                    logger.info(f"[PRODUCTION] Updated position for {detection.product_id}: ({x:.1f}, {y:.1f})")
-                            
-                            # MISSING ITEM DETECTION for PRODUCTION mode:
-                            # Find items that were previously seen near this location but are NOT in current detections
-                            # This handles the case where an item was removed since the last visit
-                            DETECTION_RADIUS = 150.0  # cm - radius to consider "same location"
-                            
-                            # Query items that:
-                            # 1. Have a valid position (were detected before)
-                            # 2. Are within DETECTION_RADIUS of current position
-                            # 3. Are currently marked as 'present'
-                            # 4. Are NOT in the current detection batch
-                            
-                            nearby_present_items = db.query(InventoryItem).filter(
-                                InventoryItem.x_position.isnot(None),
-                                InventoryItem.y_position.isnot(None),
-                                InventoryItem.status == 'present',
-                                InventoryItem.last_seen_at.isnot(None)
-                            ).all()
-                            
-                            missing_count = 0
-                            for item in nearby_present_items:
-                                # Calculate distance from current employee position to item's last known position
-                                dx = item.x_position - x
-                                dy = item.y_position - y
-                                distance = math.sqrt(dx*dx + dy*dy)
-                                
-                                # If item is within detection radius but NOT detected, mark as not present
-                                if distance <= DETECTION_RADIUS and item.rfid_tag not in detected_rfid_tags:
-                                    item.status = 'not present'
-                                    missing_count += 1
-                                    logger.info(f"[PRODUCTION] Item {item.rfid_tag} marked as 'not present' - was at ({item.x_position:.1f}, {item.y_position:.1f}), employee at ({x:.1f}, {y:.1f}), distance: {distance:.1f}cm")
-                            
-                            if missing_count > 0:
-                                logger.info(f"[PRODUCTION] Marked {missing_count} items as 'not present' (not detected within {DETECTION_RADIUS}cm radius)")
+                                    logger.info(f"   [PRODUCTION] Updated item {detection.product_id} to employee position ({x:.1f}, {y:.1f})")
+                                elif inventory_item.x_position is None:
+                                    # SIMULATION: Only set position if item has none (shouldn't happen if inventory was generated properly)
+                                    inventory_item.x_position = x
+                                    inventory_item.y_position = y
+                                    logger.warning(f"   [SIMULATION] Item {detection.product_id} had no position, set to ({x:.1f}, {y:.1f})")
+                                # else: SIMULATION mode and item has position - keep the shelf position!
                         
                         db.commit()
                         position_calculated = True
+                        
+                        # Broadcast real-time updates to WebSocket clients
+                        await ws_manager.broadcast_position_update({
+                            "timestamp": timestamp.isoformat(),
+                            "tag_id": "employee",
+                            "x": x,
+                            "y": y,
+                            "confidence": confidence,
+                            "num_anchors": len(measurements)
+                        })
+                        
+                        # Broadcast updated items
+                        updated_items = []
+                        for detection in packet.detections:
+                            inv_item = db.query(InventoryItem).filter(
+                                InventoryItem.rfid_tag == detection.product_id
+                            ).first()
+                            if inv_item and inv_item.x_position is not None:
+                                prod = db.query(Product).filter(Product.id == inv_item.product_id).first()
+                                updated_items.append({
+                                    "rfid_tag": inv_item.rfid_tag,
+                                    "product_name": prod.name if prod else "Unknown",
+                                    "x": inv_item.x_position,
+                                    "y": inv_item.y_position,
+                                    "status": inv_item.status
+                                })
+                        
+                        if updated_items:
+                            await ws_manager.broadcast_item_update(updated_items)
+                        
         except Exception as pos_error:
             logger.warning(f"Position calculation failed: {pos_error}")
         

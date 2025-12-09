@@ -4,6 +4,7 @@ Simulation Configuration
 Central configuration for simulation modes and parameters.
 """
 
+import os
 from enum import Enum
 from dataclasses import dataclass
 from typing import List, Tuple
@@ -28,26 +29,27 @@ class StoreLayout:
     # Cross aisle (horizontal) - open walkway connecting aisles, no walls
     cross_aisle_y: int = 400
     cross_aisle_height: int = 120  # Wider central aisle
-    cross_aisle_x_start: int = 250  # Center of first aisle
-    cross_aisle_x_end: int = 790    # Center of last aisle
+    cross_aisle_x_start: int = 180  # Center of first aisle
+    cross_aisle_x_end: int = 825    # Center of last aisle
     
     def __post_init__(self):
         if self.aisles is None:
             # All aisles same length - single unified store shape, no border crossing
-            # Aisles closer together, wider (150cm each), almost touching
+            # Aisles wider (180cm each) matching frontend visualization
+            # Person walks very close to walls (±60cm from center), maximum RFID coverage
             self.aisles = [
-                {'x': 250, 'y_start': 120, 'y_end': 700, 'width': 150},  # Aisle 1
-                {'x': 430, 'y_start': 120, 'y_end': 700, 'width': 150},  # Aisle 2
-                {'x': 610, 'y_start': 120, 'y_end': 700, 'width': 150},  # Aisle 3
-                {'x': 790, 'y_start': 120, 'y_end': 700, 'width': 150},  # Aisle 4
+                {'x': 180, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 1
+                {'x': 395, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 2
+                {'x': 610, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 3
+                {'x': 825, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 4
             ]
 
 
 @dataclass
 class MQTTConfig:
     """MQTT broker configuration"""
-    broker: str = "172.20.10.4"
-    port: int = 1883
+    broker: str = os.environ.get("MQTT_BROKER", "host.docker.internal")
+    port: int = int(os.environ.get("MQTT_PORT", "1883"))
     topic_data: str = "store/simulation"  # Simulation-specific topic
     topic_status: str = "store/simulation/status"
     topic_control: str = "store/simulation/control"
