@@ -71,12 +71,13 @@ def transform_hardware_to_backend(hardware_data: dict) -> dict:
     for tag in tags:
         epc = tag.get("epc", "")
         rssi = tag.get("rssi_dbm", 0)
+        status = tag.get("status", "present")  # Get status from tag, default to present
         
         # Use EPC as product_id (this is the RFID tag identifier)
         detections.append({
             "product_id": epc,
             "product_name": f"Item-{epc[-8:]}" if epc else "Unknown",
-            "status": "present",
+            "status": status,  # Preserve status from hardware
             "x_position": None,  # Will be calculated by triangulation
             "y_position": None,
             "rssi_dbm": rssi  # Extra field for signal strength

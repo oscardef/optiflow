@@ -128,6 +128,19 @@ export default function Home() {
         console.log('Detection update:', message.data);
         break;
       
+      case 'missing_update':
+        if (message.data && message.data.missing_items) {
+          console.log('[DEBUG] Updating missing items, count:', message.data.count);
+          setMissingItems(message.data.missing_items.map((item: any) => ({
+            product_id: item.rfid_tag,
+            product_name: item.product_name,
+            x_position: item.x,
+            y_position: item.y,
+            status: item.status
+          })));
+        }
+        break;
+      
       default:
         console.log('Unknown WebSocket message type:', message.type);
     }
@@ -285,6 +298,23 @@ export default function Home() {
       const response = await fetch(`${API_URL}/simulation/stop`, { method: 'POST' });
       const data = await response.json();
       if (data.success) {
+        // Poll the status to confirm the simulation has stopped
+        // State should update immediately on backend, just verify
+        let attempts = 0;
+        const maxAttempts = 4;  // Reduced to 4 attempts
+        while (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 250));  // 250ms between checks
+          const statusResponse = await fetch(`${API_URL}/simulation/status`);
+          const status = await statusResponse.json();
+          if (!status.running) {
+            setSimulationRunning(false);
+            await fetchMode();
+            return;
+          }
+          attempts++;
+        }
+        // If still running after polling, show warning but update state anyway
+        console.warn('Simulation may still be stopping...');
         await fetchMode();
       } else {
         alert(data.message || 'Failed to stop simulation');

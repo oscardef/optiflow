@@ -75,6 +75,16 @@ class ConnectionManager:
                 "count": len(items)
             }
         })
+    
+    async def broadcast_missing_update(self, missing_items: List[dict]):
+        """Broadcast missing items list update"""
+        await self.broadcast({
+            "type": "missing_update",
+            "data": {
+                "missing_items": missing_items,
+                "count": len(missing_items)
+            }
+        })
 
 
 # Global connection manager instance

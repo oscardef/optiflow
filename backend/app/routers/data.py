@@ -117,9 +117,12 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                 db.add(inventory_item)
             else:
                 # Update existing inventory item status
-                inventory_item.status = status_val
+                # IMPORTANT: Once an item is marked as 'not present', it stays that way
+                # This prevents items from "reappearing" unrealistically
+                if inventory_item.status != 'not present':
+                    inventory_item.status = status_val
                 # Only update last_seen_at when item is present (detected)
-                if status_val == 'present':
+                if status_val == 'present' and inventory_item.status == 'present':
                     inventory_item.last_seen_at = timestamp
                 # Position will be updated by triangulation below if available
         
@@ -209,30 +212,57 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         db.commit()
                         position_calculated = True
                         
-                        # === MISSING ITEM INFERENCE ===
+                        # === SMART MISSING ITEM INFERENCE ===
                         # Infer items that should have been detected but weren't
-                        # This happens when the scanner passes by an item's known position
-                        # but the item is no longer there (taken/missing)
-                        RFID_DETECTION_RANGE_CM = 60.0  # Must match simulation config
+                        # With safety measures to prevent false positives
+                        newly_missing_items = []
                         
-                        # Get the set of RFID tags that were detected in this packet
-                        detected_tags = {d.product_id for d in packet.detections}
+                        # Safety parameters
+                        RFID_DETECTION_RANGE_CM = 60.0  # Match simulation config
+                        CLOSE_RANGE_CM = 50.0  # Only infer for items clearly in range
+                        MIN_CONSECUTIVE_MISSES = 3  # Minimum misses before considering
+                        MAX_CONSECUTIVE_MISSES = 5  # Maximum misses (randomized per item)
+                        INFERENCE_PROBABILITY = 0.15  # Only 15% chance to infer even after threshold
+                        MAX_INFERENCES_PER_PASS = 2  # Max items to mark missing per scan
                         
-                        # Find items that:
-                        # 1. Are currently marked as 'present'
-                        # 2. Have known positions
-                        # 3. Are within detection range of the scanner
-                        # 4. Were NOT detected in this packet
+                        import random
+                        
+                        # Get the set of RFID tags that were detected as present
+                        detected_tags = {d.product_id for d in packet.detections if d.status == 'present'}
+                        # Get tags explicitly marked as missing in this packet
+                        explicitly_missing = {d.product_id for d in packet.detections if d.status == 'not present'}
+                        
+                        # First, handle explicitly missing items from simulation/hardware
+                        for missing_tag in explicitly_missing:
+                            item = db.query(InventoryItem).filter(
+                                InventoryItem.rfid_tag == missing_tag
+                            ).first()
+                            if item and item.status == 'present':
+                                item.status = 'not present'
+                                newly_missing_items.append(item)
+                                logger.info(f"   📦❌ Explicit MISSING: {item.rfid_tag}")
+                        
+                        # Then, use inference for items that weren't reported at all
+                        # Find items that are currently present and have known positions
                         present_items_in_range = db.query(InventoryItem).filter(
                             InventoryItem.status == 'present',
                             InventoryItem.x_position.isnot(None),
                             InventoryItem.y_position.isnot(None)
                         ).all()
                         
-                        newly_missing_items = []
+                        # Track detection misses and per-item thresholds (use module-level cache)
+                        if not hasattr(receive_data, '_detection_misses'):
+                            receive_data._detection_misses = {}  # {rfid_tag: miss_count}
+                        if not hasattr(receive_data, '_item_thresholds'):
+                            receive_data._item_thresholds = {}  # {rfid_tag: required_misses}
+                        
+                        inference_candidates = []  # Collect candidates instead of immediately marking
+                        
                         for item in present_items_in_range:
-                            # Skip if this item was detected
-                            if item.rfid_tag in detected_tags:
+                            # Skip if this item was detected or explicitly reported as missing
+                            if item.rfid_tag in detected_tags or item.rfid_tag in explicitly_missing:
+                                # Reset miss counter when detected
+                                receive_data._detection_misses[item.rfid_tag] = 0
                                 continue
                             
                             # Calculate distance from scanner to item's known position
@@ -240,15 +270,45 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                             dy = item.y_position - y
                             distance = math.sqrt(dx * dx + dy * dy)
                             
-                            # If item is within detection range but wasn't detected, it's missing
-                            if distance <= RFID_DETECTION_RANGE_CM:
+                            # SAFETY CHECK 1: Only infer for items CLEARLY in close range
+                            # This prevents false positives from items at edge of detection range
+                            if distance <= CLOSE_RANGE_CM:
+                                # SAFETY CHECK 2: Require multiple consecutive misses
+                                current_misses = receive_data._detection_misses.get(item.rfid_tag, 0)
+                                receive_data._detection_misses[item.rfid_tag] = current_misses + 1
+                                
+                                # SAFETY CHECK 3: Each item has randomized threshold (3-5 misses)
+                                if item.rfid_tag not in receive_data._item_thresholds:
+                                    receive_data._item_thresholds[item.rfid_tag] = random.randint(MIN_CONSECUTIVE_MISSES, MAX_CONSECUTIVE_MISSES)
+                                
+                                item_threshold = receive_data._item_thresholds[item.rfid_tag]
+                                
+                                # SAFETY CHECK 4: Only mark missing after threshold + random probability
+                                if receive_data._detection_misses[item.rfid_tag] >= item_threshold:
+                                    # SAFETY CHECK 5: Random probability to prevent mass inference
+                                    if random.random() < INFERENCE_PROBABILITY:
+                                        inference_candidates.append((item, distance, receive_data._detection_misses[item.rfid_tag]))
+                            else:
+                                # Item too far away, reset counter
+                                receive_data._detection_misses[item.rfid_tag] = 0
+                        
+                        # SAFETY CHECK 6: Limit number of inferences per pass to prevent mass disappearance
+                        if inference_candidates:
+                            # Sort by miss count (highest first) and take only first N
+                            inference_candidates.sort(key=lambda x: x[2], reverse=True)
+                            selected = inference_candidates[:MAX_INFERENCES_PER_PASS]
+                            
+                            for item, distance, misses in selected:
                                 item.status = 'not present'
                                 newly_missing_items.append(item)
-                                logger.info(f"   📦❌ Inferred MISSING: {item.rfid_tag} (was {distance:.0f}cm from scanner)")
+                                logger.info(f"   📦❌ Inferred MISSING: {item.rfid_tag} (distance: {distance:.0f}cm, misses: {misses})")
+                                # Reset counter and threshold after marking missing
+                                receive_data._detection_misses[item.rfid_tag] = 0
+                                receive_data._item_thresholds.pop(item.rfid_tag, None)
                         
                         if newly_missing_items:
                             db.commit()
-                            logger.info(f"   🧮 Marked {len(newly_missing_items)} item(s) as 'not present' based on detection inference")
+                            logger.info(f"   🧮 Marked {len(newly_missing_items)} item(s) as 'not present' (explicit + inferred)")
                         
                         # Broadcast real-time updates to WebSocket clients
                         await ws_manager.broadcast_position_update({
@@ -289,6 +349,24 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         
                         if updated_items:
                             await ws_manager.broadcast_item_update(updated_items)
+                        
+                        # Broadcast updated missing items count for the sidebar
+                        if newly_missing_items:
+                            missing_items_list = db.query(InventoryItem, Product)\
+                                .join(Product, InventoryItem.product_id == Product.id)\
+                                .filter(InventoryItem.status == 'not present')\
+                                .filter(InventoryItem.last_seen_at.isnot(None))\
+                                .all()
+                            
+                            missing_data = [{
+                                "rfid_tag": item.rfid_tag,
+                                "product_name": product.name,
+                                "x": item.x_position,
+                                "y": item.y_position,
+                                "status": item.status
+                            } for item, product in missing_items_list]
+                            
+                            await ws_manager.broadcast_missing_update(missing_data)
                         
         except Exception as pos_error:
             logger.warning(f"Position calculation failed: {pos_error}")

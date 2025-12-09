@@ -183,31 +183,46 @@ class ShopperSimulator:
         self.target_y = aisles[self.current_aisle]['y_start'] + 20  # Small margin from top
     
     def _check_for_missing_items(self):
-        """Randomly mark some items as missing based on disappearance_rate"""
+        """Randomly mark some items as missing based on disappearance_rate
+        
+        Items must be detected as 'present' first before they can go missing.
+        This creates the realistic flow: item detected -> item goes missing -> restock needed
+        """
         if not self.first_pass_complete:
             return
         
+        # Only consider items that have been detected (marked as present first)
+        # AND are not already missing
         detected_items = [item for item in self.items if item.detected and not item.missing]
         if not detected_items:
             return
         
         import random
-        # Use disappearance_rate from config (varies from rate/2 to rate*1.5)
-        rate_min = self.config.disappearance_rate * 0.5
-        rate_max = self.config.disappearance_rate * 1.5
-        actual_rate = random.uniform(rate_min, rate_max)
+        # Group items by product to ensure we don't take entire stock at once
+        items_by_product = {}
+        for item in detected_items:
+            product_key = item.product.sku
+            if product_key not in items_by_product:
+                items_by_product[product_key] = []
+            items_by_product[product_key].append(item)
         
-        # Calculate how many items should disappear this pass
-        num_to_disappear = int(len(detected_items) * actual_rate)
-        
-        # Only proceed if we have items to disappear
-        if num_to_disappear > 0 and num_to_disappear <= len(detected_items):
-            # Randomly select items to mark as missing
-            items_to_disappear = random.sample(detected_items, num_to_disappear)
+        # Decide how many PRODUCT TYPES should have missing items this pass
+        # Use disappearance_rate as probability that ANY items go missing this pass
+        if random.random() < self.config.disappearance_rate:
+            # Pick 1-2 product types to have items go missing
+            num_products_affected = random.randint(1, 2)
+            products_to_affect = random.sample(list(items_by_product.keys()), 
+                                              min(num_products_affected, len(items_by_product)))
             
-            for item in items_to_disappear:
-                item.missing = True
-                print(f"   📦❌ Item {item.rfid_tag} ({item.product.name}) marked as MISSING")
+            for product_key in products_to_affect:
+                product_items = items_by_product[product_key]
+                # Take only 1-2 items per product (realistic store behavior)
+                num_to_take = min(random.randint(1, 2), len(product_items))
+                items_to_disappear = random.sample(product_items, num_to_take)
+                
+                for item in items_to_disappear:
+                    item.missing = True
+                    print(f"   📦❌ Item {item.rfid_tag} ({item.product.name}) marked as MISSING")
     
     def get_status_info(self) -> dict:
         """Get current status for display"""

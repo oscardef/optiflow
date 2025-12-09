@@ -36,7 +36,7 @@ class SimulationParams(BaseModel):
     speed_multiplier: Optional[float] = 1.0
     mode: Optional[str] = "DEMO"  # DEMO, REALISTIC, STRESS
     api_url: Optional[str] = None
-    disappearance_rate: Optional[float] = 0.015
+    disappearance_rate: Optional[float] = 0.002  # 0.2% per pass (balanced with inference safety checks)
 
 class ConnectionStatus(BaseModel):
     mqtt_connected: bool
@@ -103,35 +103,33 @@ def get_connection_status():
     }
 
 def stop_simulation_process():
-    """Stop the running simulation process"""
+    """Stop the running simulation process instantly"""
     global _simulation_process
+    
+    # Update state IMMEDIATELY to prevent race condition with status checks
+    config_state.simulation_running = False
+    pid = config_state.simulation_pid
+    config_state.simulation_pid = None
     
     if _simulation_process and _simulation_process.poll() is None:
         try:
-            _simulation_process.terminate()
-            _simulation_process.wait(timeout=5)
-            logger.info(f"Terminated simulation process PID {_simulation_process.pid}")
-        except subprocess.TimeoutExpired:
+            # Use SIGKILL for instant termination (no cleanup needed)
             _simulation_process.kill()
-            logger.warning(f"Killed simulation process PID {_simulation_process.pid}")
+            _simulation_process.wait(timeout=1)  # Should be instant
+            logger.info(f"Killed simulation process PID {_simulation_process.pid}")
         except Exception as e:
             logger.error(f"Error stopping simulation: {e}")
         finally:
             _simulation_process = None
-            config_state.simulation_running = False
-            config_state.simulation_pid = None
-    elif config_state.simulation_pid:
+    elif pid:
         # Try to kill by PID from state
         try:
-            os.kill(config_state.simulation_pid, signal.SIGTERM)
-            logger.info(f"Terminated simulation process PID {config_state.simulation_pid}")
+            os.kill(pid, signal.SIGKILL)  # Instant kill
+            logger.info(f"Killed simulation process PID {pid}")
         except ProcessLookupError:
-            logger.warning(f"Process {config_state.simulation_pid} not found")
+            logger.warning(f"Process {pid} not found")
         except Exception as e:
             logger.error(f"Error killing process: {e}")
-        finally:
-            config_state.simulation_running = False
-            config_state.simulation_pid = None
 
 @router.get("/status", response_model=SimulationStatus)
 def get_simulation_status():
