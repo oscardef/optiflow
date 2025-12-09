@@ -12,7 +12,8 @@ from ..models import (
     InventoryItem, Product, PurchaseEvent, ProductLocationHistory, StockLevel
 )
 from ..schemas import (
-    DataPacket, DetectionResponse, UWBMeasurementResponse, LatestDataResponse
+    DataPacket, DetectionResponse, UWBMeasurementResponse, LatestDataResponse,
+    HardwarePacket
 )
 from ..triangulation import TriangulationService
 from ..config import config_state, ConfigMode
@@ -46,57 +47,58 @@ async def websocket_endpoint(websocket: WebSocket):
         ws_manager.disconnect(websocket)
 
 @router.post("/data", status_code=201)
-async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
+async def receive_data(packet: HardwarePacket, db: Session = Depends(get_db)):
     """
-    Receive combined RFID detections and UWB measurements from devices
-    Automatically calculates position if 2+ anchors available
-    Broadcasts updates to WebSocket clients in real-time
+    Receive hardware format data (RFID + UWB) from ESP32 devices or simulation.
+    Automatically calculates position if 2+ anchors available.
+    Broadcasts updates to WebSocket clients in real-time.
     
-    NOTE: This endpoint accepts data from BOTH simulation and production hardware,
-    but the mqtt_bridge filters messages based on current mode to prevent overlap.
-    Additional validation here ensures data integrity.
+    Hardware format:
+    {
+        "polling_cycle": 1,
+        "timestamp": 123456,  # milliseconds since boot
+        "uwb": {"n_anchors": 2, "anchors": [...]},
+        "rfid": {"tag_count": 2, "tags": [...]}
+    }
     """
     try:
-        # Log incoming data source for debugging
-        logger.info(f"Received data packet: {len(packet.detections)} detections, {len(packet.uwb_measurements)} UWB measurements (Mode: {config_state.mode.value})")
+        # Log incoming data
+        logger.info(f"Received hardware packet: cycle={packet.polling_cycle}, RFID={packet.rfid.tag_count}, UWB={packet.uwb.n_anchors or 0} (Mode: {config_state.mode.value})")
         
-        timestamp = datetime.fromisoformat(packet.timestamp.replace('Z', '+00:00'))
-        detection_ids = []
-        uwb_ids = []
+        timestamp = datetime.utcnow()
+        rfid_tags_processed = 0
+        uwb_measurements_processed = 0
         position_calculated = False
+        calculated_position = None
         
         # Store RFID detections
-        for detection in packet.detections:
-            # Normalize status values from simulator ('missing') to internal label 'not present'
-            status_val = detection.status if detection.status else "present"
-            if status_val == 'missing':
-                status_val = 'not present'
-
+        for tag in packet.rfid.tags:
+            # All detected tags are implicitly "present"
             det = Detection(
                 timestamp=timestamp,
-                product_id=detection.product_id,
-                product_name=detection.product_name,
-                x_position=detection.x_position,
-                y_position=detection.y_position,
-                status=status_val
+                product_id=tag.epc,
+                product_name=f"Item-{tag.epc[-8:]}" if tag.epc else "Unknown",
+                x_position=None,
+                y_position=None,
+                status="present"
             )
             db.add(det)
             db.flush()
-            detection_ids.append(det.id)
+            rfid_tags_processed += 1
             
-            # Sync to inventory_items table for analytics
+            # Sync to inventory_items table
             inventory_item = db.query(InventoryItem).filter(
-                InventoryItem.rfid_tag == detection.product_id
+                InventoryItem.rfid_tag == tag.epc
             ).first()
             
             if not inventory_item:
                 # Create new inventory item (find or create product first)
-                product = db.query(Product).filter(Product.name == detection.product_name).first()
+                product = db.query(Product).filter(Product.name == det.product_name).first()
                 if not product:
                     # Create a generic product for this item
                     product = Product(
-                        sku=f"GEN-{detection.product_id}",
-                        name=detection.product_name,
+                        sku=f"GEN-{tag.epc}",
+                        name=det.product_name,
                         category="General",
                         unit_price=29.99,
                         reorder_threshold=10,
@@ -105,72 +107,68 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                     db.add(product)
                     db.flush()
                 
-                # Create inventory item - position will be set by triangulation later
+                # Create inventory item
                 inventory_item = InventoryItem(
-                    rfid_tag=detection.product_id,
+                    rfid_tag=tag.epc,
                     product_id=product.id,
-                    status=status_val,
+                    status="present",
                     x_position=None,  # Will be set by triangulation
-                    y_position=None,  # Will be set by triangulation
+                    y_position=None,
                     last_seen_at=timestamp
                 )
                 db.add(inventory_item)
             else:
-                # Update existing inventory item status
-                # IMPORTANT: Once an item is marked as 'not present', it stays that way
-                # This prevents items from "reappearing" unrealistically
-                if inventory_item.status != 'not present':
-                    inventory_item.status = status_val
-                # Only update last_seen_at when item is present (detected)
-                if status_val == 'present' and inventory_item.status == 'present':
-                    inventory_item.last_seen_at = timestamp
-                # Position will be updated by triangulation below if available
+                # Update existing inventory item
+                inventory_item.status = "present"
+                inventory_item.last_seen_at = timestamp
         
         # Store UWB measurements
-        for uwb in packet.uwb_measurements:
-            measurement = UWBMeasurement(
-                timestamp=timestamp,
-                mac_address=uwb.mac_address,
-                distance_cm=uwb.distance_cm,
-                status=uwb.status
-            )
-            db.add(measurement)
-            db.flush()
-            uwb_ids.append(measurement.id)
+        if packet.uwb.available is not False and packet.uwb.anchors:
+            for anchor in packet.uwb.anchors:
+                if anchor.average_distance_cm is not None and anchor.measurements > 0:
+                    measurement = UWBMeasurement(
+                        timestamp=timestamp,
+                        mac_address=anchor.mac_address,
+                        distance_cm=anchor.average_distance_cm,
+                        status="0x01"  # OK status
+                    )
+                    db.add(measurement)
+                    db.flush()
+                    uwb_measurements_processed += 1
         
         db.commit()
         
         # Try to calculate position if we have enough data
-        calculated_x = None
-        calculated_y = None
-        
         try:
-            anchors = db.query(Anchor).filter(Anchor.is_active == True).all()
-            logger.info(f"Position calculation: {len(anchors)} anchors configured, {len(packet.uwb_measurements)} UWB measurements received")
+            anchors_config = db.query(Anchor).filter(Anchor.is_active == True).all()
+            logger.info(f"Position calculation: {len(anchors_config)} anchors configured, {uwb_measurements_processed} UWB measurements received")
             
-            if len(anchors) >= 2 and len(packet.uwb_measurements) >= 2:
+            if len(anchors_config) >= 2 and packet.uwb.anchors and len(packet.uwb.anchors) >= 2:
                 measurements = []
-                configured_macs = {a.mac_address for a in anchors}
-                received_macs = {uwb.mac_address for uwb in packet.uwb_measurements}
+                configured_macs = {a.mac_address for a in anchors_config}
+                received_macs = {anchor.mac_address for anchor in packet.uwb.anchors}
                 logger.info(f"Configured anchor MACs: {configured_macs}")
                 logger.info(f"Received UWB MACs: {received_macs}")
                 
-                for uwb in packet.uwb_measurements:
-                    anchor = next((a for a in anchors if a.mac_address == uwb.mac_address), None)
-                    if anchor:
+                for uwb_anchor in packet.uwb.anchors:
+                    if uwb_anchor.average_distance_cm is None or uwb_anchor.measurements == 0:
+                        continue
+                    anchor_config = next((a for a in anchors_config if a.mac_address == uwb_anchor.mac_address), None)
+                    if anchor_config:
                         measurements.append((
-                            anchor.x_position,
-                            anchor.y_position,
-                            uwb.distance_cm
+                            anchor_config.x_position,
+                            anchor_config.y_position,
+                            uwb_anchor.average_distance_cm
                         ))
-                        logger.info(f"Matched anchor {uwb.mac_address} at ({anchor.x_position}, {anchor.y_position})")
+                        logger.info(f"Matched anchor {uwb_anchor.mac_address} at ({anchor_config.x_position}, {anchor_config.y_position})")
                     else:
-                        logger.warning(f"No anchor configured for MAC: {uwb.mac_address}")
+                        logger.warning(f"No anchor configured for MAC: {uwb_anchor.mac_address}")
                 
                 if len(measurements) >= 2:
                     result = TriangulationService.calculate_position(measurements)
                     if result:
                         x, y, confidence = result
+                        calculated_position = {"x": x, "y": y, "confidence": confidence}
                         
                         # Store the employee/tag position
                         position = TagPosition(
@@ -186,35 +184,30 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         logger.info(f"✅ Employee position calculated: ({x:.1f}, {y:.1f}) confidence={confidence:.2f}")
                         
                         # Update detected items' positions based on mode
-                        for detection in packet.detections:
+                        for tag in packet.rfid.tags:
                             inventory_item = db.query(InventoryItem).filter(
-                                InventoryItem.rfid_tag == detection.product_id
+                                InventoryItem.rfid_tag == tag.epc
                             ).first()
                             
-                            if inventory_item and detection.status == 'present':
+                            if inventory_item:
                                 # SIMULATION MODE: Items already have shelf positions in database
                                 # Just mark them as detected, don't override their positions
-                                # The simulation generated items with shelf positions
                                 
                                 # PRODUCTION MODE: Set position to where employee detected it
-                                # (real hardware - item found at employee's location)
                                 if config_state.mode == ConfigMode.PRODUCTION:
                                     inventory_item.x_position = x
                                     inventory_item.y_position = y
-                                    logger.info(f"   [PRODUCTION] Updated item {detection.product_id} to employee position ({x:.1f}, {y:.1f})")
+                                    logger.info(f"   [PRODUCTION] Updated item {tag.epc} to employee position ({x:.1f}, {y:.1f})")
                                 elif inventory_item.x_position is None:
-                                    # SIMULATION: Only set position if item has none (shouldn't happen if inventory was generated properly)
+                                    # SIMULATION: Only set position if item has none
                                     inventory_item.x_position = x
                                     inventory_item.y_position = y
-                                    logger.warning(f"   [SIMULATION] Item {detection.product_id} had no position, set to ({x:.1f}, {y:.1f})")
-                                # else: SIMULATION mode and item has position - keep the shelf position!
+                                    logger.warning(f"   [SIMULATION] Item {tag.epc} had no position, set to ({x:.1f}, {y:.1f})")
                         
                         db.commit()
-                        position_calculated = True
                         
                         # === SMART MISSING ITEM INFERENCE ===
                         # Infer items that should have been detected but weren't
-                        # With safety measures to prevent false positives
                         newly_missing_items = []
                         
                         # Safety parameters
@@ -227,22 +220,10 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         
                         import random
                         
-                        # Get the set of RFID tags that were detected as present
-                        detected_tags = {d.product_id for d in packet.detections if d.status == 'present'}
-                        # Get tags explicitly marked as missing in this packet
-                        explicitly_missing = {d.product_id for d in packet.detections if d.status == 'not present'}
+                        # Get the set of RFID tags that were detected
+                        detected_tags = {tag.epc for tag in packet.rfid.tags}
                         
-                        # First, handle explicitly missing items from simulation/hardware
-                        for missing_tag in explicitly_missing:
-                            item = db.query(InventoryItem).filter(
-                                InventoryItem.rfid_tag == missing_tag
-                            ).first()
-                            if item and item.status == 'present':
-                                item.status = 'not present'
-                                newly_missing_items.append(item)
-                                logger.info(f"   📦❌ Explicit MISSING: {item.rfid_tag}")
-                        
-                        # Then, use inference for items that weren't reported at all
+                        # Use inference for items that weren't detected
                         # Find items that are currently present and have known positions
                         present_items_in_range = db.query(InventoryItem).filter(
                             InventoryItem.status == 'present',
@@ -259,8 +240,8 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         inference_candidates = []  # Collect candidates instead of immediately marking
                         
                         for item in present_items_in_range:
-                            # Skip if this item was detected or explicitly reported as missing
-                            if item.rfid_tag in detected_tags or item.rfid_tag in explicitly_missing:
+                            # Skip if this item was detected
+                            if item.rfid_tag in detected_tags:
                                 # Reset miss counter when detected
                                 receive_data._detection_misses[item.rfid_tag] = 0
                                 continue
@@ -308,7 +289,7 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         
                         if newly_missing_items:
                             db.commit()
-                            logger.info(f"   🧮 Marked {len(newly_missing_items)} item(s) as 'not present' (explicit + inferred)")
+                            logger.info(f"   🧮 Marked {len(newly_missing_items)} item(s) as 'not present' (inferred)")
                         
                         # Broadcast real-time updates to WebSocket clients
                         await ws_manager.broadcast_position_update({
@@ -322,9 +303,9 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         
                         # Broadcast updated items (detected + newly missing)
                         updated_items = []
-                        for detection in packet.detections:
+                        for tag in packet.rfid.tags:
                             inv_item = db.query(InventoryItem).filter(
-                                InventoryItem.rfid_tag == detection.product_id
+                                InventoryItem.rfid_tag == tag.epc
                             ).first()
                             if inv_item and inv_item.x_position is not None:
                                 prod = db.query(Product).filter(Product.id == inv_item.product_id).first()
@@ -373,9 +354,10 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
         
         return {
             "status": "success",
-            "detections_stored": len(detection_ids),
-            "uwb_measurements_stored": len(uwb_ids),
-            "position_calculated": position_calculated
+            "rfid_tags_processed": rfid_tags_processed,
+            "uwb_measurements_processed": uwb_measurements_processed,
+            "position_calculated": position_calculated,
+            "position": calculated_position
         }
     
     except Exception as e:

@@ -2,23 +2,33 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-class UWBMeasurementInput(BaseModel):
+# Hardware format schemas (ESP32 firmware format)
+class RFIDTag(BaseModel):
+    epc: str
+    rssi_dbm: int
+
+class RFIDSection(BaseModel):
+    tag_count: int
+    tags: List[RFIDTag]
+
+class UWBAnchor(BaseModel):
     mac_address: str
-    distance_cm: float
-    status: Optional[str] = None
+    average_distance_cm: Optional[float] = None
+    measurements: int
+    total_sessions: int
 
-class DetectionInput(BaseModel):
-    product_id: str
-    product_name: str
-    x_position: Optional[float] = None  # Item location in store
-    y_position: Optional[float] = None
-    status: Optional[str] = "present"  # "present", "missing", "unknown"
+class UWBSection(BaseModel):
+    n_anchors: Optional[int] = None
+    anchors: Optional[List[UWBAnchor]] = None
+    available: Optional[bool] = None  # False when no UWB data
 
-class DataPacket(BaseModel):
-    timestamp: str
-    detections: List[DetectionInput]
-    uwb_measurements: List[UWBMeasurementInput]
+class HardwarePacket(BaseModel):
+    polling_cycle: int
+    timestamp: int  # milliseconds since boot
+    uwb: UWBSection
+    rfid: RFIDSection
 
+# Detection and UWB response schemas
 class DetectionResponse(BaseModel):
     id: int
     timestamp: Optional[str] = None

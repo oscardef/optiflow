@@ -72,3 +72,16 @@ PRIORITY: LOW / FUTURE IMPROVEMENTS
 [✓] analytics_tracker.py: Real-time purchase/snapshot tracking
 [✓] generate_inventory.py: 20 product templates with size/color/style variants
 [✓] backfill_history.py: Historical data generation with trends/spikes/shortages
+
+
+
+
+
+Issues :
+
+
+deleting an item : using spatial hash of neighbors ? what other ideas ? : restrein to close and high rssi reading : still a problem
+
+marked as missing but then reaapears in the simaltion : + tab of restrock not updated
+
+clean db

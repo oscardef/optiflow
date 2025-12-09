@@ -5,7 +5,6 @@ import sys
 import time
 import requests
 import paho.mqtt.client as mqtt
-from datetime import datetime
 
 # Configuration from environment variables
 MQTT_BROKER_HOST = os.environ.get("MQTT_BROKER", os.environ.get("MQTT_BROKER_HOST", "localhost"))
@@ -25,92 +24,6 @@ print(f"🔌 MQTT Bridge starting...")
 print(f"   Broker: {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
 print(f"   Mode-aware topics: {TOPIC_SIMULATION}, {TOPIC_PRODUCTION}")
 print(f"   API: {API_URL}")
-
-
-def transform_hardware_to_backend(hardware_data: dict) -> dict:
-    """
-    Transform hardware JSON format to backend API format.
-    
-    Hardware format:
-    {
-        "polling_cycle": 1,
-        "timestamp": 123456,  # milliseconds since boot
-        "uwb": {
-            "n_anchors": 2,
-            "anchors": [
-                {"mac_address": "0xABCD", "average_distance_cm": 150.5, "measurements": 3, "total_sessions": 5}
-            ]
-        },
-        "rfid": {
-            "tag_count": 2,
-            "tags": [
-                {"epc": "E200001234567890ABCD", "rssi_dbm": -45, "pc": "3000"}
-            ]
-        }
-    }
-    
-    Backend format:
-    {
-        "timestamp": "2025-12-02T13:00:00Z",
-        "detections": [
-            {"product_id": "RFID001", "product_name": "Unknown", "status": "present"}
-        ],
-        "uwb_measurements": [
-            {"mac_address": "0x0001", "distance_cm": 150.5, "status": "0x01"}
-        ]
-    }
-    """
-    # Generate ISO timestamp
-    timestamp = datetime.utcnow().isoformat() + "Z"
-    
-    # Transform RFID tags to detections
-    detections = []
-    rfid_section = hardware_data.get("rfid", {})
-    tags = rfid_section.get("tags", [])
-    
-    for tag in tags:
-        epc = tag.get("epc", "")
-        rssi = tag.get("rssi_dbm", 0)
-        status = tag.get("status", "present")  # Get status from tag, default to present
-        
-        # Use EPC as product_id (this is the RFID tag identifier)
-        detections.append({
-            "product_id": epc,
-            "product_name": f"Item-{epc[-8:]}" if epc else "Unknown",
-            "status": status,  # Preserve status from hardware
-            "x_position": None,  # Will be calculated by triangulation
-            "y_position": None,
-            "rssi_dbm": rssi  # Extra field for signal strength
-        })
-    
-    # Transform UWB anchors to measurements
-    uwb_measurements = []
-    uwb_section = hardware_data.get("uwb", {})
-    
-    # Handle case where UWB data is unavailable
-    if uwb_section.get("available") is False:
-        pass  # No UWB data
-    else:
-        anchors = uwb_section.get("anchors", [])
-        
-        for anchor in anchors:
-            mac = anchor.get("mac_address", "")
-            avg_distance = anchor.get("average_distance_cm")
-            measurements_count = anchor.get("measurements", 0)
-            
-            # Only include anchors with valid measurements
-            if avg_distance is not None and measurements_count > 0:
-                uwb_measurements.append({
-                    "mac_address": mac,
-                    "distance_cm": avg_distance,
-                    "status": "0x01"  # OK status
-                })
-    
-    return {
-        "timestamp": timestamp,
-        "detections": detections,
-        "uwb_measurements": uwb_measurements
-    }
 
 
 def get_system_mode() -> str:
@@ -137,11 +50,6 @@ def get_system_mode() -> str:
     return _cached_mode or "SIMULATION"
 
 
-def is_hardware_format(data: dict) -> bool:
-    """Check if data is in hardware format (has rfid/uwb structure) vs simulation format"""
-    return "rfid" in data or ("uwb" in data and "anchors" in data.get("uwb", {}))
-
-
 def on_connect(client, userdata, flags, rc):
     """Callback when connected to MQTT broker"""
     if rc == 0:
@@ -155,6 +63,7 @@ def on_connect(client, userdata, flags, rc):
         print(f"🔍 Mode-aware filtering enabled: Messages filtered by system mode")
     else:
         print(f"❌ Failed to connect to MQTT broker. Return code: {rc}")
+
 
 def on_message(client, userdata, msg):
     """Callback when message received from MQTT"""
@@ -176,26 +85,21 @@ def on_message(client, userdata, msg):
         
         data = json.loads(payload)
         
-        # Check if this is hardware format and transform if needed
-        if is_hardware_format(data):
-            print(f"   📟 Hardware format detected (polling_cycle: {data.get('polling_cycle', '?')})")
-            
-            # Log raw hardware data
-            rfid_count = data.get("rfid", {}).get("tag_count", 0)
-            uwb_section = data.get("uwb", {})
-            uwb_count = uwb_section.get("n_anchors", 0) if uwb_section.get("available", True) else 0
-            print(f"   🏷️  RFID tags: {rfid_count}")
-            print(f"   📏 UWB anchors: {uwb_count}")
-            
-            # Transform to backend format
-            data = transform_hardware_to_backend(data)
-            print(f"   ✅ Transformed to backend format")
-            print(f"      Detections: {len(data['detections'])}")
-            print(f"      UWB measurements: {len(data['uwb_measurements'])}")
-        else:
-            print(f"   📤 Simulation format detected")
+        # Validate hardware format
+        if "polling_cycle" not in data or "rfid" not in data or "uwb" not in data:
+            print(f"   ❌ Invalid format - missing required fields (polling_cycle, rfid, uwb)")
+            return
         
-        # Forward to FastAPI backend
+        print(f"   📟 Hardware format (polling_cycle: {data.get('polling_cycle', '?')})")
+        
+        # Log data
+        rfid_count = data.get("rfid", {}).get("tag_count", 0)
+        uwb_section = data.get("uwb", {})
+        uwb_count = uwb_section.get("n_anchors", 0) if uwb_section.get("available", True) else 0
+        print(f"   🏷️  RFID tags: {rfid_count}")
+        print(f"   📏 UWB anchors: {uwb_count}")
+        
+        # Forward hardware format directly to FastAPI backend
         response = requests.post(
             f"{API_URL}/data",
             json=data,
@@ -205,11 +109,11 @@ def on_message(client, userdata, msg):
         if response.status_code == 201:
             result = response.json()
             print(f"✅ Data forwarded successfully:")
-            print(f"   Detections stored: {result.get('detections_stored', 0)}")
-            print(f"   UWB measurements stored: {result.get('uwb_measurements_stored', 0)}")
+            print(f"   RFID tags processed: {result.get('rfid_tags_processed', 0)}")
+            print(f"   UWB measurements processed: {result.get('uwb_measurements_processed', 0)}")
             if result.get('position_calculated'):
-                pos = result.get('calculated_position', {})
-                print(f"   📍 Position calculated: ({pos.get('x', '?')}, {pos.get('y', '?')})")
+                pos = result.get('position', {})
+                print(f"   📍 Position calculated: ({pos.get('x', '?'):.1f}, {pos.get('y', '?'):.1f})")
         else:
             print(f"⚠️  API returned status {response.status_code}: {response.text}")
     
@@ -223,13 +127,16 @@ def on_message(client, userdata, msg):
         import traceback
         traceback.print_exc()
 
+
 def on_disconnect(client, userdata, rc):
     """Callback when disconnected from MQTT broker"""
     if rc != 0:
         print(f"⚠️  Unexpected disconnection from MQTT broker (code: {rc}). Will attempt to reconnect...")
 
+
 # Global client reference for signal handling
 mqtt_client = None
+
 
 def signal_handler(signum, frame):
     """Handle shutdown signals (SIGTERM, SIGINT) for graceful cleanup"""
@@ -239,6 +146,7 @@ def signal_handler(signum, frame):
         mqtt_client.disconnect()
         mqtt_client.loop_stop()
     sys.exit(0)
+
 
 def main():
     """Main function to start MQTT bridge"""
@@ -287,6 +195,7 @@ def main():
             print(f"❌ MQTT broker connection failed: {e}")
             print(f"🔄 Retrying in 5 seconds...")
             time.sleep(5)
+
 
 if __name__ == "__main__":
     main()

@@ -80,8 +80,8 @@ class ScannerSimulator:
     def _scan_rfid_tags(self, shopper_x: float, shopper_y: float) -> List[Dict]:
         """
         Scan for RFID tags within detection range.
-        Returns hardware format: [{"epc": "...", "rssi_dbm": -45, "status": "present"}, ...]
-        Also includes missing items when in range with status="not present"
+        Returns hardware format: [{"epc": "...", "rssi_dbm": -45}, ...]
+        Missing items are completely excluded from detection.
         """
         tags = []
         detection_range = self.config.tag.rfid_detection_range
@@ -99,6 +99,7 @@ class ScannerSimulator:
             
             if distance <= detection_range:
                 # Only detect items that are NOT missing (present on shelf)
+                # Missing items are completely excluded from the payload
                 if not item.missing:
                     # Calculate realistic RSSI based on distance
                     # Closer = stronger signal (less negative)
@@ -108,21 +109,12 @@ class ScannerSimulator:
                     
                     tags.append({
                         "epc": item.rfid_tag,
-                        "rssi_dbm": rssi,
-                        "status": "present"
+                        "rssi_dbm": rssi
                     })
                     
                     currently_detected.add(item.rfid_tag)
                     item.detected = True
                     item.last_seen = shopper_x, shopper_y
-                else:
-                    # Item is missing but in range - report as not present
-                    # This tells the backend that we expected to see it but didn't
-                    tags.append({
-                        "epc": item.rfid_tag,
-                        "rssi_dbm": 0,  # No signal because it's not there
-                        "status": "not present"
-                    })
         
         self._last_detected_items = currently_detected
         return tags
