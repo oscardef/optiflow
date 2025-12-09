@@ -155,13 +155,19 @@ class ShopperSimulator:
                     self.direction = 'forward'
                     print(f"\n🔄 Pass {self.pass_count} complete - Reversing direction (→ Forward)")
                 
-                # Switch to left side and go down
-                # Position very close to left wall - 60cm from center
-                self.x = aisles[self.current_aisle]['x'] - 60
-                self.side = 'left'
-                self.movement_phase = 'going_down_left'
-                self.target_x = self.x
-                self.target_y = aisles[self.current_aisle]['y_end'] - 20  # Small margin from bottom
+                # If we have room to move in the new direction, exit this aisle via the cross aisle
+                if (self.direction == 'forward' and self.current_aisle < len(aisles) - 1) or (
+                    self.direction == 'backward' and self.current_aisle > 0
+                ):
+                    self.movement_phase = 'entering_cross'
+                    self.target_y = cross_y
+                else:
+                    # Single-aisle fallback: switch sides and head down again
+                    self.x = aisles[self.current_aisle]['x'] - 60
+                    self.side = 'left'
+                    self.target_x = self.x
+                    self.movement_phase = 'going_down_left'
+                    self.target_y = aisles[self.current_aisle]['y_end'] - 20  # Small margin from bottom
     
     def _switch_to_right_side(self):
         """Switch from left side to right side of current aisle and go up"""
