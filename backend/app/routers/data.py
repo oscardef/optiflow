@@ -27,15 +27,19 @@ async def websocket_endpoint(websocket: WebSocket):
     WebSocket endpoint for real-time data streaming.
     Clients connect here to receive live position and detection updates.
     """
+    logger.info(f"WebSocket connection attempt from {websocket.client}")
     await ws_manager.connect(websocket)
+    logger.info(f"WebSocket connected successfully from {websocket.client}")
     try:
         # Keep connection alive and handle incoming messages if needed
         while True:
             # Wait for any client messages (ping/pong, etc.)
             data = await websocket.receive_text()
+            logger.debug(f"WebSocket received: {data}")
             # Echo back for keep-alive
             await websocket.send_text(json.dumps({"type": "pong"}))
     except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected from {websocket.client}")
         ws_manager.disconnect(websocket)
     except Exception as e:
         logger.error(f"WebSocket error: {e}")

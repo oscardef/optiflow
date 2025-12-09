@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import StoreMap from './components/StoreMap';
+import { useWebSocket } from './hooks/useWebSocket';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL!;
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL!;
 
 interface Anchor {
   id: number;
@@ -65,6 +67,72 @@ export default function Home() {
   
   // Clear data confirmation modal
   const [showClearDataModal, setShowClearDataModal] = useState(false);
+  
+  // WebSocket connection state
+  const [wsConnected, setWsConnected] = useState(false);
+
+  // WebSocket message handler
+  const handleWebSocketMessage = useCallback((message: any) => {
+    switch (message.type) {
+      case 'position_update':
+        if (message.data) {
+          setPositions(prev => {
+            // Add new position and keep only recent ones
+            const newPositions = [message.data, ...prev].slice(0, maxDisplayItems);
+            return newPositions;
+          });
+        }
+        break;
+      
+      case 'item_update':
+        if (message.data) {
+          setItems(prev => {
+            const existingIndex = prev.findIndex(item => item.epc === message.data.epc);
+            if (existingIndex >= 0) {
+              // Update existing item
+              const updated = [...prev];
+              updated[existingIndex] = message.data;
+              return updated;
+            } else {
+              // Add new item
+              return [...prev, message.data];
+            }
+          });
+        }
+        break;
+      
+      case 'detection_update':
+        // Could be used for real-time detection notifications
+        console.log('Detection update:', message.data);
+        break;
+      
+      default:
+        console.log('Unknown WebSocket message type:', message.type);
+    }
+  }, [maxDisplayItems]);
+
+  // Initialize WebSocket connection
+  useWebSocket({
+    url: WS_URL,
+    enabled: !setupMode, // Only connect when not in setup mode
+    onMessage: handleWebSocketMessage,
+    onConnect: () => {
+      console.log('WebSocket connected successfully');
+      setWsConnected(true);
+    },
+    onDisconnect: () => {
+      console.log('WebSocket disconnected');
+      setWsConnected(false);
+    },
+    onError: (error) => {
+      console.error('WebSocket connection error', {
+        wsUrl: WS_URL,
+        type: error.type,
+        message: 'Check that the backend is running and accessible'
+      });
+      setWsConnected(false);
+    },
+  });
 
   const fetchAnchors = async () => {
     try {
@@ -261,8 +329,8 @@ export default function Home() {
     const init = async () => {
       await fetchStoreConfig(); // Fetch config first to get max_display_items
       await fetchAnchors();
-      await fetchPositions();
-      await fetchItems();
+      await fetchPositions(); // Initial fetch
+      await fetchItems(); // Initial fetch
       await fetchMissingItems();
       await fetchProducts();
       await fetchMode();
@@ -277,23 +345,8 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (setupMode) return;
-    
-    const interval = setInterval(() => {
-      fetchPositions();
-      fetchItems();
-      fetchMissingItems();
-      fetchMode();
-      
-      if (viewMode !== 'live') {
-        fetchProducts();
-        if (viewMode === 'stock-heatmap') fetchStockHeatmap();
-      }
-    }, 200);
-    
-    return () => clearInterval(interval);
-  }, [setupMode, viewMode]);
+  // Removed polling interval - now using WebSocket for real-time updates
+  // WebSocket automatically updates positions and items as they arrive
 
   useEffect(() => {
     if (viewMode === 'stock-heatmap') fetchStockHeatmap();
@@ -529,6 +582,25 @@ export default function Home() {
                   {connected ? 'LIVE' : 'OFFLINE'}
                 </span>
               </button>
+              
+              {/* WebSocket Status Indicator */}
+              <div
+                className={`flex items-center gap-2 px-3 py-1.5 border transition-all ${
+                  wsConnected 
+                    ? 'border-blue-200 bg-blue-50' 
+                    : 'border-gray-200 bg-gray-50'
+                }`}
+                title={wsConnected ? 'WebSocket connected - receiving real-time updates' : 'WebSocket disconnected'}
+              >
+                <div className={`w-2 h-2 rounded-full ${
+                  wsConnected ? 'bg-blue-500 animate-pulse' : 'bg-gray-400'
+                }`}></div>
+                <span className={`text-sm font-medium ${
+                  wsConnected ? 'text-blue-700' : 'text-gray-500'
+                }`}>
+                  {wsConnected ? 'WS' : 'WS'}
+                </span>
+              </div>
             </div>
           </div>
 
