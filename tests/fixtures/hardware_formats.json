@@ -1,0 +1,228 @@
+{
+  "description": "Test fixtures for hardware and backend data formats - Using real EPCs and MAC addresses",
+  "hardware_format_example": {
+    "description": "Raw JSON from ESP32 firmware (code_esp32.ino)",
+    "data": {
+      "polling_cycle": 1,
+      "timestamp": 123456,
+      "uwb": {
+        "n_anchors": 4,
+        "anchors": [
+          {
+            "mac_address": "0x0001",
+            "average_distance_cm": 150.5,
+            "measurements": 3,
+            "total_sessions": 5
+          },
+          {
+            "mac_address": "0x0002",
+            "average_distance_cm": 200.3,
+            "measurements": 4,
+            "total_sessions": 6
+          },
+          {
+            "mac_address": "0x0003",
+            "average_distance_cm": 180.7,
+            "measurements": 3,
+            "total_sessions": 4
+          },
+          {
+            "mac_address": "0x0004",
+            "average_distance_cm": 220.1,
+            "measurements": 5,
+            "total_sessions": 7
+          }
+        ]
+      },
+      "rfid": {
+        "tag_count": 3,
+        "tags": [
+          {
+            "epc": "30396062c38c0dc000388ca5",
+            "rssi_dbm": -45
+          },
+          {
+            "epc": "30396062c38d794000282374",
+            "rssi_dbm": -52
+          },
+          {
+            "epc": "30396062c38d790000264ad0",
+            "rssi_dbm": -48
+          }
+        ]
+      }
+    }
+  },
+  "backend_format_example": {
+    "description": "Transformed format expected by backend API (after mqtt_bridge transformation)",
+    "data": {
+      "timestamp": "2025-12-09T13:00:00Z",
+      "detections": [
+        {
+          "product_id": "30396062c38c0dc000388ca5",
+          "product_name": "Item-00388ca5",
+          "status": "present",
+          "x_position": null,
+          "y_position": null,
+          "rssi_dbm": -45
+        },
+        {
+          "product_id": "30396062c38d794000282374",
+          "product_name": "Item-00282374",
+          "status": "present",
+          "x_position": null,
+          "y_position": null,
+          "rssi_dbm": -52
+        },
+        {
+          "product_id": "30396062c38d790000264ad0",
+          "product_name": "Item-00264ad0",
+          "status": "present",
+          "x_position": null,
+          "y_position": null,
+          "rssi_dbm": -48
+        }
+      ],
+      "uwb_measurements": [
+        {
+          "mac_address": "0x0001",
+          "distance_cm": 150.5,
+          "status": "0x01"
+        },
+        {
+          "mac_address": "0x0002",
+          "distance_cm": 200.3,
+          "status": "0x01"
+        },
+        {
+          "mac_address": "0x0003",
+          "distance_cm": 180.7,
+          "status": "0x01"
+        },
+        {
+          "mac_address": "0x0004",
+          "distance_cm": 220.1,
+          "status": "0x01"
+        }
+      ]
+    }
+  },
+  "hardware_format_no_uwb": {
+    "description": "Hardware format when UWB is unavailable (RFID only)",
+    "data": {
+      "polling_cycle": 5,
+      "timestamp": 234567,
+      "uwb": {
+        "available": false
+      },
+      "rfid": {
+        "tag_count": 4,
+        "tags": [
+          {
+            "epc": "30396062c38d7a8000290de0",
+            "rssi_dbm": -38
+          },
+          {
+            "epc": "30395dfa81a6e5c0001be67f",
+            "rssi_dbm": -55
+          },
+          {
+            "epc": "30396062c39ea2406d991ee2",
+            "rssi_dbm": -48
+          },
+          {
+            "epc": "30396062c38d794000282373",
+            "rssi_dbm": -50
+          }
+        ]
+      }
+    }
+  },
+  "hardware_format_no_tags": {
+    "description": "Hardware format when no RFID tags detected",
+    "data": {
+      "polling_cycle": 10,
+      "timestamp": 456789,
+      "uwb": {
+        "n_anchors": 4,
+        "anchors": [
+          {
+            "mac_address": "0x0001",
+            "average_distance_cm": 100.0,
+            "measurements": 5,
+            "total_sessions": 6
+          },
+          {
+            "mac_address": "0x0002",
+            "average_distance_cm": 150.0,
+            "measurements": 4,
+            "total_sessions": 5
+          },
+          {
+            "mac_address": "0x0003",
+            "average_distance_cm": 200.0,
+            "measurements": 3,
+            "total_sessions": 4
+          },
+          {
+            "mac_address": "0x0004",
+            "average_distance_cm": 250.0,
+            "measurements": 5,
+            "total_sessions": 7
+          }
+        ]
+      },
+      "rfid": {
+        "tag_count": 0,
+        "tags": []
+      }
+    }
+  },
+  "transformation_rules": {
+    "description": "How mqtt_bridge transforms hardware -> backend format",
+    "rules": [
+      {
+        "field": "timestamp",
+        "hardware": "milliseconds since boot (integer)",
+        "backend": "ISO 8601 UTC timestamp (string)",
+        "transformation": "datetime.utcnow().isoformat() + 'Z'"
+      },
+      {
+        "field": "rfid.tags[].epc",
+        "hardware": "EPC tag identifier",
+        "backend": "detections[].product_id",
+        "transformation": "direct copy"
+      },
+      {
+        "field": "rfid.tags[].rssi_dbm",
+        "hardware": "signal strength",
+        "backend": "detections[].rssi_dbm (extra field)",
+        "transformation": "direct copy"
+      },
+      {
+        "field": "uwb.anchors[].mac_address",
+        "hardware": "anchor MAC address",
+        "backend": "uwb_measurements[].mac_address",
+        "transformation": "direct copy"
+      },
+      {
+        "field": "uwb.anchors[].average_distance_cm",
+        "hardware": "averaged distance",
+        "backend": "uwb_measurements[].distance_cm",
+        "transformation": "direct copy"
+      },
+      {
+        "field": "detections[].status",
+        "hardware": "N/A",
+        "backend": "always 'present' for detected tags",
+        "transformation": "hardcoded 'present'"
+      },
+      {
+        "field": "uwb_measurements[].status",
+        "hardware": "N/A",
+        "backend": "always '0x01' (OK)",
+        "transformation": "hardcoded '0x01'"
+      }
+    ]
+  }
+}

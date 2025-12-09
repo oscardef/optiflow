@@ -36,123 +36,121 @@ class TestTriangulationService:
     
     def test_calculate_with_no_measurements(self):
         """Should return None when no measurements provided"""
-        result = self.service.calculate_position([], self.anchors, tag_id="test")
+        result = self.service.calculate_position([])
         assert result is None
     
     def test_calculate_with_one_measurement(self):
         """Should return None with only one anchor measurement"""
-        measurements = [
-            {"mac_address": "0x0001", "distance_cm": 100}
-        ]
-        result = self.service.calculate_position(measurements, self.anchors, tag_id="test")
+        measurements = [(0, 0, 100)]  # (x, y, distance) tuples
+        result = self.service.calculate_position(measurements)
         assert result is None
     
     def test_calculate_with_two_measurements(self):
         """Should calculate position with two anchors (weighted midpoint)"""
         # Tag 500cm from anchor 1 (0,0) and 500cm from anchor 2 (1000,0)
         measurements = [
-            {"mac_address": "0x0001", "distance_cm": 500},
-            {"mac_address": "0x0002", "distance_cm": 500}
+            (0, 0, 500),
+            (1000, 0, 500)
         ]
-        result = self.service.calculate_position(measurements, self.anchors, tag_id="test")
+        result = self.service.calculate_position(measurements)
         
         assert result is not None
-        assert result["tag_id"] == "test"
+        x, y, confidence = result
         # Should be roughly in the middle horizontally
-        assert 400 <= result["x_position"] <= 600
-        assert result["confidence"] >= 0.3
-        assert result["num_anchors"] == 2
+        assert 400 <= x <= 600
+        assert confidence >= 0.3
     
     def test_calculate_with_three_measurements(self):
         """Should calculate position with three anchors (least squares)"""
         # Tag roughly at center (500, 400)
         measurements = [
-            {"mac_address": "0x0001", "distance_cm": 640},  # ~sqrt(500^2 + 400^2)
-            {"mac_address": "0x0002", "distance_cm": 640},  # ~sqrt(500^2 + 400^2)
-            {"mac_address": "0x0003", "distance_cm": 640},  # ~sqrt(500^2 + 400^2)
+            (0, 0, 640),       # ~sqrt(500^2 + 400^2)
+            (1000, 0, 640),    # ~sqrt(500^2 + 400^2)
+            (1000, 800, 640),  # ~sqrt(500^2 + 400^2)
         ]
-        result = self.service.calculate_position(measurements, self.anchors, tag_id="test")
+        result = self.service.calculate_position(measurements)
         
         assert result is not None
-        assert result["tag_id"] == "test"
+        x, y, confidence = result
         # Should be roughly at center
-        assert 300 <= result["x_position"] <= 700
-        assert 200 <= result["y_position"] <= 600
-        assert result["confidence"] >= 0.5
-        assert result["num_anchors"] == 3
+        assert 300 <= x <= 700
+        assert 200 <= y <= 600
+        assert confidence >= 0.5
     
     def test_calculate_with_four_measurements(self):
         """Should calculate position with four anchors (highest confidence)"""
         # Tag at (500, 400)
         measurements = [
-            {"mac_address": "0x0001", "distance_cm": 640},
-            {"mac_address": "0x0002", "distance_cm": 640},
-            {"mac_address": "0x0003", "distance_cm": 640},
-            {"mac_address": "0x0004", "distance_cm": 640},
+            (0, 0, 640),
+            (1000, 0, 640),
+            (1000, 800, 640),
+            (0, 800, 640),
         ]
-        result = self.service.calculate_position(measurements, self.anchors, tag_id="test")
+        result = self.service.calculate_position(measurements)
         
         assert result is not None
-        assert result["num_anchors"] == 4
+        x, y, confidence = result
         # Four anchors should give higher confidence
-        assert result["confidence"] >= 0.7
+        assert confidence >= 0.7
     
     def test_calculate_with_unknown_anchor(self):
-        """Should ignore measurements from unknown anchors"""
+        """Should calculate with valid measurements only"""
         measurements = [
-            {"mac_address": "0x0001", "distance_cm": 100},
-            {"mac_address": "0x9999", "distance_cm": 100},  # Unknown anchor
+            (0, 0, 100),
+            (1000, 0, 100),
         ]
-        result = self.service.calculate_position(measurements, self.anchors, tag_id="test")
-        # Should ignore unknown anchor and return None (only 1 valid measurement)
-        assert result is None
+        result = self.service.calculate_position(measurements)
+        # Should still work with 2 valid measurements
+        assert result is not None
     
     def test_calculate_with_inactive_anchor(self):
-        """Should ignore measurements from inactive anchors"""
-        inactive_anchors = self.anchors.copy()
-        inactive_anchors[1] = {**inactive_anchors[1], "is_active": False}
-        
+        """Test with subset of measurements (simulating inactive anchor)"""
+        # Only use one measurement (inactive anchors filtered out before calling)
         measurements = [
-            {"mac_address": "0x0001", "distance_cm": 100},
-            {"mac_address": "0x0002", "distance_cm": 100},  # Inactive anchor
+            (0, 0, 100),
         ]
-        result = self.service.calculate_position(measurements, inactive_anchors, tag_id="test")
-        # Should ignore inactive anchor and return None
+        result = self.service.calculate_position(measurements)
+        # Should return None with only one measurement
         assert result is None
     
     def test_confidence_scoring(self):
         """Should calculate appropriate confidence scores"""
         # More anchors should generally give higher confidence
         measurements_2 = [
-            {"mac_address": "0x0001", "distance_cm": 500},
-            {"mac_address": "0x0002", "distance_cm": 500}
+            (0, 0, 500),
+            (1000, 0, 500)
         ]
         measurements_4 = [
-            {"mac_address": "0x0001", "distance_cm": 640},
-            {"mac_address": "0x0002", "distance_cm": 640},
-            {"mac_address": "0x0003", "distance_cm": 640},
-            {"mac_address": "0x0004", "distance_cm": 640}
+            (0, 0, 640),
+            (1000, 0, 640),
+            (1000, 800, 640),
+            (0, 800, 640)
         ]
         
-        result_2 = self.service.calculate_position(measurements_2, self.anchors, tag_id="test")
-        result_4 = self.service.calculate_position(measurements_4, self.anchors, tag_id="test")
+        result_2 = self.service.calculate_position(measurements_2)
+        result_4 = self.service.calculate_position(measurements_4)
         
         assert result_2 is not None
         assert result_4 is not None
-        assert result_4["confidence"] > result_2["confidence"]
+        
+        _, _, conf_2 = result_2
+        _, _, conf_4 = result_4
+        
+        assert conf_4 > conf_2
     
     def test_position_bounds(self):
         """Calculated position should be within reasonable bounds"""
         measurements = [
-            {"mac_address": "0x0001", "distance_cm": 200},
-            {"mac_address": "0x0002", "distance_cm": 200},
+            (0, 0, 200),
+            (1000, 0, 200),
         ]
-        result = self.service.calculate_position(measurements, self.anchors, tag_id="test")
+        result = self.service.calculate_position(measurements)
         
         assert result is not None
+        x, y, confidence = result
         # Position should be within store bounds (with some tolerance)
-        assert -200 <= result["x_position"] <= 1200
-        assert -200 <= result["y_position"] <= 1000
+        assert -200 <= x <= 1200
+        assert -200 <= y <= 1000
 
 
 if __name__ == "__main__":

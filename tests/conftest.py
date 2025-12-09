@@ -14,34 +14,10 @@ def fixtures_dir():
 
 
 @pytest.fixture(scope="session")
-def sample_data(fixtures_dir):
-    """Load sample test data from JSON"""
-    with open(fixtures_dir / "sample_data.json") as f:
+def hardware_formats(fixtures_dir):
+    """Load hardware format test fixtures"""
+    with open(fixtures_dir / "hardware_formats.json") as f:
         return json.load(f)
-
-
-@pytest.fixture
-def sample_hardware_packet(sample_data):
-    """Sample hardware packet from ESP32"""
-    return sample_data["sample_hardware_packet"]
-
-
-@pytest.fixture
-def sample_backend_packet(sample_data):
-    """Sample backend API packet"""
-    return sample_data["sample_backend_packet"]
-
-
-@pytest.fixture
-def sample_anchors(sample_data):
-    """Sample anchor configurations"""
-    return sample_data["sample_anchors"]
-
-
-@pytest.fixture
-def sample_products(sample_data):
-    """Sample product catalog"""
-    return sample_data["sample_products"]
 
 
 @pytest.fixture

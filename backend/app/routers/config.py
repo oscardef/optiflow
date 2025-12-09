@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+import paho.mqtt.publish as publish
 from typing import Optional
 import os
 
@@ -227,7 +228,6 @@ def send_mqtt_control(command: str):
         )
     
     try:
-        import paho.mqtt.publish as publish
         
         # Get MQTT config from environment (same as simulation.py)
         mqtt_broker = os.environ["MQTT_BROKER"]

@@ -93,18 +93,24 @@ def main():
     # Build pytest arguments
     pytest_args = []
     
+    # Determine tests directory (handle running from tests/ or project root)
+    tests_dir = Path(__file__).parent
+    if not (tests_dir / "unit").exists():
+        tests_dir = project_root / "tests"
+    
     # Test selection based on markers or paths
     if args.unit:
-        pytest_args.extend(["-m", "unit"])
+        pytest_args.append(str(tests_dir / "unit"))
         print("🧪 Running unit tests...\n")
     elif args.integration:
-        pytest_args.extend(["-m", "integration"])
+        pytest_args.append(str(tests_dir / "integration"))
         print("🔗 Running integration tests...\n")
     elif args.hardware:
         pytest_args.extend(["-m", "hardware"])
+        pytest_args.append(str(tests_dir))
         print("🔌 Running hardware tests...\n")
     else:
-        pytest_args.append("tests/")
+        pytest_args.append(str(tests_dir))
         print("🚀 Running all tests...\n")
     
     # Verbosity

@@ -19,7 +19,7 @@ from ..core import logger
 
 router = APIRouter(tags=["data"])
 
-@router.post("/data")
+@router.post("/data", status_code=201)
 def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
     """
     Receive combined RFID detections and UWB measurements from devices

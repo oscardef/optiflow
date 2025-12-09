@@ -325,6 +325,7 @@ def main():
     last_time = time.time()
     packet_count = 0
     mqtt_warn_shown = False
+    start_time_ms = int(time.time() * 1000)  # Simulate "milliseconds since boot"
     
     try:
         while True:
@@ -346,40 +347,15 @@ def main():
                 # Get current position
                 x, y = shopper.get_position()
                 
-                # Scan for items and measure distances
-                detections = scanner.get_rfid_detections(x, y)
-                uwb_measurements = scanner.measure_distances(x, y, anchor_macs)
+                # Calculate timestamp (milliseconds since simulation start, like ESP32 millis())
+                timestamp_ms = int((time.time() - start_time_ms/1000) * 1000)
                 
-                # Build packet
-                packet = {
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                    "detections": detections,
-                    "uwb_measurements": uwb_measurements
-                }
+                # Get HARDWARE FORMAT packet (matches ESP32 exactly)
+                hardware_packet = scanner.get_hardware_packet(x, y, anchor_macs, timestamp_ms)
                 
-                # Send to backend API directly (in addition to MQTT)
-                try:
-                    # Send detections to API
-                    if detections:
-                        api_response = requests.post(
-                            f"{config.api_url}/data/bulk",
-                            json={"detections": detections},
-                            timeout=2
-                        )
-                    
-                    # Send UWB measurements to API
-                    if uwb_measurements:
-                        api_response = requests.post(
-                            f"{config.api_url}/uwb/bulk",
-                            json={"measurements": uwb_measurements},
-                            timeout=2
-                        )
-                except Exception as e:
-                    # Silently fail API calls to not spam console
-                    pass
-                
-                # Publish to MQTT (for legacy support)
-                payload = json.dumps(packet)
+                # Publish HARDWARE FORMAT to MQTT
+                # The mqtt_bridge will transform this to backend format
+                payload = json.dumps(hardware_packet)
                 result = client.publish(config.mqtt.topic_data, payload)
                 
                 if result.rc == mqtt.MQTT_ERR_SUCCESS or True:  # Count even if MQTT fails
@@ -388,17 +364,13 @@ def main():
                     # Print status every 5th update
                     if packet_count % 5 == 0:
                         status = shopper.get_status_info()
-                        print(f"📤 [{packet_count}] Pass {status['pass']} {status['direction_arrow']} | "
+                        rfid_count = hardware_packet["rfid"]["tag_count"]
+                        uwb_count = hardware_packet["uwb"]["n_anchors"]
+                        
+                        print(f"📤 [{packet_count}] Cycle #{hardware_packet['polling_cycle']} | Pass {status['pass']} {status['direction_arrow']} | "
                               f"{status['aisle']} {status['movement']} - "
                               f"Position: ({status['position'][0]:.0f}, {status['position'][1]:.0f})")
-                        
-                        if detections:
-                            missing_count = sum(1 for d in detections if d.get('status') == 'missing')
-                            present_count = len(detections) - missing_count
-                            if missing_count > 0:
-                                print(f"   🏷️  Detected: {present_count} present, ⚠️  {missing_count} missing")
-                            else:
-                                print(f"   🏷️  Detected: {len(detections)} items")
+                        print(f"   📟 Hardware format: {rfid_count} RFID tags, {uwb_count} UWB anchors")
                 else:
                     print(f"❌ Publish failed with code {result.rc}")
             

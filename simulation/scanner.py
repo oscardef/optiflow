@@ -2,6 +2,7 @@
 Scanner Simulation (RFID + UWB)
 ================================
 Simulates RFID detection and UWB distance measurements.
+Produces EXACT hardware format matching ESP32 output.
 """
 
 import math
@@ -12,24 +13,86 @@ from .inventory import Item
 
 
 class ScannerSimulator:
-    """Simulates RFID and UWB scanning"""
+    """Simulates RFID and UWB scanning in hardware format"""
     
     def __init__(self, config: SimulationConfig, items: List[Item], anchor_positions: List[Tuple[float, float]]):
         self.config = config
         self.items = items
         self.anchor_positions = anchor_positions
+        self.polling_cycle = 0
+        # Track detected items to update their status
+        self._last_detected_items = set()
     
-    def get_rfid_detections(self, shopper_x: float, shopper_y: float) -> List[Dict]:
+    def get_hardware_packet(self, shopper_x: float, shopper_y: float, anchor_macs: List[str], timestamp_ms: int) -> Dict:
         """
-        Detect items within RFID range
-        Returns list of detection dicts
+        Generate complete hardware packet matching ESP32 format EXACTLY.
+        
+        Hardware JSON Format (from firmware/code_esp32/code_esp32.ino):
+        {
+          "polling_cycle": 1,
+          "timestamp": 123456,  // milliseconds since boot
+          "uwb": {
+            "n_anchors": 2,
+            "anchors": [
+              {
+                "mac_address": "0xABCD",
+                "average_distance_cm": 150.5,
+                "measurements": 3,
+                "total_sessions": 5
+              }
+            ]
+          },
+          "rfid": {
+            "tag_count": 2,
+            "tags": [
+              {
+                "epc": "E200001234567890ABCD",
+                "rssi_dbm": -45
+              }
+            ]
+          }
+        }
         """
-        detections = []
+        self.polling_cycle += 1
+        
+        # Get RFID tags (hardware format)
+        rfid_tags = self._scan_rfid_tags(shopper_x, shopper_y)
+        
+        # Get UWB measurements (hardware format)
+        uwb_anchors = self._measure_uwb_distances(shopper_x, shopper_y, anchor_macs)
+        
+        # Build hardware packet
+        packet = {
+            "polling_cycle": self.polling_cycle,
+            "timestamp": timestamp_ms,
+            "uwb": {
+                "n_anchors": len(uwb_anchors),
+                "anchors": uwb_anchors
+            },
+            "rfid": {
+                "tag_count": len(rfid_tags),
+                "tags": rfid_tags
+            }
+        }
+        
+        return packet
+    
+    def _scan_rfid_tags(self, shopper_x: float, shopper_y: float) -> List[Dict]:
+        """
+        Scan for RFID tags within detection range.
+        Returns hardware format: [{"epc": "...", "rssi_dbm": -45}, ...]
+        """
+        tags = []
         detection_range = self.config.tag.rfid_detection_range
+        currently_detected = set()
         
         for item in self.items:
             # Skip items with null positions
             if item.x is None or item.y is None:
+                continue
+            
+            # Skip missing items (they won't be detected)
+            if item.missing:
                 continue
                 
             # Calculate distance
@@ -38,33 +101,38 @@ class ScannerSimulator:
             distance = math.sqrt(dx*dx + dy*dy)
             
             if distance <= detection_range:
-                # Determine status
-                if item.missing:
-                    status = "missing"
-                else:
-                    status = "present"
-                    item.detected = True
-                    item.last_seen = shopper_x, shopper_y
+                # Calculate realistic RSSI based on distance
+                # Closer = stronger signal (less negative)
+                # Range: -30 dBm (very close) to -70 dBm (far)
+                rssi = int(-30 - (distance / detection_range) * 40)
+                rssi += random.randint(-3, 3)  # Add noise
                 
-                # Only report if status changed or first detection
-                if item.reported_status != status or item.reported_status is None:
-                    detections.append({
-                        "product_id": item.rfid_tag,
-                        "product_name": item.product.name,
-                        "x_position": item.x,
-                        "y_position": item.y,
-                        "status": status
-                    })
-                    item.reported_status = status
+                tags.append({
+                    "epc": item.rfid_tag,
+                    "rssi_dbm": rssi
+                })
+                
+                currently_detected.add(item.rfid_tag)
+                item.detected = True
+                item.last_seen = shopper_x, shopper_y
         
-        return detections
+        # Update item statuses based on detection
+        # Items that were detected before but not now might be missing
+        for item in self.items:
+            if item.rfid_tag in self._last_detected_items and item.rfid_tag not in currently_detected:
+                # Item was detected before but not now - might have been taken
+                # This simulates the disappearance behavior
+                pass  # Status updates are handled by the shopper simulator
+        
+        self._last_detected_items = currently_detected
+        return tags
     
-    def measure_distances(self, shopper_x: float, shopper_y: float, anchor_macs: List[str]) -> List[Dict]:
+    def _measure_uwb_distances(self, shopper_x: float, shopper_y: float, anchor_macs: List[str]) -> List[Dict]:
         """
-        Measure distances to all anchors with realistic noise
-        Returns list of UWB measurement dicts
+        Measure distances to all anchors with realistic noise.
+        Returns hardware format: [{"mac_address": "0x1234", "average_distance_cm": 150.5, "measurements": 3, "total_sessions": 5}, ...]
         """
-        measurements = []
+        anchors = []
         
         for i, (anchor_x, anchor_y) in enumerate(self.anchor_positions):
             # Calculate true distance
@@ -76,10 +144,17 @@ class ScannerSimulator:
             noise = random.gauss(0, 5)
             measured_distance = max(0, true_distance + noise)
             
-            measurements.append({
-                "mac_address": anchor_macs[i] if i < len(anchor_macs) else f"0x000{i+1}",
-                "distance_cm": round(measured_distance, 2),
-                "status": "0x01"  # OK status
+            # Simulate multiple measurements per anchor (like real hardware)
+            num_measurements = random.randint(2, 4)  # ESP32 averages multiple readings
+            total_sessions = random.randint(num_measurements, num_measurements + 2)
+            
+            mac = anchor_macs[i] if i < len(anchor_macs) else f"0x{(i+1):04X}"
+            
+            anchors.append({
+                "mac_address": mac,
+                "average_distance_cm": round(measured_distance, 1),
+                "measurements": num_measurements,
+                "total_sessions": total_sessions
             })
         
-        return measurements
+        return anchors
