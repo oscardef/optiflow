@@ -271,7 +271,6 @@ export default function Home() {
       const response = await fetch(`${API_URL}/simulation/start`, { method: 'POST' });
       const data = await response.json();
       if (data.success) {
-        alert('Simulation started successfully');
         await fetchMode();
       } else {
         alert(data.message || 'Failed to start simulation');
@@ -286,7 +285,6 @@ export default function Home() {
       const response = await fetch(`${API_URL}/simulation/stop`, { method: 'POST' });
       const data = await response.json();
       if (data.success) {
-        alert('Simulation stopped successfully');
         await fetchMode();
       } else {
         alert(data.message || 'Failed to stop simulation');

@@ -1,31 +1,74 @@
-clean up UI
+================================================================================
+                           OPTIFLOW TODO LIST
+================================================================================
 
-AI
+PRIORITY: HIGH
+--------------------------------------------------------------------------------
+[ ] Clean up UI
+    - Polish frontend components
+    - Improve visual consistency
 
-Classic AI : clustering anomaly detections
-
-
-restock threshold : rename
-
-
-make sure we are storing the timestamps (we use the timestamp that is the utc of reception on the server)
-
-
-every time we receive an mqtt publish : append to DB (for persistence) and notify the client with these data. 
-
-
-button live : stop or start signal for mqtt ( mosquitto_pub -h 172.20.10.3 -t store/control -m 'START'  )
+[ ] AI Analytics Enhancements
+    - Clustering anomaly detection
+    - Improve demand forecasting accuracy
 
 
+PRIORITY: MEDIUM
+--------------------------------------------------------------------------------
+[ ] Restock threshold - consider renaming for clarity
 
-make sure the dots we display are products and only their last location.
-
-in simulaition mode : should ne take into account the mqtt : store/production and store/simulation
-
-
+[ ] Hardware Integration
+    - Test with physical ESP32 + UWB + RFID setup
+    - Validate real-time position accuracy
 
 
+PRIORITY: LOW / FUTURE IMPROVEMENTS
+--------------------------------------------------------------------------------
+[ ] Performance optimization for large inventories (5000+ items)
+[ ] Add more unit tests for simulation modules
+[ ] Add WebSocket reconnection indicators in UI
 
-Done:
-* mqtt : whn closing docker container : close mqtt
-* zones system removed from backend and frontend
+
+================================================================================
+                              COMPLETED
+================================================================================
+
+--- Recent (Dec 2025) ---
+[✓] Heatmap visualization enhanced with opacity/color gradients for missing items
+[✓] Heatmap polling implemented in stock view
+[✓] Missing items inferred in real-time during data reception
+[✓] Shopper simulation randomly marks items as missing (disappearance rate)
+[✓] Simulation control buttons reorganized in AdminPanel
+[✓] Store layout respects RFID detection range (0.6m)
+[✓] Cross-aisle navigation and single-aisle fallback in shopper movement
+[✓] RFID detection range updated to 0.6 meters
+[✓] WebSocket integration for real-time updates (position + item broadcasts)
+[✓] WebSocket message logging enhanced
+[✓] Wider aisles in StoreMap and simulation config
+
+--- Earlier ---
+[✓] Renamed 'REAL' mode to 'PRODUCTION' for clarity
+[✓] MQTT hardware format handling updated
+[✓] MQTT control topic made mode-aware
+[✓] MQTT control endpoint + frontend START/STOP integration
+[✓] Stock heatmap API implemented
+[✓] Analytics endpoints added (backfill, clear, charts)
+[✓] Integration and unit tests added
+[✓] Zones system removed from backend and frontend
+[✓] MQTT graceful shutdown when closing Docker containers
+[✓] Missing item detection + hardware control endpoints
+[✓] Inventory generation and data management for simulation
+[✓] Mode switching and anchor setup UX improved
+[✓] Anchor management UI with drag-and-drop placement
+[✓] Firmware architecture for ESP32-S3 + DWM3001CDK CLI
+[✓] Hardware data transformation and MQTT validator
+
+--- Simulation System (Modular Architecture) ---
+[✓] config.py: Centralized configuration with modes (demo/realistic/stress)
+[✓] inventory.py: Product catalog with 116 SKUs, item generation with duplication
+[✓] shopper.py: Realistic aisle-by-aisle movement (left side down, right side up)
+[✓] scanner.py: RFID + UWB scanning in exact ESP32 hardware format
+[✓] main.py: CLI entry point with MQTT publishing
+[✓] analytics_tracker.py: Real-time purchase/snapshot tracking
+[✓] generate_inventory.py: 20 product templates with size/color/style variants
+[✓] backfill_history.py: Historical data generation with trends/spikes/shortages
