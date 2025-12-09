@@ -259,11 +259,14 @@ class InventoryGenerator:
         """Distribute items across store shelves, grouping duplicates together"""
         store = self.config.store
         
-        # Generate shelf positions in all aisles
+        # Generate shelf positions in all aisles (stay within RFID detection range of path)
         shelf_positions = []
+        detection_range = self.config.tag.rfid_detection_range
         for aisle in store.aisles:
-            # 4 shelves per aisle, both sides
-            for side_offset in [-25, 25]:  # Left and right of aisle center
+            # Offset shelves toward the walls but within detection radius of shopper paths
+            max_offset = aisle['width'] / 2 - 10
+            shelf_offset = min(max_offset, detection_range - 5)
+            for side_offset in [-shelf_offset, shelf_offset]:
                 for shelf_level in range(4):
                     x_pos = aisle['x'] + side_offset
                     
@@ -274,9 +277,10 @@ class InventoryGenerator:
                         y_pos = aisle['y_start'] + (aisle_length * (slot + 0.5) / items_per_shelf)
                         shelf_positions.append((x_pos, y_pos))
         
-        # Add positions in cross-aisle
-        for x_pos in range(200, 900, 30):
-            for side_offset in [-30, 30]:
+        # Add positions in cross-aisle within detection radius
+        cross_offset = min(detection_range - 5, store.cross_aisle_height / 2 - 5)
+        for x_pos in range(int(store.cross_aisle_x_start - 40), int(store.cross_aisle_x_end + 40), 30):
+            for side_offset in [-cross_offset, cross_offset]:
                 y_pos = store.cross_aisle_y + side_offset
                 shelf_positions.append((x_pos, y_pos))
         

@@ -626,7 +626,7 @@ export default function AdminPanel() {
       {/* Mode Switch Confirmation Modal */}
       {pendingModeSwitch && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+          <div className="bg-white border border-gray-300 shadow-xl p-6 max-w-md w-full mx-4">
             <h3 className="text-xl font-semibold text-gray-900 mb-4">
               Switch to {pendingModeSwitch} Mode?
             </h3>
@@ -641,13 +641,13 @@ export default function AdminPanel() {
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setPendingModeSwitch(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmModeSwitch}
-                className="px-4 py-2 text-sm font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] transition-colors"
               >
                 Switch to {pendingModeSwitch}
               </button>
@@ -664,24 +664,24 @@ export default function AdminPanel() {
           </div>
           <a
             href="/"
-            className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors flex items-center gap-2"
+            className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 transition-colors flex items-center gap-2"
           >
             ← Back to Dashboard
           </a>
         </div>
 
         {message && (
-          <div className={`mb-4 p-4 rounded-lg ${
-            message.type === 'success' ? 'bg-green-50 text-green-800' :
-            message.type === 'error' ? 'bg-red-50 text-red-800' :
-            'bg-blue-50 text-blue-800'
+          <div className={`mb-4 p-4 border ${
+            message.type === 'success' ? 'bg-green-50 text-green-800 border-green-200' :
+            message.type === 'error' ? 'bg-red-50 text-red-800 border-red-200' :
+            'bg-blue-50 text-blue-800 border-blue-200'
           }`}>
             {message.text}
           </div>
         )}
 
         {/* Tab Navigation */}
-        <div className="bg-white rounded-lg shadow mb-6">
+        <div className="bg-white border border-gray-200 shadow mb-6">
           <div className="border-b border-gray-200">
             <nav className="flex -mb-px">
               {[
@@ -709,49 +709,58 @@ export default function AdminPanel() {
           <div className="p-6">
             {/* Mode Control Tab */}
             {activeTab === 'mode' && (
-              <div className="space-y-3">
-                <div>
-                  <h2 className="text-lg font-semibold mb-2">Operating Mode</h2>
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="text-xs text-gray-600 font-medium">Current:</span>
-                    <span className={`px-3 py-1 rounded-lg font-semibold text-xs ${
-                      mode?.mode === 'SIMULATION' 
-                        ? 'bg-blue-100 text-blue-800 border border-blue-200' 
-                        : 'bg-green-100 text-green-800 border border-green-200'
-                    }`}>
-                      {mode?.mode || 'Loading...'}
-                    </span>
+              <div className="space-y-4">
+                <div className="border border-gray-200 bg-white">
+                  <div className="border-b border-gray-200 px-4 py-3">
+                    <h2 className="text-base font-semibold text-gray-900">Operating Mode</h2>
                   </div>
+                  <div className="px-4 py-4">
+                    <div className="flex items-center gap-3 mb-4">
+                      <span className="text-sm text-gray-600 font-medium">Current Mode:</span>
+                      <span className={`px-3 py-1.5 font-semibold text-xs border ${
+                        mode?.mode === 'SIMULATION' 
+                          ? 'bg-blue-50 text-blue-800 border-blue-200' 
+                          : 'bg-green-50 text-green-800 border-green-200'
+                      }`}>
+                        {mode?.mode || 'Loading...'}
+                      </span>
+                    </div>
 
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => switchMode('SIMULATION')}
-                      disabled={mode?.mode === 'SIMULATION' || loading}
-                      className="px-4 py-2 text-xs font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                    >
-                      Simulation Mode
-                    </button>
-                    <button
-                      onClick={() => switchMode('PRODUCTION')}
-                      disabled={mode?.mode === 'PRODUCTION' || loading}
-                      className="px-4 py-2 text-xs font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                    >
-                      Production Mode
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => switchMode('SIMULATION')}
+                        disabled={mode?.mode === 'SIMULATION' || loading}
+                        className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Switch to Simulation
+                      </button>
+                      <button
+                        onClick={() => switchMode('PRODUCTION')}
+                        disabled={mode?.mode === 'PRODUCTION' || loading}
+                        className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Switch to Production
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 {mode?.mode === 'SIMULATION' && (
-                  <div className="border-t pt-4">
-                    <h2 className="text-lg font-semibold mb-3">Simulation Control</h2>
-                    
-                    {/* Parameters Section */}
-                    <div className="space-y-3 mb-3">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Number of Items
-                          </label>
+                  <div className="border border-gray-200 bg-white">
+                    <div className="flex flex-col gap-3 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <h3 className="text-base font-semibold text-gray-900">Simulation Control</h3>
+                      {simulationStatus?.running && (
+                        <div className="flex items-center gap-2 text-xs font-semibold text-green-700">
+                          <span className="h-2.5 w-2.5 bg-green-600" aria-hidden />
+                          Running
+                        </div>
+                      )}
+                    </div>
+
+                      {/* Parameters Section */}
+                      <div className="grid gap-4 border-b border-gray-200 px-4 py-4 md:grid-cols-3">
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-gray-700">Number of Items</label>
                           <input
                             type="number"
                             min="50"
@@ -760,7 +769,6 @@ export default function AdminPanel() {
                             value={simItemCount}
                             onChange={(e) => {
                               const val = e.target.value;
-                              // Allow empty string for easier editing
                               if (val === '') {
                                 setSimItemCount('' as any);
                               } else {
@@ -783,17 +791,13 @@ export default function AdminPanel() {
                               }
                             }}
                             disabled={simulationStatus?.running || loading || regeneratingInventory}
-                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                            className="w-full border border-gray-300 px-3 py-2 text-sm font-medium text-gray-900 focus:border-[#0055A4] focus:outline-none focus:ring-1 focus:ring-[#0055A4] disabled:bg-gray-100 disabled:cursor-not-allowed"
                           />
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            Recommended: 50-5000 items
-                          </p>
+                          <p className="text-xs text-gray-500">Recommended: 50-5000 items</p>
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Speed: {simSpeedMultiplier}x
-                          </label>
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-gray-700">Speed: {simSpeedMultiplier}x</label>
                           <input
                             type="range"
                             min="0.5"
@@ -802,128 +806,127 @@ export default function AdminPanel() {
                             value={simSpeedMultiplier}
                             onChange={(e) => setSimSpeedMultiplier(parseFloat(e.target.value))}
                             disabled={simulationStatus?.running || loading}
-                            className="w-full h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-[#0055A4] disabled:cursor-not-allowed"
+                            className="w-full h-1.5 appearance-none cursor-pointer bg-gray-300 accent-[#0055A4] disabled:cursor-not-allowed"
                           />
-                          <div className="flex justify-between text-xs text-gray-500 mt-0.5 px-0.5">
+                          <div className="flex justify-between text-xs text-gray-500">
                             <span>0.5x</span>
                             <span>5x</span>
                           </div>
                         </div>
-                      </div>
 
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Disappearance Rate: {simDisappearanceRate}%
-                        </label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="10"
-                          step="0.5"
-                          value={simDisappearanceRate}
-                          onChange={(e) => setSimDisappearanceRate(parseFloat(e.target.value))}
-                          disabled={simulationStatus?.running || loading}
-                          className="w-full h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-[#0055A4] disabled:cursor-not-allowed"
-                        />
-                        <div className="flex justify-between text-xs text-gray-500 mt-0.5 px-0.5">
-                          <span>0%</span>
-                          <span>10%</span>
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-gray-700">Disappearance Rate: {simDisappearanceRate}%</label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="10"
+                            step="0.5"
+                            value={simDisappearanceRate}
+                            onChange={(e) => setSimDisappearanceRate(parseFloat(e.target.value))}
+                            disabled={simulationStatus?.running || loading}
+                            className="w-full h-1.5 appearance-none cursor-pointer bg-gray-300 accent-[#0055A4] disabled:cursor-not-allowed"
+                          />
+                          <div className="flex justify-between text-xs text-gray-500">
+                            <span>0%</span>
+                            <span>10%</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Control Buttons */}
-                    <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        <button
-                          onClick={startSimulation}
-                          disabled={simulationStatus?.running || loading || checkingConnection}
-                          className="px-4 py-2 text-sm font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {checkingConnection ? 'Checking...' : 'Start'}
-                        </button>
-                        <button
-                          onClick={stopSimulation}
-                          disabled={!simulationStatus?.running || loading}
-                          className="px-4 py-2 text-sm font-medium bg-gray-400 text-white rounded-lg hover:bg-gray-500 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                        >
-                          Stop
-                        </button>
-                        <button
-                          onClick={checkConnectionStatus}
-                          disabled={loading || checkingConnection}
-                          className="px-4 py-2 text-sm font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                        >
-                          Test Connection
-                        </button>
-                        {simulationStatus?.running && (
-                          <div className="flex items-center gap-1.5 ml-2">
-                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                            <span className="text-xs text-gray-600 font-medium">Running</span>
+                      {/* Control Buttons */}
+                      <div className="border-b border-gray-200 px-4 py-4">
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-xs font-medium text-gray-600 mb-2">Simulation Control</p>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={startSimulation}
+                                disabled={simulationStatus?.running || loading || checkingConnection}
+                                className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white transition-colors hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed"
+                              >
+                                {checkingConnection ? 'Checking...' : 'Start Simulation'}
+                              </button>
+                              <button
+                                onClick={stopSimulation}
+                                disabled={!simulationStatus?.running || loading}
+                                className="px-4 py-2 text-sm font-semibold bg-gray-500 text-white transition-colors hover:bg-gray-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                              >
+                                Stop Simulation
+                              </button>
+                              <button
+                                onClick={checkConnectionStatus}
+                                disabled={loading || checkingConnection}
+                                className="px-4 py-2 text-sm font-semibold bg-gray-700 text-white transition-colors hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                              >
+                                Test Connection
+                              </button>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => setShowClearDataModal(true)}
-                          disabled={simulationStatus?.running || loading}
-                          className="px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                        >
-                          Clear Data
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (products.length > 0) {
-                              showMessage('error', `⚠️ You have ${products.length} existing products. Click "Clear Data" first to start fresh!`);
-                              return;
-                            }
-                            regenerateInventory();
-                          }}
-                          disabled={simulationStatus?.running || loading || regeneratingInventory}
-                          className="px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                          title="Generate inventory items (must clear data first if items exist)"
-                        >
-                          {regeneratingInventory ? 'Generating...' : 'Generate Items'}
-                        </button>
-                      </div>
-                    </div>
 
-                    {connectionStatus && (
-                      <div className={`p-3 rounded-lg border text-xs space-y-1 mb-3 ${
-                        connectionStatus.mqtt_connected
-                          ? 'bg-green-50 border-green-200'
-                          : 'bg-red-50 border-red-200'
-                      }`}>
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${connectionStatus.mqtt_connected ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                          <span className="font-medium">MQTT:</span>
-                          <span className="text-gray-600">{connectionStatus.mqtt_broker}</span>
-                          <span className={connectionStatus.mqtt_connected ? 'text-green-600 ml-auto' : 'text-red-600 ml-auto'}>
-                            {connectionStatus.mqtt_connected ? '✓ Connected' : '✗ Disconnected'}
-                          </span>
+                          <div className="border-t border-gray-200 pt-3">
+                            <p className="text-xs font-medium text-gray-600 mb-2">Data Management</p>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={() => setShowClearDataModal(true)}
+                                disabled={simulationStatus?.running || loading}
+                                className="px-4 py-2 text-sm font-semibold bg-red-600 text-white transition-colors hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                              >
+                                Clear All Data
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (products.length > 0) {
+                                    showMessage('error', `⚠️ You have ${products.length} existing products. Click "Clear Data" first to start fresh!`);
+                                    return;
+                                  }
+                                  regenerateInventory();
+                                }}
+                                disabled={simulationStatus?.running || loading || regeneratingInventory}
+                                className="px-4 py-2 text-sm font-semibold bg-green-600 text-white transition-colors hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                                title="Generate inventory items (must clear data first if items exist)"
+                              >
+                                {regeneratingInventory ? 'Generating...' : 'Generate Inventory'}
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                        {connectionStatus.mqtt_error && (
-                          <div className="text-red-600 ml-4">{connectionStatus.mqtt_error}</div>
-                        )}
-                        {connectionStatus.wifi_ssid && (
-                          <div className="flex items-center gap-2 text-gray-600 ml-4">
-                            <span>WiFi: {connectionStatus.wifi_ssid}</span>
-                          </div>
-                        )}
                       </div>
-                    )}
 
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-gray-700 leading-relaxed">
-                      <strong>How to use:</strong> Set parameters above, then click Start to begin simulation. Sliders can only be adjusted when stopped. The system will auto-check your connection when starting.
+                      {connectionStatus && (
+                        <div className={`px-3 py-3 text-xs ${
+                          connectionStatus.mqtt_connected
+                            ? 'bg-green-50 border border-green-200'
+                            : 'bg-red-50 border border-red-200'
+                        }`}>
+                          <div className="flex items-center gap-2">
+                            <span className={`h-2 w-2 ${connectionStatus.mqtt_connected ? 'bg-green-600' : 'bg-red-600'}`} aria-hidden />
+                            <span className="font-semibold">MQTT:</span>
+                            <span className="text-gray-700">{connectionStatus.mqtt_broker}</span>
+                            <span className={connectionStatus.mqtt_connected ? 'ml-auto font-semibold text-green-700' : 'ml-auto font-semibold text-red-700'}>
+                              {connectionStatus.mqtt_connected ? 'Connected' : 'Disconnected'}
+                            </span>
+                          </div>
+                          {connectionStatus.mqtt_error && (
+                            <div className="ml-4 text-red-700">{connectionStatus.mqtt_error}</div>
+                          )}
+                          {connectionStatus.wifi_ssid && (
+                            <div className="ml-4 flex items-center gap-2 text-gray-700">
+                              <span>WiFi: {connectionStatus.wifi_ssid}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="border-t border-gray-200 bg-gray-50 px-4 py-3 text-xs leading-relaxed text-gray-700">
+                        <strong>How to use:</strong> Set parameters above, then click Start. Sliders adjust only while stopped. Connection checks run automatically on start.
+                      </div>
                     </div>
-                  </div>
                 )}
 
                 {/* Clear Data Confirmation Modal */}
                 {showClearDataModal && (
                   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+                    <div className="bg-white border border-gray-300 shadow-xl p-6 max-w-md w-full mx-4">
                       <h3 className="text-xl font-semibold text-gray-900 mb-4">
                         Clear All Simulation Data?
                       </h3>
@@ -942,13 +945,13 @@ export default function AdminPanel() {
                       <div className="flex gap-3 justify-end">
                         <button
                           onClick={() => setShowClearDataModal(false)}
-                          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
                         >
                           Cancel
                         </button>
                         <button
                           onClick={handleClearAllData}
-                          className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                          className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors"
                         >
                           Delete All Data
                         </button>
@@ -958,30 +961,34 @@ export default function AdminPanel() {
                 )}
 
                 {mode?.mode === 'PRODUCTION' && (
-                  <div className="border-t pt-3">
-                    <h2 className="text-lg font-semibold mb-2">Anchor Validation</h2>
-                    <button
-                      onClick={validateAnchors}
-                      disabled={loading}
-                      className="px-4 py-2 text-xs font-medium bg-[#0055A4] text-white rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 transition-colors mb-2"
-                    >
-                      Validate Anchors
-                    </button>
+                  <div className="border border-gray-200 bg-white">
+                    <div className="border-b border-gray-200 px-4 py-3">
+                      <h2 className="text-base font-semibold text-gray-900">Anchor Validation</h2>
+                    </div>
+                    <div className="px-4 py-4">
+                      <button
+                        onClick={validateAnchors}
+                        disabled={loading}
+                        className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white hover:bg-[#003d7a] disabled:bg-gray-300 transition-colors mb-3"
+                      >
+                        Validate Anchors
+                      </button>
 
-                    {validation && (
-                      <div className={`p-3 rounded-lg text-xs ${
-                        validation.valid ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'
-                      }`}>
-                        <p className="font-medium mb-1">{validation.message}</p>
-                        {validation.warnings.length > 0 && (
-                          <ul className="list-disc list-inside space-y-0.5 text-xs">
-                            {validation.warnings.map((warning: string, i: number) => (
-                              <li key={i}>{warning}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    )}
+                      {validation && (
+                        <div className={`p-3 border text-sm ${
+                          validation.valid ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
+                        }`}>
+                          <p className="font-semibold mb-2">{validation.message}</p>
+                          {validation.warnings.length > 0 && (
+                            <ul className="list-disc list-inside space-y-1 text-xs">
+                              {validation.warnings.map((warning: string, i: number) => (
+                                <li key={i}>{warning}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -994,21 +1001,21 @@ export default function AdminPanel() {
                   <h2 className="text-xl font-semibold">Anchor Management</h2>
                   <button
                     onClick={() => openAnchorForm()}
-                    className="px-4 py-2 text-sm font-medium text-white bg-[#0055A4] rounded-lg hover:bg-[#003d7a] transition-colors"
+                    className="px-4 py-2 text-sm font-semibold text-white bg-[#0055A4] hover:bg-[#003d7a] transition-colors"
                   >
                     + Add Anchor
                   </button>
                 </div>
                 
                 {mode?.mode === 'PRODUCTION' && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                    <h4 className="font-medium text-blue-900 mb-2">Production Mode - Hardware Configuration</h4>
+                  <div className="bg-blue-50 border border-blue-200 p-4 mb-4">
+                    <h4 className="font-semibold text-blue-900 mb-2">Production Mode - Hardware Configuration</h4>
                     <p className="text-sm text-blue-800 mb-2">
                       For production mode, you need to enter the actual MAC addresses from your DWM3001CDK devices.
                     </p>
                     <p className="text-sm text-blue-700">
                       <strong>Finding your anchor MAC:</strong> Connect to your DWM3001CDK via USB, open a serial terminal, 
-                      and run <code className="bg-blue-100 px-1 rounded">les</code> command to see the device address.
+                      and run <code className="bg-blue-100 px-1">les</code> command to see the device address.
                     </p>
                   </div>
                 )}
@@ -1040,8 +1047,8 @@ export default function AdminPanel() {
                             <td className="px-4 py-3 text-sm">{anchor.x_position.toFixed(0)}</td>
                             <td className="px-4 py-3 text-sm">{anchor.y_position.toFixed(0)}</td>
                             <td className="px-4 py-3 text-sm">
-                              <span className={`px-2 py-1 rounded-full text-xs ${
-                                anchor.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                              <span className={`px-2 py-1 text-xs border ${
+                                anchor.is_active ? 'bg-green-50 text-green-800 border-green-200' : 'bg-gray-50 text-gray-800 border-gray-200'
                               }`}>
                                 {anchor.is_active ? 'Active' : 'Inactive'}
                               </span>
@@ -1070,7 +1077,7 @@ export default function AdminPanel() {
                 {/* Anchor Form Modal */}
                 {showAnchorForm && (
                   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-xl p-6 w-[450px] max-w-[90vw]">
+                    <div className="bg-white border border-gray-300 shadow-xl p-6 w-[450px] max-w-[90vw]">
                       <h3 className="text-lg font-semibold text-gray-900 mb-4">
                         {editingAnchor ? 'Edit Anchor' : 'Add New Anchor'}
                       </h3>
@@ -1085,7 +1092,7 @@ export default function AdminPanel() {
                             value={anchorForm.mac_address}
                             onChange={(e) => setAnchorForm({...anchorForm, mac_address: e.target.value})}
                             placeholder="e.g., 0xABCD or ABCD"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm font-mono"
+                            className="w-full px-3 py-2 border border-gray-300 focus:ring-1 focus:ring-[#0055A4] focus:border-[#0055A4] focus:outline-none text-sm font-mono"
                           />
                           <p className="text-xs text-gray-500 mt-1">
                             {mode?.mode === 'PRODUCTION' 
@@ -1103,7 +1110,7 @@ export default function AdminPanel() {
                             value={anchorForm.name}
                             onChange={(e) => setAnchorForm({...anchorForm, name: e.target.value})}
                             placeholder="e.g., Anchor 1, Corner NW"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 focus:ring-1 focus:ring-[#0055A4] focus:border-[#0055A4] focus:outline-none text-sm"
                           />
                         </div>
                         
@@ -1116,7 +1123,7 @@ export default function AdminPanel() {
                               type="number"
                               value={anchorForm.x_position}
                               onChange={(e) => setAnchorForm({...anchorForm, x_position: parseFloat(e.target.value) || 0})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm"
+                              className="w-full px-3 py-2 border border-gray-300 focus:ring-1 focus:ring-[#0055A4] focus:border-[#0055A4] focus:outline-none text-sm"
                             />
                           </div>
                           <div>
@@ -1127,7 +1134,7 @@ export default function AdminPanel() {
                               type="number"
                               value={anchorForm.y_position}
                               onChange={(e) => setAnchorForm({...anchorForm, y_position: parseFloat(e.target.value) || 0})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm"
+                              className="w-full px-3 py-2 border border-gray-300 focus:ring-1 focus:ring-[#0055A4] focus:border-[#0055A4] focus:outline-none text-sm"
                             />
                           </div>
                         </div>
@@ -1138,7 +1145,7 @@ export default function AdminPanel() {
                             id="anchorActive"
                             checked={anchorForm.is_active}
                             onChange={(e) => setAnchorForm({...anchorForm, is_active: e.target.checked})}
-                            className="w-4 h-4 text-[#0055A4] border-gray-300 rounded focus:ring-[#0055A4]"
+                            className="w-4 h-4 text-[#0055A4] border-gray-300 focus:ring-[#0055A4]"
                           />
                           <label htmlFor="anchorActive" className="text-sm text-gray-700">
                             Active
@@ -1149,14 +1156,14 @@ export default function AdminPanel() {
                       <div className="flex gap-3 mt-6">
                         <button
                           onClick={closeAnchorForm}
-                          className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                          className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
                         >
                           Cancel
                         </button>
                         <button
                           onClick={saveAnchor}
                           disabled={!anchorForm.mac_address.trim() || loading}
-                          className="flex-1 px-4 py-2 text-sm font-medium text-white bg-[#0055A4] rounded-lg hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                          className="flex-1 px-4 py-2 text-sm font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                         >
                           {loading ? 'Saving...' : (editingAnchor ? 'Update' : 'Create')}
                         </button>
@@ -1175,7 +1182,7 @@ export default function AdminPanel() {
                   <button
                     onClick={() => editMode ? saveAllChanges() : setEditMode(true)}
                     disabled={loading}
-                    className={`px-6 py-2 text-sm font-medium text-white rounded-lg transition-colors ${
+                    className={`px-6 py-2 text-sm font-semibold text-white transition-colors ${
                       editMode 
                         ? 'bg-green-600 hover:bg-green-700' 
                         : 'bg-[#0055A4] hover:bg-[#003d7a]'
@@ -1194,7 +1201,7 @@ export default function AdminPanel() {
                       value={productSearch}
                       onChange={(e) => setProductSearch(e.target.value)}
                       placeholder="Search by name, SKU, or category..."
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 focus:ring-1 focus:ring-[#0055A4] focus:border-[#0055A4] focus:outline-none"
                     />
                   </div>
                   <div>
@@ -1202,7 +1209,7 @@ export default function AdminPanel() {
                     <select
                       value={productFilter}
                       onChange={(e) => setProductFilter(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 focus:ring-1 focus:ring-[#0055A4] focus:border-[#0055A4] focus:outline-none"
                     >
                       <option value="all">All Products</option>
                       <option value="in-stock">In Stock</option>
@@ -1217,7 +1224,7 @@ export default function AdminPanel() {
                     <select
                       value={productSort}
                       onChange={(e) => setProductSort(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-transparent"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 focus:ring-1 focus:ring-[#0055A4] focus:border-[#0055A4] focus:outline-none"
                     >
                       <option value="name">Name (A-Z)</option>
                       <option value="name-desc">Name (Z-A)</option>
@@ -1236,7 +1243,7 @@ export default function AdminPanel() {
                   Click ▶ to expand and view individual RFID-tagged items (EPCs) for each product. 
                   Stock counts are calculated from the number of unique EPCs.
                 </p>
-                <div className="overflow-auto max-h-[calc(110vh-500px)] border border-gray-200 rounded-lg mb-6">
+                <div className="overflow-auto max-h-[calc(110vh-500px)] border border-gray-200 mb-6">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50 sticky top-0">
                       <tr>
@@ -1326,7 +1333,7 @@ export default function AdminPanel() {
                                   defaultValue={product.sku}
                                   disabled={!editMode}
                                   onChange={(e) => editMode && trackProductChange(product.id, 'sku', e.target.value)}
-                                  className={`w-full px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
+                                  className={`w-full px-2 py-1 border focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
                                     editMode ? 'border-gray-300 bg-white' : 'border-transparent bg-transparent cursor-default'
                                   }`}
                                 />
@@ -1337,7 +1344,7 @@ export default function AdminPanel() {
                                   defaultValue={product.name}
                                   disabled={!editMode}
                                   onChange={(e) => editMode && trackProductChange(product.id, 'name', e.target.value)}
-                                  className={`w-full px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
+                                  className={`w-full px-2 py-1 border focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
                                     editMode ? 'border-gray-300 bg-white' : 'border-transparent bg-transparent cursor-default'
                                   }`}
                                 />
@@ -1348,7 +1355,7 @@ export default function AdminPanel() {
                                   defaultValue={product.category}
                                   disabled={!editMode}
                                   onChange={(e) => editMode && trackProductChange(product.id, 'category', e.target.value)}
-                                  className={`w-full px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
+                                  className={`w-full px-2 py-1 border focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
                                     editMode ? 'border-gray-300 bg-white' : 'border-transparent bg-transparent cursor-default'
                                   }`}
                                 />
@@ -1372,7 +1379,7 @@ export default function AdminPanel() {
                                   defaultValue={product.unit_price}
                                   disabled={!editMode}
                                   onChange={(e) => editMode && trackProductChange(product.id, 'unit_price', parseFloat(e.target.value))}
-                                  className={`w-20 px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
+                                  className={`w-20 px-2 py-1 border focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
                                     editMode ? 'border-gray-300 bg-white' : 'border-transparent bg-transparent cursor-default'
                                   }`}
                                 />
@@ -1389,7 +1396,7 @@ export default function AdminPanel() {
                                     }
                                   }}
                                   placeholder=""
-                                  className={`w-20 px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
+                                  className={`w-20 px-2 py-1 border focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
                                     editMode ? 'border-gray-300 bg-white' : 'border-transparent bg-transparent cursor-default'
                                   }`}
                                 />
@@ -1400,7 +1407,7 @@ export default function AdminPanel() {
                                   defaultValue={product.optimal_stock_level}
                                   disabled={!editMode}
                                   onChange={(e) => editMode && trackProductChange(product.id, 'optimal_stock_level', parseInt(e.target.value))}
-                                  className={`w-16 px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
+                                  className={`w-16 px-2 py-1 border focus:outline-none focus:ring-1 focus:ring-[#0055A4] ${
                                     editMode ? 'border-gray-300 bg-white' : 'border-transparent bg-transparent cursor-default'
                                   }`}
                                 />
@@ -1433,7 +1440,7 @@ export default function AdminPanel() {
                                               <tr key={item.id} className="hover:bg-gray-100">
                                                 <td className="px-3 py-2 font-mono text-xs">{item.rfid_tag}</td>
                                                 <td className="px-3 py-2">
-                                                  <span className={`px-2 py-1 rounded-full text-xs ${
+                                                  <span className={`px-2 py-1 border text-xs ${
                                                     item.status === 'present' 
                                                       ? 'bg-green-100 text-green-800' 
                                                       : 'bg-gray-100 text-gray-800'
@@ -1495,7 +1502,7 @@ export default function AdminPanel() {
                           updateStoreConfig(newWidth, undefined, undefined);
                         }
                       }}
-                      className="w-64 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-64 px-4 py-2 border border-gray-300 focus:ring-1 focus:ring-[#0055A4] focus:border-[#0055A4] focus:outline-none"
                     />
                   </div>
                   <div>
@@ -1511,10 +1518,10 @@ export default function AdminPanel() {
                           updateStoreConfig(undefined, newHeight, undefined);
                         }
                       }}
-                      className="w-64 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-64 px-4 py-2 border border-gray-300 focus:ring-1 focus:ring-[#0055A4] focus:border-[#0055A4] focus:outline-none"
                     />
                   </div>
-                  <div className="p-4 bg-gray-50 rounded-lg">
+                  <div className="p-4 bg-gray-50 border border-gray-200">
                     <p className="text-sm text-gray-600">
                       Current dimensions: {storeConfig.store_width} cm × {storeConfig.store_height} cm
                       ({(storeConfig.store_width / 100).toFixed(1)}m × {(storeConfig.store_height / 100).toFixed(1)}m)
@@ -1534,7 +1541,7 @@ export default function AdminPanel() {
                   <div>
                     <h3 className="text-sm font-semibold text-gray-700 uppercase mb-3">Operating Status</h3>
                     <div className="grid grid-cols-3 gap-4">
-                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                      <div className="p-4 bg-white border-2 border-gray-200">
                         <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Current Mode</p>
                         <p className={`text-2xl font-bold ${
                           mode?.mode === 'SIMULATION' ? 'text-blue-600' : 'text-green-600'
@@ -1542,7 +1549,7 @@ export default function AdminPanel() {
                           {mode?.mode || 'N/A'}
                         </p>
                       </div>
-                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                      <div className="p-4 bg-white border-2 border-gray-200">
                         <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Simulation Status</p>
                         <p className={`text-2xl font-bold ${
                           simulationStatus?.running ? 'text-green-600' : 'text-gray-400'
@@ -1553,7 +1560,7 @@ export default function AdminPanel() {
                           <p className="text-xs text-gray-500 mt-1">PID: {simulationStatus.pid}</p>
                         )}
                       </div>
-                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                      <div className="p-4 bg-white border-2 border-gray-200">
                         <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Store Size</p>
                         <p className="text-2xl font-bold text-[#0055A4]">
                           {storeConfig ? `${(storeConfig.store_width / 100).toFixed(1)}m × ${(storeConfig.store_height / 100).toFixed(1)}m` : 'N/A'}
@@ -1566,26 +1573,26 @@ export default function AdminPanel() {
                   <div>
                     <h3 className="text-sm font-semibold text-gray-700 uppercase mb-3">Inventory Overview</h3>
                     <div className="grid grid-cols-4 gap-4">
-                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                      <div className="p-4 bg-white border-2 border-gray-200">
                         <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Products</p>
                         <p className="text-2xl font-bold text-gray-900">{products.length}</p>
                         <p className="text-xs text-gray-500 mt-1">Unique SKUs</p>
                       </div>
-                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                      <div className="p-4 bg-white border-2 border-gray-200">
                         <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Total Items</p>
                         <p className="text-2xl font-bold text-gray-900">
                           {products.reduce((sum, p) => sum + (p.max_detected || 0), 0)}
                         </p>
                         <p className="text-xs text-gray-500 mt-1">All RFID tags</p>
                       </div>
-                      <div className="p-4 bg-white border-2 border-green-200 rounded-lg">
+                      <div className="p-4 bg-white border-2 border-green-200">
                         <p className="text-xs text-gray-500 uppercase font-semibold mb-1">In Stock</p>
                         <p className="text-2xl font-bold text-green-600">
                           {products.reduce((sum, p) => sum + (p.current_stock || 0), 0)}
                         </p>
                         <p className="text-xs text-gray-500 mt-1">Present now</p>
                       </div>
-                      <div className="p-4 bg-white border-2 border-red-200 rounded-lg">
+                      <div className="p-4 bg-white border-2 border-red-200">
                         <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Needs Restock</p>
                         <p className="text-2xl font-bold text-red-600">
                           {products.filter(p => 
@@ -1601,21 +1608,21 @@ export default function AdminPanel() {
                   <div>
                     <h3 className="text-sm font-semibold text-gray-700 uppercase mb-3">Hardware Configuration</h3>
                     <div className="grid grid-cols-3 gap-4">
-                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                      <div className="p-4 bg-white border-2 border-gray-200">
                         <p className="text-xs text-gray-500 uppercase font-semibold mb-1">UWB Anchors</p>
                         <p className="text-2xl font-bold text-gray-900">{anchors.length}</p>
                         <p className="text-xs text-gray-500 mt-1">
                           {anchors.filter(a => a.is_active).length} active
                         </p>
                       </div>
-                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                      <div className="p-4 bg-white border-2 border-gray-200">
                         <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Product Categories</p>
                         <p className="text-2xl font-bold text-gray-900">
                           {new Set(products.map(p => p.category)).size}
                         </p>
                         <p className="text-xs text-gray-500 mt-1">Unique categories</p>
                       </div>
-                      <div className="p-4 bg-white border-2 border-gray-200 rounded-lg">
+                      <div className="p-4 bg-white border-2 border-gray-200">
                         <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Total Inventory Value</p>
                         <p className="text-2xl font-bold text-gray-900">
                           ${products.reduce((sum, p) => sum + ((p.current_stock || 0) * (p.unit_price || 0)), 0).toFixed(0)}

@@ -240,17 +240,20 @@ def generate_store_layout_positions(num_items: int) -> List[Tuple[float, float]]
     
     # Store configuration matching simulation/config.py
     aisles = [
-        {'x': 200, 'y_start': 150, 'y_end': 700, 'width': 80},  # Aisle 1
-        {'x': 400, 'y_start': 120, 'y_end': 700, 'width': 80},  # Aisle 2
-        {'x': 600, 'y_start': 120, 'y_end': 700, 'width': 80},  # Aisle 3
-        {'x': 800, 'y_start': 120, 'y_end': 700, 'width': 80},  # Aisle 4
+        {'x': 180, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 1
+        {'x': 395, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 2
+        {'x': 610, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 3
+        {'x': 825, 'y_start': 120, 'y_end': 700, 'width': 180},  # Aisle 4
     ]
     cross_aisle_y = 400
+    detection_range = 60.0  # Match TagConfig default
     
-    # Generate shelf positions in all aisles
+    # Generate shelf positions in all aisles (keep within detection radius of shopper path)
     for aisle in aisles:
+        max_offset = aisle['width'] / 2 - 10
+        shelf_offset = min(max_offset, detection_range - 5)
         # 4 shelves per aisle, both sides
-        for side_offset in [-25, 25]:  # Left and right of aisle center
+        for side_offset in [-shelf_offset, shelf_offset]:
             for shelf_level in range(4):
                 x_pos = aisle['x'] + side_offset
                 
@@ -261,9 +264,10 @@ def generate_store_layout_positions(num_items: int) -> List[Tuple[float, float]]
                     y_pos = aisle['y_start'] + (aisle_length * (slot + 0.5) / items_per_shelf)
                     positions.append((round(x_pos, 2), round(y_pos, 2)))
     
-    # Add positions in cross-aisle
-    for x_pos in range(200, 900, 30):
-        for side_offset in [-30, 30]:
+    # Add positions in cross-aisle within detection radius
+    cross_offset = min(detection_range - 5, 120 / 2 - 5)
+    for x_pos in range(int(180 - 40), int(825 + 40), 30):
+        for side_offset in [-cross_offset, cross_offset]:
             y_pos = cross_aisle_y + side_offset
             positions.append((round(x_pos, 2), round(y_pos, 2)))
     

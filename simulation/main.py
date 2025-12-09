@@ -375,8 +375,11 @@ def main():
                 else:
                     print(f"❌ Publish failed with code {result.rc}")
             
+            # Keep spatial sampling density stable across speed changes by adjusting the loop interval.
+            # Faster speed → shorter interval so we publish more frequently instead of skipping frames.
             last_time = current_time
-            time.sleep(config.tag.update_interval)
+            effective_interval = max(0.02, config.tag.update_interval / max(config.speed_multiplier, 0.1))
+            time.sleep(effective_interval)
     
     except KeyboardInterrupt:
         print("\n\n⏹️  Stopping simulator...")
