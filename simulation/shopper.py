@@ -194,6 +194,20 @@ class ShopperSimulator:
         import random
         # Use disappearance_rate from config (varies from rate/2 to rate*1.5)
         rate_min = self.config.disappearance_rate * 0.5
+        rate_max = self.config.disappearance_rate * 1.5
+        actual_rate = random.uniform(rate_min, rate_max)
+        
+        # Calculate how many items should disappear this pass
+        num_to_disappear = int(len(detected_items) * actual_rate)
+        
+        # Only proceed if we have items to disappear
+        if num_to_disappear > 0 and num_to_disappear <= len(detected_items):
+            # Randomly select items to mark as missing
+            items_to_disappear = random.sample(detected_items, num_to_disappear)
+            
+            for item in items_to_disappear:
+                item.missing = True
+                print(f"   📦❌ Item {item.epc} ({item.product.name}) marked as MISSING")
     
     def get_status_info(self) -> dict:
         """Get current status for display"""

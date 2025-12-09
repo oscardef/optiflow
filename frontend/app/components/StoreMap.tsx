@@ -210,69 +210,7 @@ export default function StoreMap({
       // If all items present (itemsMissing === 0), show nothing - just the green dot
     });
     
-    // Draw legend
-    drawHeatmapLegend(ctx, canvas);
-  };
-  
-  // Draw heatmap legend
-  const drawHeatmapLegend = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
-    const legendX = canvas.width - 180;
-    const legendY = 20;
-    const legendWidth = 160;
-    const legendHeight = 100;
-    const radius = 8;
     
-    // Background with rounded corners (manual implementation for compatibility)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.strokeStyle = '#e5e7eb';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(legendX + radius, legendY);
-    ctx.lineTo(legendX + legendWidth - radius, legendY);
-    ctx.quadraticCurveTo(legendX + legendWidth, legendY, legendX + legendWidth, legendY + radius);
-    ctx.lineTo(legendX + legendWidth, legendY + legendHeight - radius);
-    ctx.quadraticCurveTo(legendX + legendWidth, legendY + legendHeight, legendX + legendWidth - radius, legendY + legendHeight);
-    ctx.lineTo(legendX + radius, legendY + legendHeight);
-    ctx.quadraticCurveTo(legendX, legendY + legendHeight, legendX, legendY + legendHeight - radius);
-    ctx.lineTo(legendX, legendY + radius);
-    ctx.quadraticCurveTo(legendX, legendY, legendX + radius, legendY);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    
-    // Title
-    ctx.fillStyle = '#374151';
-    ctx.font = 'bold 13px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('Stock Status', legendX + 10, legendY + 10);
-    
-    // Legend items
-    const items = [
-      { color: 'rgb(34, 197, 94)', label: 'All Present' },
-      { color: 'rgb(251, 191, 36)', label: 'Some Missing' },
-      { color: 'rgb(239, 68, 68)', label: 'Many Missing' },
-    ];
-    
-    items.forEach((item, index) => {
-      const y = legendY + 35 + index * 22;
-      
-      // Color dot
-      ctx.beginPath();
-      ctx.arc(legendX + 20, y, 8, 0, 2 * Math.PI);
-      ctx.fillStyle = item.color;
-      ctx.fill();
-      ctx.strokeStyle = '#00000033';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      
-      // Label
-      ctx.fillStyle = '#374151';
-      ctx.font = '12px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(item.label, legendX + 35, y);
-    });
   };
 
   // Draw heatmap overlay using spatial clustering

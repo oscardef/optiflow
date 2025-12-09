@@ -840,13 +840,6 @@ export default function AdminPanel() {
                             <p className="text-xs font-medium text-gray-600 mb-2">Data Management</p>
                             <div className="flex flex-wrap gap-2">
                               <button
-                                onClick={() => setShowClearDataModal(true)}
-                                disabled={simulationStatus?.running || loading}
-                                className="px-4 py-2 text-sm font-semibold bg-red-600 text-white transition-colors hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                              >
-                                Clear All Data
-                              </button>
-                              <button
                                 onClick={() => {
                                   if (products.length > 0) {
                                     showMessage('error', `⚠️ You have ${products.length} existing products. Click "Clear Data" first to start fresh!`);
@@ -859,6 +852,13 @@ export default function AdminPanel() {
                                 title="Generate inventory items (must clear data first if items exist)"
                               >
                                 {regeneratingInventory ? 'Generating...' : 'Generate Inventory'}
+                              </button>
+                              <button
+                                onClick={() => setShowClearDataModal(true)}
+                                disabled={simulationStatus?.running || loading}
+                                className="px-4 py-2 text-sm font-semibold bg-red-600 text-white transition-colors hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                              >
+                                Clear All Data
                               </button>
                             </div>
                           </div>
