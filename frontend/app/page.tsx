@@ -73,30 +73,52 @@ export default function Home() {
 
   // WebSocket message handler
   const handleWebSocketMessage = useCallback((message: any) => {
+    console.log('[DEBUG] Processing WebSocket message:', message.type, message.data);
+    
     switch (message.type) {
       case 'position_update':
         if (message.data) {
+          console.log('[DEBUG] Adding position:', message.data);
           setPositions(prev => {
+            // Create new position object with correct property names
+            const newPosition = {
+              id: Date.now(),
+              tag_id: message.data.tag_id,
+              x_position: message.data.x,
+              y_position: message.data.y,
+              confidence: message.data.confidence,
+              timestamp: message.data.timestamp,
+              num_anchors: message.data.num_anchors
+            };
             // Add new position and keep only recent ones
-            const newPositions = [message.data, ...prev].slice(0, maxDisplayItems);
+            const newPositions = [newPosition, ...prev].slice(0, maxDisplayItems);
+            console.log('[DEBUG] Updated positions array, length:', newPositions.length, 'first item:', newPositions[0]);
             return newPositions;
           });
         }
         break;
       
       case 'item_update':
-        if (message.data) {
+        if (message.data && message.data.items) {
+          console.log('[DEBUG] Updating items, count:', message.data.count);
           setItems(prev => {
-            const existingIndex = prev.findIndex(item => item.epc === message.data.epc);
-            if (existingIndex >= 0) {
-              // Update existing item
-              const updated = [...prev];
-              updated[existingIndex] = message.data;
-              return updated;
-            } else {
-              // Add new item
-              return [...prev, message.data];
-            }
+            // Create a map of existing items by rfid_tag
+            const itemMap = new Map(prev.map(item => [item.product_id || item.rfid_tag, item]));
+            
+            // Update or add new items
+            message.data.items.forEach((newItem: any) => {
+              const key = newItem.product_id || newItem.rfid_tag;
+              itemMap.set(key, {
+                product_id: newItem.rfid_tag,
+                product_name: newItem.product_name,
+                x_position: newItem.x,
+                y_position: newItem.y,
+                status: newItem.status,
+                timestamp: new Date().toISOString()
+              });
+            });
+            
+            return Array.from(itemMap.values());
           });
         }
         break;

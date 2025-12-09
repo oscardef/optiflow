@@ -36,7 +36,7 @@ class ConnectionManager:
         message_json = json.dumps(message)
         disconnected = set()
         
-        logger.debug(f"Broadcasting {message.get('type', 'unknown')} to {len(self.active_connections)} clients")
+        logger.info(f"📡 Broadcasting {message.get('type', 'unknown')} to {len(self.active_connections)} clients")
         
         for connection in self.active_connections:
             try:
