@@ -34,6 +34,7 @@ OptiFlow is a full-stack inventory management solution that tracks:
 | Feature | Description |
 |---------|-------------|
 | Real-time Tracking | 6-7 position updates per second with confidence scoring |
+| WebSocket Updates | Live position and item updates pushed to dashboard via WebSocket |
 | Dual Database | Separate databases for simulation and production environments |
 | Interactive Dashboard | Canvas-based store visualization with drag-and-drop anchor configuration |
 | Stock Heatmap | Visual representation of inventory depletion by location |
@@ -49,7 +50,6 @@ OptiFlow is a full-stack inventory management solution that tracks:
 
 ```
                                     OPTIFLOW SYSTEM ARCHITECTURE
-    
     ┌─────────────────────────────────────────────────────────────────────────────────┐
     │                              PRESENTATION LAYER                                  │
     │  ┌─────────────────────────────────────────────────────────────────────────┐   │
@@ -61,7 +61,8 @@ OptiFlow is a full-stack inventory management solution that tracks:
     │  └─────────────────────────────────────────────────────────────────────────┘   │
     └─────────────────────────────────────────────────────────────────────────────────┘
                                           │
-                                          │ HTTP/REST
+                                          │ HTTP/REST + WebSocket
+                                          ▼ HTTP/REST
                                           ▼
     ┌─────────────────────────────────────────────────────────────────────────────────┐
     │                               APPLICATION LAYER                                  │
@@ -71,6 +72,9 @@ OptiFlow is a full-stack inventory management solution that tracks:
     │  │  │ Triangula-  │  │   Data      │  │  Analytics  │  │   Simulation    │ │   │
     │  │  │ tion Engine │  │   Ingestion │  │  Engine     │  │   Controller    │ │   │
     │  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────┘ │   │
+    │  │  ┌─────────────────────────────────────────────────────────────────────┐ │   │
+    │  │  │ WebSocket Manager - Real-time position & item update broadcasting   │ │   │
+    │  │  └─────────────────────────────────────────────────────────────────────┘ │   │
     │  └─────────────────────────────────────────────────────────────────────────┘   │
     └─────────────────────────────────────────────────────────────────────────────────┘
                                           │
@@ -123,9 +127,6 @@ OptiFlow is a full-stack inventory management solution that tracks:
     │   - Generates UTC timestamp for each packet    │
     │   - Forwards to backend via HTTP POST          │
     └─────────────────────┬───────────────────────────┘
-                          │
-                          │ HTTP POST /data
-                          ▼
     ┌─────────────────────────────────────────────────┐
     │              FastAPI Backend                    │
     │                                                 │
@@ -137,7 +138,11 @@ OptiFlow is a full-stack inventory management solution that tracks:
     │   6. Update inventory items status & position  │
     │   7. Update last_seen_at for present items     │
     │   8. Record analytics events                   │
+    │   9. Broadcast updates via WebSocket           │
     └─────────────────────┬───────────────────────────┘
+                          │
+                          │ SQL INSERT/UPDATE + WebSocket Broadcast
+                          ▼───────────────────────────┘
                           │
                           │ SQL INSERT/UPDATE
                           ▼
@@ -546,15 +551,16 @@ docker compose ps
 # Generate inventory (simulation mode)
 python3 -m simulation.generate_inventory --items 3000
 
-# Access the dashboard
-open http://localhost:3000
-```
-
 ### Service Ports
 
 | Service | Port | URL |
 |---------|------|-----|
 | Frontend | 3000 | http://localhost:3000 |
+| Backend API | 8000 | http://localhost:8000 |
+| Backend WebSocket | 8000 | ws://localhost:8000/ws/live |
+| API Documentation | 8000 | http://localhost:8000/docs |
+| Simulation Database | 5432 | postgresql://localhost:5432/optiflow_simulation |
+| Production Database | 5433 | postgresql://localhost:5433/optiflow_production |
 | Backend API | 8000 | http://localhost:8000 |
 | API Documentation | 8000 | http://localhost:8000/docs |
 | Simulation Database | 5432 | postgresql://localhost:5432/optiflow_simulation |
@@ -572,9 +578,10 @@ Create a `.env` file in the project root:
 # Database
 POSTGRES_USER=optiflow
 POSTGRES_PASSWORD=optiflow_dev
-
-# MQTT
-MQTT_BROKER_HOST=host.docker.internal
+# API
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws/live
+```T_BROKER_HOST=host.docker.internal
 MQTT_BROKER_PORT=1883
 
 # API
@@ -649,14 +656,39 @@ python3 -m simulation.backfill_history --days 30 --density normal
 
 # Generate high-density data for testing
 python3 -m simulation.backfill_history --days 7 --density high
-```
-
----
-
-## API Reference
-
 ### Core Endpoints
 
+#### WebSocket Connection
+
+```
+WS /ws/live
+```
+Real-time WebSocket endpoint for receiving live position and item updates. Clients connect to this endpoint to receive broadcasts of:
+- `position_update`: Employee position changes with confidence scores
+- `item_update`: Inventory item status and position changes
+- `detection_update`: RFID detection events
+
+Example WebSocket message:
+```json
+{
+  "type": "position_update",
+  "data": {
+    "timestamp": "2025-12-09T10:00:00Z",
+    "tag_id": "employee",
+    "x": 423.5,
+    "y": 287.2,
+    "confidence": 0.87,
+    "num_anchors": 4
+  }
+}
+```
+
+#### Data Ingestion
+
+```
+POST /data
+```
+Receives detection and UWB measurement data from hardware or simulation. Each data packet includes a timestamp that is stored with all readings for historical tracking. After processing, broadcasts updates to all connected WebSocket clients.
 #### Data Ingestion
 
 ```
@@ -846,14 +878,15 @@ GET /config/validate-anchors            # Check anchor configuration
 ### Firmware Configuration
 
 Edit `firmware/code_esp32/code_esp32.ino`:
-
-```cpp
-// WiFi Configuration
-const char* WIFI_SSID = "YourNetwork";
-const char* WIFI_PASSWORD = "YourPassword";
-const char* MQTT_SERVER = "192.168.1.100";  // Your server IP
-const int MQTT_PORT = 1883;
-```
+├── backend/                    # FastAPI backend service
+│   ├── app/
+│   │   ├── main.py            # Application entry point
+│   │   ├── models.py          # SQLAlchemy models (database tables)
+│   │   ├── schemas.py         # Pydantic schemas (API validation)
+│   │   ├── database.py        # Database configuration
+│   │   ├── triangulation.py   # Position calculation algorithm
+│   │   ├── websocket_manager.py # WebSocket connection & broadcast manager
+│   │   ├── config.py          # Application settings & mode switching
 
 ### Anchor Setup
 
@@ -869,13 +902,15 @@ For each DWM3001CDK anchor:
    ```
 4. Power anchor and position in store
 
----
-
-## Development
-
-### Project Structure
-
-```
+├── frontend/                   # Next.js frontend
+│   ├── app/
+│   │   ├── page.tsx           # Main dashboard page
+│   │   ├── layout.tsx         # App layout wrapper
+│   │   ├── hooks/
+│   │   │   └── useWebSocket.ts # WebSocket connection hook
+│   │   ├── analytics/         # Analytics dashboard page
+│   │   ├── admin/             # Admin panel page
+│   │   └── components/        # Reusable React components
 optiflow/
 ├── backend/                    # FastAPI backend service
 │   ├── app/
@@ -1067,25 +1102,47 @@ mosquitto_pub -h localhost -t test -m "hello"
 docker compose ps
 
 # Restart databases
-docker compose restart postgres-simulation postgres-production
+### Real-time Updates via WebSocket
 
-# View database logs
-docker compose logs postgres-simulation
-```
+**Live position and item updates are broadcast to connected clients:**
 
-### Logs
+1. **WebSocket Connection:**
+   - Frontend establishes WebSocket connection to `ws://localhost:8000/ws/live`
+   - Connection managed by `useWebSocket` React hook with auto-reconnect
+   - Multiple clients can connect simultaneously
 
-```bash
-# All services
-docker compose logs -f
+2. **Broadcast Flow:**
+   - Backend processes incoming data (RFID + UWB)
+   - Calculates employee position via triangulation
+   - Updates inventory item status and positions in database
+   - Broadcasts `position_update` and `item_update` messages to all connected clients
+   - Frontend receives updates and re-renders map in real-time
 
-# Specific service
-docker compose logs -f backend
+3. **Message Types:**
+   - `position_update`: Employee position with confidence and timestamp
+   - `item_update`: Batch of inventory items with current status and positions
+   - `detection_update`: Raw RFID detection events
 
-# Last 100 lines
-docker compose logs --tail=100 backend
-```
+### Timestamp Tracking
 
+**All readings are stored with precise timestamps for complete historical tracking:**
+
+1. **Data Ingestion Flow:**
+   - MQTT bridge generates UTC timestamp: `datetime.utcnow().isoformat() + "Z"`
+   - Backend receives and parses timestamp from data packet
+   - Timestamp stored with every detection, UWB measurement, and calculated position
+   - Real-time updates broadcast via WebSocket to connected clients
+
+2. **Persistence Strategy:**
+   - Core tables (`detections`, `uwb_measurements`, `tag_positions`) are append-only logs
+   - Timestamp fields are indexed for efficient time-range queries
+   - `inventory_items.last_seen_at` updated only when item status is "present"
+
+3. **Analytics Usage:**
+   - Time-series queries for stock trends
+   - Historical movement tracking
+   - Purchase event analysis
+   - Demand forecasting based on timestamped data
 ### Reset System
 
 ```bash

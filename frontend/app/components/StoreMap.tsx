@@ -706,11 +706,11 @@ export default function StoreMap({
       const canvasPos = toCanvasCoords(currentPos.x_position, currentPos.y_position, canvas);
       console.log('[DEBUG StoreMap] Canvas coords:', canvasPos.x, canvasPos.y, 'storeWidth:', storeWidth, 'canvas.width:', canvas.width);
       
-      // 1.5m detection radius circle (RFID range)
+      // 0.7m detection radius circle (RFID range)
       ctx.strokeStyle = 'rgba(0, 85, 164, 0.3)';
       ctx.lineWidth = 4;
       ctx.setLineDash([16, 8]);
-      const radiusCm = 150; // 1.5 meters RFID range
+      const radiusCm = 60; // 0.6 meters RFID range
       const radiusPx = radiusCm * (canvas.width / storeWidth);
       ctx.beginPath();
       ctx.arc(canvasPos.x, canvasPos.y, radiusPx, 0, 2 * Math.PI);
