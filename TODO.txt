@@ -78,4 +78,4 @@ PRIORITY: LOW / FUTURE IMPROVEMENTS
 
 1) add special spatial indexing
 2) add ml clissification for missing items
-3) 
+3) translate the EPCs
