@@ -98,9 +98,21 @@ export default function Home() {
               timestamp: message.data.timestamp,
               num_anchors: message.data.num_anchors
             };
-            // Add new position and keep only recent ones
-            const newPositions = [newPosition, ...prev].slice(0, maxDisplayItems);
-            console.log('[DEBUG] Updated positions array, length:', newPositions.length, 'first item:', newPositions[0]);
+            // Deduplicate by tag_id - keep only the latest position for each tag
+            const latestByTag = new Map();
+            
+            // Add the new position first
+            latestByTag.set(newPosition.tag_id, newPosition);
+            
+            // Then add existing positions, but only if we don't already have a newer one for that tag
+            prev.forEach(pos => {
+              if (!latestByTag.has(pos.tag_id)) {
+                latestByTag.set(pos.tag_id, pos);
+              }
+            });
+            
+            const newPositions = Array.from(latestByTag.values());
+            console.log('[DEBUG] Updated positions array, length:', newPositions.length, 'unique tags:', newPositions.map(p => p.tag_id));
             return newPositions;
           });
         }

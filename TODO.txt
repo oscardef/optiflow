@@ -72,3 +72,10 @@ PRIORITY: LOW / FUTURE IMPROVEMENTS
 [✓] analytics_tracker.py: Real-time purchase/snapshot tracking
 [✓] generate_inventory.py: 20 product templates with size/color/style variants
 [✓] backfill_history.py: Historical data generation with trends/spikes/shortages
+
+
+
+
+1) add special spatial indexing
+2) add ml clissification for missing items
+3) 
