@@ -379,3 +379,55 @@ def sync_products_from_simulation_catalog(db: Session = Depends(get_db)):
         "skipped": skipped_count,
         "total_catalog_size": len(PRODUCT_CATALOG)
     }
+
+@router.delete("/cleanup-generic")
+def cleanup_generic_products(db: Session = Depends(get_db)):
+    """
+    Remove auto-generated generic products (Item-XXXXXXXX, GEN-*) that were 
+    created when unknown RFID tags were detected.
+    
+    These products are created by the old auto-creation logic and should be removed
+    to clean up the product catalog.
+    """
+    from ..models import InventoryItem
+    
+    # Find generic products by pattern
+    generic_products = db.query(Product).filter(
+        (Product.name.like('Item-%')) | (Product.sku.like('GEN-%'))
+    ).all()
+    
+    if not generic_products:
+        return {
+            "success": True,
+            "message": "No generic products found",
+            "deleted_products": 0,
+            "deleted_items": 0
+        }
+    
+    deleted_products = 0
+    deleted_items = 0
+    
+    for product in generic_products:
+        # Delete associated inventory items first (cascade should handle this, but be explicit)
+        items = db.query(InventoryItem).filter(
+            InventoryItem.product_id == product.id
+        ).all()
+        
+        for item in items:
+            db.delete(item)
+            deleted_items += 1
+        
+        # Delete the product
+        db.delete(product)
+        deleted_products += 1
+        
+        logger.info(f"Deleted generic product: {product.sku} - {product.name} (and {len(items)} items)")
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Cleaned up {deleted_products} generic products and {deleted_items} associated items",
+        "deleted_products": deleted_products,
+        "deleted_items": deleted_items
+    }

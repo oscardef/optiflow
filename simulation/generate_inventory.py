@@ -399,9 +399,11 @@ def main():
     num_products_to_use = int(args.items / avg_items_per_product)
     
     # Randomly select products to use (ensures variety)
+    # Only use products that will actually have items assigned
     selected_products = random.sample(all_products, min(num_products_to_use, len(all_products)))
     
-    print(f"   📊 Creating 3-10 items each for {len(selected_products)} products (from {len(all_products)} total variants)")
+    print(f"   📊 Creating 3-10 items each for {len(selected_products)} selected products")
+    print(f"   ℹ️  Note: {len(all_products) - len(selected_products)} product variants will not be created (no items needed)")
     
     # Generate positions for all items upfront
     positions = generate_store_layout_positions(args.items)
@@ -456,11 +458,12 @@ def main():
     
     # Summary
     print(f"\n📊 Generation Summary:")
-    print(f"   Products: {len(all_products)}")
+    print(f"   Products to create: {len(selected_products)}")
     print(f"   Items: {len(all_items)} (target: {args.items})")
+    print(f"   Product variants available: {len(all_products)} (using {len(selected_products)})")
     
     categories = {}
-    for p in all_products:
+    for p in selected_products:
         categories[p['category']] = categories.get(p['category'], 0) + 1
     
     print(f"\n   Categories:")
@@ -470,7 +473,7 @@ def main():
     if args.dry_run:
         print(f"\n   🔍 DRY RUN - No data created")
         print(f"\n   Sample products:")
-        for i, p in enumerate(all_products[:5], 1):
+        for i, p in enumerate(selected_products[:5], 1):
             print(f"     {i}. {p['sku']}: {p['name']} (${p['unit_price']})")
         return
     
@@ -489,8 +492,9 @@ def main():
         print(f"❌ Cannot connect to API: {e}")
         return
     
-    # Create products
-    created_products = create_products_batch(args.api, all_products)
+    # Create only products that have items assigned to them
+    print(f"\n💡 Creating only products with assigned items ({len(selected_products)} products)")
+    created_products = create_products_batch(args.api, selected_products)
     
     if len(created_products) == 0:
         print("❌ No products were created. Check API connection and logs.")

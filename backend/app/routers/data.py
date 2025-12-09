@@ -90,31 +90,10 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
             ).first()
             
             if not inventory_item:
-                # Create new inventory item (find or create product first)
-                product = db.query(Product).filter(Product.name == detection.product_name).first()
-                if not product:
-                    # Create a generic product for this item
-                    product = Product(
-                        sku=f"GEN-{detection.product_id}",
-                        name=detection.product_name,
-                        category="General",
-                        unit_price=29.99,
-                        reorder_threshold=10,
-                        optimal_stock_level=50
-                    )
-                    db.add(product)
-                    db.flush()
-                
-                # Create inventory item - position will be set by triangulation later
-                inventory_item = InventoryItem(
-                    rfid_tag=detection.product_id,
-                    product_id=product.id,
-                    status=status_val,
-                    x_position=None,  # Will be set by triangulation
-                    y_position=None,  # Will be set by triangulation
-                    last_seen_at=timestamp
-                )
-                db.add(inventory_item)
+                # RFID tag not found in inventory - this shouldn't happen in normal operation
+                # Log it but don't auto-create products (prevents "Item-XXXXXXXX" pollution)
+                logger.warning(f"Unknown RFID tag detected: {detection.product_id} - skipping (not in inventory)")
+                continue  # Skip this detection, don't create it
             else:
                 # Update existing inventory item status
                 # IMPORTANT: Once an item is marked as 'not present', it stays that way
