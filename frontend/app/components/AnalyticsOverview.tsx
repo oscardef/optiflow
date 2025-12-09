@@ -123,33 +123,30 @@ export default function AnalyticsOverview({ data }: AnalyticsOverviewProps) {
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+    <div className="grid grid-cols-3 gap-4">
       {cards.map((card, index) => (
         <div
           key={index}
-          className="bg-white rounded-lg border border-gray-200 p-6 hover:border-gray-300 hover:shadow-sm transition-all duration-200"
+          className="bg-white rounded-lg border border-gray-200 p-5 hover:border-gray-300 transition-colors"
         >
           {/* Header with title and info tooltip */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center">
-              <h3 className="text-sm font-medium text-gray-600 tracking-tight">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-sm font-medium text-gray-600">
                 {card.title}
               </h3>
               <InfoTooltip content={card.tooltip} />
             </div>
             {card.trend === 'critical' && (
-              <span className="flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-              </span>
+              <span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>
             )}
             {card.trend === 'warning' && (
-              <span className="flex h-2 w-2 rounded-full bg-yellow-500"></span>
+              <span className="inline-block w-2 h-2 rounded-full bg-yellow-500"></span>
             )}
           </div>
 
           {/* Main value */}
-          <div className="text-4xl font-semibold text-gray-900 mb-2 tracking-tight">
+          <div className="text-3xl font-semibold text-gray-900 mb-1.5">
             {card.value.toLocaleString()}
           </div>
 

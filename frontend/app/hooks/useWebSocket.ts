@@ -47,14 +47,13 @@ export function useWebSocket({
     if (!enabled || ws.current?.readyState === WebSocket.OPEN || isConnecting.current) {
       return;
     }
-    if (!enabled || ws.current?.readyState === WebSocket.OPEN) {
-      return;
-    }
 
     if (!url) {
       console.error('[WebSocket] Cannot connect: URL is undefined or empty');
       return;
     }
+
+    isConnecting.current = true;
 
     try {
       console.log(`[WebSocket] Attempting to connect to ${url}...`);
@@ -62,12 +61,13 @@ export function useWebSocket({
 
       ws.current.onopen = () => {
         console.log('[WebSocket] ✅ Connection established successfully');
+        isConnecting.current = false;
         shouldReconnect.current = true;
         if (reconnectTimeout.current) {
           clearTimeout(reconnectTimeout.current);
           reconnectTimeout.current = null;
         }
-        onConnect?.();
+        onConnectRef.current?.();
       };
 
       ws.current.onmessage = (event) => {
@@ -86,7 +86,8 @@ export function useWebSocket({
           reason: event.reason,
           wasClean: event.wasClean
         });
-        onDisconnect?.();
+        isConnecting.current = false;
+        onDisconnectRef.current?.();
         ws.current = null;
 
         // Attempt to reconnect if enabled and should reconnect
@@ -100,13 +101,13 @@ export function useWebSocket({
       };
 
       ws.current.onerror = (error) => {
-        console.error('[WebSocket] Connection error occurred', {
+        console.warn('[WebSocket] Connection error (will retry if enabled)', {
           type: error.type,
-          target: error.target ? 'WebSocket' : undefined,
           readyState: ws.current?.readyState,
           url: url
         });
-        onError?.(error);
+        isConnecting.current = false;
+        onErrorRef.current?.(error);
       };
     } catch (error) {
       console.error('[WebSocket] Failed to create connection:', {

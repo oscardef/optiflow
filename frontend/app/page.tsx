@@ -168,7 +168,7 @@ export default function Home() {
       setWsConnected(false);
     },
     onError: (error) => {
-      console.error('WebSocket connection error', {
+      console.warn('WebSocket connection issue (will retry)', {
         wsUrl: WS_URL,
         type: error.type,
         message: 'Check that the backend is running and accessible'

@@ -15,8 +15,8 @@ interface Props {
 export default function SalesTimeSeriesChart({ data, interval, isLoading }: Props) {
   if (isLoading) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-6 animate-pulse">
-        <div className="h-6 bg-gray-200 rounded w-1/3 mb-4"></div>
+      <div className="animate-pulse min-h-[350px]">
+        <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
         <div className="h-64 bg-gray-100 rounded"></div>
       </div>
     );
@@ -24,9 +24,8 @@ export default function SalesTimeSeriesChart({ data, interval, isLoading }: Prop
 
   if (!data || data.length === 0) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold mb-4">Sales Over Time</h3>
-        <div className="flex items-center justify-center h-64 text-gray-400">
+      <div className="min-h-[350px]">
+        <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
           No sales data available
         </div>
       </div>
@@ -88,16 +87,15 @@ export default function SalesTimeSeriesChart({ data, interval, isLoading }: Prop
   const needsScroll = calculatedWidth > 800;
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 min-h-[400px]">
+    <div className="min-h-[350px]">
       <div className="flex justify-between items-start mb-4">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Sales Over Time</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            {interval === 'hour' && 'Hourly sales'}
-            {interval === 'day' && 'Daily sales'}
-            {interval === 'week' && 'Weekly sales'}
-            {interval === 'month' && 'Monthly sales'}
-            {needsScroll && <span className="ml-2 text-[#0055A4]">→ Scroll to see all data</span>}
+          <p className="text-sm text-gray-500">
+            {interval === 'hour' && 'Hourly sales trend'}
+            {interval === 'day' && 'Daily sales trend'}
+            {interval === 'week' && 'Weekly sales trend'}
+            {interval === 'month' && 'Monthly sales trend'}
+            {needsScroll && <span className="ml-2 text-blue-600">→ Scroll to see all data</span>}
           </p>
         </div>
         <div className="text-right">

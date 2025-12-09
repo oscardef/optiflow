@@ -186,16 +186,22 @@ def get_analytics_overview(
     # Total products
     total_products = db.query(Product).count()
     
+    # Calculate current stock from InventoryItem (present status)
     # Total stock value
-    stock_value_query = db.query(
-        func.sum(StockLevel.current_count * Product.unit_price)
-    ).join(Product).first()
-    total_stock_value = float(stock_value_query[0] or 0)
+    stock_counts = db.query(
+        Product.id,
+        Product.unit_price,
+        func.count(InventoryItem.id).filter(InventoryItem.status == 'present').label('current_count')
+    ).outerjoin(InventoryItem, Product.id == InventoryItem.product_id
+    ).group_by(Product.id, Product.unit_price).all()
     
-    # Items needing restock
-    items_needing_restock = db.query(Product).join(StockLevel).filter(
-        StockLevel.current_count < Product.reorder_threshold
-    ).count()
+    total_stock_value = sum(row.unit_price * row.current_count for row in stock_counts if row.unit_price)
+    
+    # Items needing restock (current stock < reorder threshold)
+    items_needing_restock = sum(
+        1 for row in stock_counts 
+        if row.current_count < (db.query(Product.reorder_threshold).filter(Product.id == row.id).scalar() or 5)
+    )
     
     # Sales statistics based on selected date range
     now = datetime.utcnow()
@@ -203,8 +209,9 @@ def get_analytics_overview(
     seven_days_ago = now - timedelta(days=7)
     thirty_days_ago = now - timedelta(days=30)
     
+    # Use date comparison for sales_today to handle timezone issues and historical data
     sales_today = db.query(PurchaseEvent).filter(
-        PurchaseEvent.purchased_at >= today_start
+        func.date(PurchaseEvent.purchased_at) == func.current_date()
     ).count()
     
     sales_7_days = db.query(PurchaseEvent).filter(
@@ -215,50 +222,59 @@ def get_analytics_overview(
         PurchaseEvent.purchased_at >= thirty_days_ago
     ).count()
     
-    # Low stock products (top 10)
-    low_stock = db.query(Product, StockLevel).join(StockLevel).filter(
-        StockLevel.current_count < Product.reorder_threshold
-    ).order_by(StockLevel.priority_score.desc()).limit(10).all()
+    # Low stock products (top 10) - calculate from InventoryItem
+    low_stock_query = db.query(
+        Product.id,
+        Product.sku,
+        Product.name,
+        Product.reorder_threshold,
+        func.count(InventoryItem.id).filter(InventoryItem.status == 'present').label('current_stock')
+    ).outerjoin(InventoryItem, Product.id == InventoryItem.product_id
+    ).group_by(Product.id, Product.sku, Product.name, Product.reorder_threshold
+    ).having(func.count(InventoryItem.id).filter(InventoryItem.status == 'present') < Product.reorder_threshold
+    ).order_by(func.count(InventoryItem.id).filter(InventoryItem.status == 'present')).limit(10).all()
     
     low_stock_products = [
         {
             'product_id': p.id,
             'sku': p.sku,
             'name': p.name,
-            'current_stock': sl.current_count,
+            'current_stock': p.current_stock,
             'reorder_threshold': p.reorder_threshold,
-            'priority_score': sl.priority_score
+            'priority_score': (p.reorder_threshold - p.current_stock) / p.reorder_threshold if p.reorder_threshold else 0
         }
-        for p, sl in low_stock
+        for p in low_stock_query
     ]
     
     # Additional KPIs for enhanced dashboard
     
     # Low stock items (approaching threshold but not critical)
-    low_stock_items = db.query(Product).join(StockLevel).filter(
-        StockLevel.current_count < Product.reorder_threshold * 1.5,
-        StockLevel.current_count >= Product.reorder_threshold
-    ).count()
+    low_stock_items = sum(
+        1 for row in stock_counts
+        if row.current_count >= (db.query(Product.reorder_threshold).filter(Product.id == row.id).scalar() or 5)
+        and row.current_count < (db.query(Product.reorder_threshold).filter(Product.id == row.id).scalar() or 5) * 1.5
+    )
     
-    # Average stock level across all products
-    avg_stock_query = db.query(func.avg(StockLevel.current_count)).first()
-    avg_stock_level = float(avg_stock_query[0] or 0)
+    # Average stock level across all products (filter out zero stock for meaningful average)
+    products_with_stock = [row.current_count for row in stock_counts if row.current_count > 0]
+    avg_stock_level = sum(products_with_stock) / len(products_with_stock) if products_with_stock else 0
     
     # Calculate velocity and coverage for products
     seven_days_ago = now - timedelta(days=7)
     
-    # Get products with stock and calculate their velocity
+    # Get products with stock and calculate their velocity using InventoryItem
     products_with_stock = db.query(
         Product.id,
-        StockLevel.current_count,
+        func.count(InventoryItem.id).filter(InventoryItem.status == 'present').label('current_count'),
         func.count(PurchaseEvent.id).label('sales_7d')
-    ).join(StockLevel).outerjoin(
+    ).outerjoin(InventoryItem, Product.id == InventoryItem.product_id
+    ).outerjoin(
         PurchaseEvent,
         (PurchaseEvent.product_id == Product.id) & 
         (PurchaseEvent.purchased_at >= seven_days_ago)
-    ).filter(
-        StockLevel.current_count > 0
-    ).group_by(Product.id, StockLevel.current_count).all()
+    ).group_by(Product.id
+    ).having(func.count(InventoryItem.id).filter(InventoryItem.status == 'present') > 0
+    ).all()
     
     # Calculate coverage days and stockout risk
     coverage_days_list = []
@@ -276,13 +292,15 @@ def get_analytics_overview(
     avg_coverage_days = sum(coverage_days_list) / len(coverage_days_list) if coverage_days_list else 0
     
     # Dead stock (no sales in last 30 days with stock > 0)
-    products_with_no_sales = db.query(Product.id).join(StockLevel).outerjoin(
+    products_with_no_sales = db.query(Product.id
+    ).outerjoin(InventoryItem, Product.id == InventoryItem.product_id
+    ).outerjoin(
         PurchaseEvent,
         (PurchaseEvent.product_id == Product.id) & 
         (PurchaseEvent.purchased_at >= thirty_days_ago)
-    ).filter(
-        StockLevel.current_count > 0
-    ).group_by(Product.id).having(
+    ).group_by(Product.id
+    ).having(
+        func.count(InventoryItem.id).filter(InventoryItem.status == 'present') > 0,
         func.count(PurchaseEvent.id) == 0
     ).all()
     
@@ -291,8 +309,10 @@ def get_analytics_overview(
     # Calculate average turnover rate (sales / avg stock)
     products_with_turnover = db.query(
         func.count(PurchaseEvent.id).label('sales'),
-        func.avg(StockLevel.current_count).label('avg_stock')
-    ).select_from(Product).join(StockLevel).outerjoin(
+        func.count(InventoryItem.id).filter(InventoryItem.status == 'present').label('avg_stock')
+    ).select_from(Product
+    ).outerjoin(InventoryItem, Product.id == InventoryItem.product_id
+    ).outerjoin(
         PurchaseEvent,
         (PurchaseEvent.product_id == Product.id) & 
         (PurchaseEvent.purchased_at >= seven_days_ago)
@@ -827,7 +847,22 @@ class BackfillParams(BaseModel):
     days: Optional[int] = 30
 
 _backfill_process: Optional[subprocess.Popen] = None
-_backfill_status = {"running": False, "message": "", "records": 0}
+_backfill_status = {"running": False, "message": "", "records": 0, "progress": 0, "total": 0}
+
+@router.get(
+    "/backfill/status",
+    summary="Get Backfill Status",
+    description="Check the current status and progress of the analytics backfill process"
+)
+def get_backfill_status():
+    """Get the current status of analytics data backfill."""
+    return {
+        "running": _backfill_status["running"],
+        "message": _backfill_status["message"],
+        "records": _backfill_status["records"],
+        "progress": _backfill_status.get("progress", 0),
+        "total": _backfill_status.get("total", 0)
+    }
 
 @router.post(
     "/backfill",
@@ -835,7 +870,7 @@ _backfill_status = {"running": False, "message": "", "records": 0}
     description="Triggers the backfill script to generate historical purchase events and stock snapshots. Uses fast-forward mode for instant data generation.",
     response_description="Status of backfill operation"
 )
-def trigger_backfill(params: BackfillParams, background_tasks: BackgroundTasks):
+def trigger_backfill(params: BackfillParams, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Trigger historical data generation (backfill) for analytics
     
@@ -843,24 +878,41 @@ def trigger_backfill(params: BackfillParams, background_tasks: BackgroundTasks):
     purchase events and stock snapshots. The data is generated instantly using
     the fast-forward mode with configurable density presets.
     
+    **SIMULATION MODE ONLY**: This endpoint only works in SIMULATION mode to ensure
+    analytics data matches simulated store inventory. Real production data should
+    come from actual hardware.
+    
     Parameters:
-    - density: Data density (sparse/normal/dense/extreme) - affects frequency of events
+    - density: Data density (sparse/normal/dense/stress/extreme) - affects frequency of events
     - days: Number of historical days to generate (default 30)
     
     Returns status information about the backfill operation.
     """
+    from ..config import config_state, ConfigMode
+    
     global _backfill_process, _backfill_status
+    
+    # Enforce SIMULATION mode only
+    if config_state.mode != ConfigMode.SIMULATION:
+        raise HTTPException(
+            status_code=403,
+            detail="Backfill is only available in SIMULATION mode. Analytics data generation "
+                   "requires simulation inventory to ensure data consistency. Switch to SIMULATION "
+                   "mode and generate inventory items before running backfill."
+        )
     
     # Check if already running
     if _backfill_status["running"]:
         return {
             "status": "running",
             "message": _backfill_status["message"],
-            "records": _backfill_status["records"]
+            "records": _backfill_status["records"],
+            "progress": _backfill_status.get("progress", 0),
+            "total": _backfill_status.get("total", 0)
         }
     
     # Validate density
-    valid_densities = ["sparse", "normal", "dense", "extreme"]
+    valid_densities = ["sparse", "normal", "dense", "stress", "extreme"]
     if params.density not in valid_densities:
         raise HTTPException(
             status_code=400,
@@ -899,12 +951,29 @@ def trigger_backfill(params: BackfillParams, background_tasks: BackgroundTasks):
     ]
     
     try:
-        # Reset status
-        _backfill_status = {
-            "running": True,
-            "message": f"Generating {params.days} days of {params.density} density data...",
-            "records": 0
+        # Calculate estimated totals based on density
+        density_config = {
+            'sparse': {'daily_purchases': 20, 'snapshot_interval': 6},
+            'normal': {'daily_purchases': 50, 'snapshot_interval': 3},
+            'dense': {'daily_purchases': 100, 'snapshot_interval': 1},
+            'stress': {'daily_purchases': 300, 'snapshot_interval': 0.5},
+            'extreme': {'daily_purchases': 200, 'snapshot_interval': 1}
         }
+        config = density_config.get(params.density, density_config['normal'])
+        
+        # Get product count for snapshot estimation
+        product_count = db.query(func.count(Product.id)).scalar()
+        
+        estimated_purchases = int(params.days * config['daily_purchases'])
+        estimated_snapshots = int(params.days * (24 / config['snapshot_interval']) * product_count)
+        estimated_total = estimated_purchases + estimated_snapshots
+        
+        # Reset status with estimates
+        _backfill_status["running"] = True
+        _backfill_status["message"] = f"Generating {params.days} days of {params.density} density data..."
+        _backfill_status["records"] = 0
+        _backfill_status["progress"] = 0
+        _backfill_status["total"] = estimated_total
         
         # Run backfill script synchronously (it's fast with fast-forward mode)
         result = subprocess.run(
@@ -935,11 +1004,11 @@ def trigger_backfill(params: BackfillParams, background_tasks: BackgroundTasks):
             
             records = purchases + snapshots
             
-            _backfill_status = {
-                "running": False,
-                "message": f"Successfully generated {params.days} days of data ({purchases:,} purchases, {snapshots:,} snapshots)",
-                "records": records
-            }
+            _backfill_status["running"] = False
+            _backfill_status["message"] = f"Successfully generated {params.days} days of data ({purchases:,} purchases, {snapshots:,} snapshots)"
+            _backfill_status["records"] = records
+            _backfill_status["progress"] = records
+            _backfill_status["total"] = records
             
             logger.info(f"Backfill completed: {params.days} days, {params.density} density - {purchases} purchases, {snapshots} snapshots")
             return {
@@ -1113,4 +1182,60 @@ def clear_analytics_data(db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         logger.error(f"Error clearing analytics data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post(
+    "/cleanup-old-snapshots",
+    summary="Clean up old stock snapshots",
+    description="Delete stock snapshots older than 90 days to optimize database performance on MacBook"
+)
+def cleanup_old_snapshots(
+    days_to_keep: int = 90,
+    db: Session = Depends(get_db)
+):
+    """
+    Clean up stock snapshots older than specified days (default 90).
+    
+    Optimized for MacBook performance - keeps database lean while maintaining
+    sufficient history for analytics (30-90 day range is typically sufficient).
+    
+    Purchase events are NOT deleted as they're smaller and needed for long-term trends.
+    """
+    try:
+        from ..models import StockSnapshot
+        
+        cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+        
+        # Count snapshots to be deleted
+        old_snapshots = db.query(StockSnapshot).filter(
+            StockSnapshot.timestamp < cutoff_date
+        )
+        count_to_delete = old_snapshots.count()
+        
+        if count_to_delete == 0:
+            return {
+                "status": "success",
+                "message": f"No snapshots older than {days_to_keep} days found",
+                "deleted": 0,
+                "remaining": db.query(StockSnapshot).count()
+            }
+        
+        # Delete old snapshots
+        old_snapshots.delete()
+        db.commit()
+        
+        remaining = db.query(StockSnapshot).count()
+        
+        logger.info(f"Cleaned up {count_to_delete} stock snapshots older than {days_to_keep} days")
+        
+        return {
+            "status": "success",
+            "message": f"Deleted {count_to_delete} snapshots older than {days_to_keep} days",
+            "deleted": count_to_delete,
+            "remaining": remaining,
+            "cutoff_date": cutoff_date.isoformat()
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error cleaning up old snapshots: {e}")
         raise HTTPException(status_code=500, detail=str(e))

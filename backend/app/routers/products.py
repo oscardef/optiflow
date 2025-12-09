@@ -289,3 +289,94 @@ def get_product_items(product_id: int, db: Session = Depends(get_db)):
         }
         for item in items
     ]
+
+@router.post("/sync-from-catalog")
+def sync_products_from_simulation_catalog(db: Session = Depends(get_db)):
+    """
+    Sync products from simulation PRODUCT_CATALOG to database.
+    Creates products with realistic Decathlon pricing if they don't exist.
+    This ensures simulation and analytics use the same product catalog.
+    """
+    import sys
+    import os
+    
+    # Import PRODUCT_CATALOG from simulation
+    # Add simulation directory to path
+    backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    project_root = os.path.dirname(backend_dir)
+    simulation_dir = os.path.join(project_root, 'simulation')
+    if simulation_dir not in sys.path:
+        sys.path.insert(0, simulation_dir)
+    
+    try:
+        from inventory import PRODUCT_CATALOG
+    except ImportError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to import simulation catalog: {str(e)}")
+    
+    # Realistic Decathlon pricing by category (in euros)
+    category_pricing = {
+        "Sports": (15, 45),          # Balls, basic equipment
+        "Footwear": (35, 120),       # Shoes vary widely by type
+        "Fitness": (10, 80),         # Mats cheap, weights expensive
+        "Cardio": (8, 25),           # Jump ropes, accessories
+        "Weights": (20, 100),        # Dumbbells vary by weight
+        "Accessories": (5, 60),      # Water bottles to watches
+        "Electronics": (25, 150),    # Fitness trackers, headphones
+        "Apparel": (12, 65),         # Socks to hoodies
+        "Swimming": (8, 35),         # Caps cheap, goggles moderate
+        "Cycling": (15, 80),         # Accessories to helmets
+        "Nutrition": (10, 45),       # Bars to protein powder
+    }
+    
+    created_count = 0
+    updated_count = 0
+    skipped_count = 0
+    
+    for catalog_product in PRODUCT_CATALOG:
+        # Check if product already exists by SKU
+        existing = db.query(Product).filter(Product.sku == catalog_product.sku).first()
+        
+        if existing:
+            skipped_count += 1
+            continue
+        
+        # Get price range for category
+        price_min, price_max = category_pricing.get(catalog_product.category, (10, 50))
+        unit_price = round(random.uniform(price_min, price_max), 2)
+        
+        # Calculate stock thresholds based on price (expensive items = lower stock)
+        if unit_price > 80:
+            # Expensive items (bikes, premium shoes)
+            reorder_threshold = 3
+            optimal_stock = random.randint(5, 10)
+        elif unit_price > 40:
+            # Mid-range items
+            reorder_threshold = 5
+            optimal_stock = random.randint(10, 20)
+        else:
+            # Cheap, fast-moving items
+            reorder_threshold = 8
+            optimal_stock = random.randint(15, 30)
+        
+        # Create product
+        product = Product(
+            sku=catalog_product.sku,
+            name=catalog_product.name,
+            category=catalog_product.category,
+            unit_price=unit_price,
+            reorder_threshold=reorder_threshold,
+            optimal_stock_level=optimal_stock
+        )
+        
+        db.add(product)
+        created_count += 1
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Synced simulation product catalog to database",
+        "created": created_count,
+        "skipped": skipped_count,
+        "total_catalog_size": len(PRODUCT_CATALOG)
+    }

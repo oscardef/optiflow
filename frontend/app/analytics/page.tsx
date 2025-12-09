@@ -6,7 +6,8 @@ import AnalyticsOverview from '../components/AnalyticsOverview';
 import ProductVelocityChart from '../components/ProductVelocityChart';
 import TopProductsTable from '../components/TopProductsTable';
 import CategoryDonut from '../components/CategoryDonut';
-import AIClusterView from '../components/AIClusterView';
+import ProductInsights from '../components/ProductInsights';
+import ProductAnalytics from '../components/ProductAnalytics';
 import DemandForecastChart from '../components/DemandForecastChart';
 import AnomalyAlerts from '../components/AnomalyAlerts';
 import SalesTimeSeriesChart from '../components/SalesTimeSeriesChart';
@@ -17,6 +18,8 @@ interface BackfillStatus {
   running: boolean;
   message: string;
   records: number;
+  progress?: number;
+  total?: number;
 }
 
 interface SetupStatus {
@@ -127,10 +130,17 @@ export default function AnalyticsPage() {
 
   const fetchDemandForecast = async (productId: number) => {
     try {
-      const forecast = await fetch(`${API_URL}/analytics/ai/forecast/${productId}?days=7`).then(r => r.json());
-      setDemandForecast(forecast);
+      const response = await fetch(`${API_URL}/analytics/ai/forecast/${productId}?days=7`);
+      if (response.ok) {
+        const forecast = await response.json();
+        setDemandForecast(forecast);
+      } else {
+        console.error('Forecast not available:', response.status);
+        setDemandForecast(null);
+      }
     } catch (error) {
       console.error('Error fetching forecast:', error);
+      setDemandForecast(null);
     }
   };
 
@@ -205,7 +215,10 @@ export default function AnalyticsPage() {
       const result = await response.json();
       setBackfillStatus(result);
       
-      if (result.status === 'success') {
+      // Start polling for progress if backfill is running
+      if (result.status === 'running' || result.running) {
+        pollBackfillStatus();
+      } else if (result.status === 'success') {
         // Refresh setup status and analytics data after backfill
         setTimeout(() => {
           fetchSetupStatus();
@@ -222,6 +235,29 @@ export default function AnalyticsPage() {
     } finally {
       setIsBackfilling(false);
     }
+  };
+
+  const pollBackfillStatus = async () => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`${API_URL}/analytics/backfill/status`);
+        const status = await response.json();
+        
+        setBackfillStatus(status);
+        
+        if (!status.running) {
+          clearInterval(pollInterval);
+          // Refresh data when complete
+          setTimeout(() => {
+            fetchSetupStatus();
+            fetchAnalyticsData();
+          }, 1000);
+        }
+      } catch (error) {
+        console.error('Error polling backfill status:', error);
+        clearInterval(pollInterval);
+      }
+    }, 1000); // Poll every second
   };
 
   useEffect(() => {
@@ -273,10 +309,49 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
+        {/* Critical Warning: No Items */}
+        {setupStatus && setupStatus.inventory_items === 0 && (
+          <div className="max-w-7xl mx-auto mb-4 bg-red-50 border-2 border-red-200 rounded-lg p-6">
+            <div className="flex items-start gap-4">
+              <div className="text-4xl">⚠️</div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-red-900 mb-2">No Inventory Items Found</h3>
+                <p className="text-red-800 mb-3">
+                  You must generate simulation inventory before creating analytics data. 
+                  Analytics (purchases, stock snapshots) are based on items in your store.
+                </p>
+                <div className="bg-white border border-red-200 rounded p-3 mb-3">
+                  <p className="text-sm font-semibold text-gray-900 mb-2">To generate inventory:</p>
+                  <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
+                    <li>Ensure you're in SIMULATION mode (check main dashboard)</li>
+                    <li>Run: <code className="bg-gray-100 px-2 py-0.5 rounded text-xs font-mono">python -m simulation.generate_inventory --items 1000</code></li>
+                    <li>Or start the simulation from the main dashboard</li>
+                    <li>Then return here to generate analytics data</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Setup Status */}
-        {showBackfill && setupStatus && (
+        {showBackfill && setupStatus && setupStatus.inventory_items > 0 && (
           <div className="max-w-7xl mx-auto mb-4 bg-white rounded-lg shadow p-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">System Status</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-gray-700">System Status</h3>
+              <button
+                onClick={() => {
+                  fetchSetupStatus();
+                  fetchAnalyticsData();
+                }}
+                className="text-xs px-3 py-1 text-gray-600 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors flex items-center gap-1"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+            </div>
             <div className="grid grid-cols-5 gap-3 text-sm">
               <div className="flex flex-col">
                 <span className="text-gray-500">Products</span>
@@ -284,7 +359,9 @@ export default function AnalyticsPage() {
               </div>
               <div className="flex flex-col">
                 <span className="text-gray-500">Items</span>
-                <span className="font-semibold text-gray-900">{setupStatus.inventory_items.toLocaleString()}</span>
+                <span className={`font-semibold ${setupStatus.inventory_items > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {setupStatus.inventory_items.toLocaleString()}
+                </span>
               </div>
               <div className="flex flex-col">
                 <span className="text-gray-500">Purchases</span>
@@ -319,12 +396,13 @@ export default function AnalyticsPage() {
                     value={backfillDensity}
                     onChange={(e) => setBackfillDensity(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
-                    disabled={isBackfilling}
+                    disabled={isBackfilling || setupStatus?.inventory_items === 0}
                   >
-                    <option value="sparse">Sparse</option>
-                    <option value="normal">Normal</option>
-                    <option value="dense">Dense</option>
-                    <option value="extreme">Extreme</option>
+                    <option value="sparse">Sparse (20/day)</option>
+                    <option value="normal">Normal (50/day)</option>
+                    <option value="dense">Dense (100/day)</option>
+                    <option value="stress">Stress (300/day)</option>
+                    <option value="extreme">Extreme (200/day)</option>
                   </select>
                 </div>
                 <div>
@@ -336,38 +414,78 @@ export default function AnalyticsPage() {
                     value={backfillDays}
                     onChange={(e) => setBackfillDays(parseInt(e.target.value) || 30)}
                     min="1"
-                    max="365"
+                    max="90"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
-                    disabled={isBackfilling}
+                    disabled={isBackfilling || setupStatus?.inventory_items === 0}
                   />
+                  <p className="text-xs text-gray-500 mt-1">Max 90 days</p>
                 </div>
                 <div>
                   <button
                     onClick={triggerBackfill}
-                    disabled={isBackfilling}
-                    className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 rounded-lg transition-colors"
+                    disabled={isBackfilling || setupStatus?.inventory_items === 0}
+                    className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg transition-colors"
+                    title={setupStatus?.inventory_items === 0 ? 'Generate inventory items first' : 'Generate historical analytics data'}
                   >
                     {isBackfilling ? 'Working...' : 'Generate Data'}
                   </button>
                 </div>
-                <div>
+                <div className="flex items-center gap-3">
                   <button
                     onClick={clearData}
                     disabled={isBackfilling}
-                    className="w-full px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 rounded-lg transition-colors"
+                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 rounded-lg transition-colors"
                   >
                     Clear Data
                   </button>
+                  {backfillStatus?.running && backfillStatus.total > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <div className="font-medium">
+                        {backfillStatus.progress.toLocaleString()} / {backfillStatus.total.toLocaleString()}
+                      </div>
+                      <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-blue-600 transition-all duration-300"
+                          style={{ width: `${(backfillStatus.progress / backfillStatus.total) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div>
                   {backfillStatus && (
                     <div className={`text-xs ${backfillStatus.running ? 'text-blue-600' : backfillStatus.records > 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {backfillStatus.message}
-                      {backfillStatus.records > 0 && ` (${backfillStatus.records} records)`}
+                      {backfillStatus.records > 0 && !backfillStatus.running && ` (${backfillStatus.records} records)`}
                     </div>
                   )}
                 </div>
               </div>
+              
+              {/* Info about generated data patterns */}
+              {setupStatus && setupStatus.inventory_items > 0 && setupStatus.purchase_events === 0 && (
+                <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="text-2xl">ℹ️</div>
+                    <div className="flex-1 text-sm">
+                      <p className="font-semibold text-blue-900 mb-2">About Generated Analytics Data</p>
+                      <p className="text-blue-800 mb-2">
+                        The data generator creates realistic Decathlon store patterns including:
+                      </p>
+                      <ul className="text-blue-800 space-y-1 list-disc list-inside text-xs">
+                        <li><strong>Dead stock (15-20%):</strong> Unpopular items with near-zero sales</li>
+                        <li><strong>Weekend peaks:</strong> 2-3x higher traffic Sat/Sun for sports items</li>
+                        <li><strong>Price-based velocity:</strong> Cheap items sell faster than expensive</li>
+                        <li><strong>Seasonal patterns:</strong> Swimming gear slower in winter months</li>
+                        <li><strong>Category trends:</strong> Nutrition peaks at lunch, Fitness in mornings</li>
+                      </ul>
+                      <p className="text-blue-700 mt-2 text-xs italic">
+                        This ensures realistic KPIs including low stock alerts, stockout risk, and dead stock analysis.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -489,29 +607,41 @@ export default function AnalyticsPage() {
             <div className="flex-1 p-6 overflow-auto">
               {/* KPIs Tab */}
               {activeTab === 'kpis' && (
-                <div className="h-full space-y-6">
-                  <AnalyticsOverview data={analyticsOverview} />
-                  <SalesTimeSeriesChart 
-                    data={salesTimeSeries} 
-                    interval={appliedInterval}
-                    isLoading={loading}
-                  />
+                <div className="space-y-6">
+                  {/* KPI Cards Grid */}
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900 mb-4">Key Performance Indicators</h2>
+                    <AnalyticsOverview data={analyticsOverview} />
+                  </div>
+
+                  {/* Sales Over Time Chart */}
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900 mb-4">Sales Over Time</h2>
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                      <SalesTimeSeriesChart 
+                        key={appliedInterval}
+                        data={salesTimeSeries} 
+                        interval={appliedInterval}
+                        isLoading={loading}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 
               {/* Performance Overview Tab */}
               {activeTab === 'overview' && (
-                <div className="h-full grid grid-cols-2 gap-6">
-                  <div className="bg-gray-50 rounded-lg p-4 flex flex-col min-h-0">
-                    <h3 className="text-base font-semibold text-gray-900 mb-3">Product Velocity (7 Days)</h3>
-                    <div className="flex-1 min-h-0">
+                <div className="h-full grid grid-cols-2 gap-4">
+                  <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col">
+                    <h3 className="text-base font-semibold text-gray-900 mb-4">Product Velocity</h3>
+                    <div className="flex-1">
                       <ProductVelocityChart data={productVelocity} />
                     </div>
                   </div>
 
-                  <div className="bg-gray-50 rounded-lg p-4 flex flex-col min-h-0">
-                    <h3 className="text-base font-semibold text-gray-900 mb-3">Category Distribution</h3>
-                    <div className="flex-1 min-h-0">
+                  <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col">
+                    <h3 className="text-base font-semibold text-gray-900 mb-4">Category Distribution</h3>
+                    <div className="flex-1">
                       <CategoryDonut data={categoryPerformance} />
                     </div>
                   </div>
@@ -521,39 +651,36 @@ export default function AnalyticsPage() {
               {/* Product Analysis Tab */}
               {activeTab === 'products' && (
                 <div className="h-full">
-                  <TopProductsTable 
+                  <ProductAnalytics 
                     data={productVelocity} 
                     onRefresh={fetchAnalyticsData}
                     isLoading={loading}
-                    error={error}
                   />
                 </div>
               )}
 
               {/* AI Insights Tab */}
               {activeTab === 'ai-insights' && (
-                <div className="h-full flex flex-col gap-4 overflow-auto">
-                  {/* Anomaly Alerts - Compact */}
-                  <div className="flex-shrink-0">
+                <div className="h-full grid grid-rows-[auto_1fr] gap-4">
+                  {/* Anomaly Alerts */}
+                  <div>
                     <AnomalyAlerts data={anomalies} />
                   </div>
 
-                  {/* AI Analysis - Two Columns */}
-                  <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
-                    <div className="bg-gray-50 rounded-lg p-4 flex flex-col min-h-0">
-                      <h3 className="text-base font-semibold text-gray-900 mb-2">Product Clusters</h3>
-                      <p className="text-xs text-gray-600 mb-3">K-means grouping by velocity & stock</p>
-                      <div className="flex-1 min-h-0">
-                        <AIClusterView data={aiClusters} />
-                      </div>
+                  {/* Analysis Grid */}
+                  <div className="grid grid-cols-3 gap-4 min-h-0">
+                    {/* Product Insights - Takes 2 columns */}
+                    <div className="col-span-2 bg-white border border-gray-200 rounded-lg p-6">
+                      <ProductInsights data={productVelocity} />
                     </div>
 
-                    <div className="bg-gray-50 rounded-lg p-4 flex flex-col min-h-0">
+                    {/* Demand Forecast */}
+                    <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col">
                       <h3 className="text-base font-semibold text-gray-900 mb-2">Demand Forecast</h3>
                       <select
                         value={selectedProductForForecast || ''}
                         onChange={(e) => setSelectedProductForForecast(Number(e.target.value))}
-                        className="mb-3 px-3 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-[#0055A4] focus:border-transparent"
+                        className="mb-4 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
                         <option value="">Select product...</option>
                         {topProducts.slice(0, 10).map(p => (

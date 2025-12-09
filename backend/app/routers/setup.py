@@ -98,17 +98,19 @@ def verify_and_fix(db: Session = Depends(get_db)):
             
             # Auto-fix: Initialize stock levels
             query = text("""
-                INSERT INTO stock_levels (product_id, quantity, last_updated)
+                INSERT INTO stock_levels (product_id, current_count, missing_count, updated_at)
                 SELECT 
                     product_id,
-                    COUNT(*) FILTER (WHERE status = 'present') as quantity,
-                    NOW() as last_updated
+                    COUNT(*) FILTER (WHERE status = 'present') as current_count,
+                    COUNT(*) FILTER (WHERE status = 'missing') as missing_count,
+                    NOW() as updated_at
                 FROM inventory_items
                 GROUP BY product_id
                 ON CONFLICT (product_id) 
                 DO UPDATE SET 
-                    quantity = EXCLUDED.quantity,
-                    last_updated = EXCLUDED.last_updated
+                    current_count = EXCLUDED.current_count,
+                    missing_count = EXCLUDED.missing_count,
+                    updated_at = EXCLUDED.updated_at
             """)
             
             db.execute(query)

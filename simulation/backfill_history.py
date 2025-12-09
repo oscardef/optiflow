@@ -29,6 +29,11 @@ DENSITY_PRESETS = {
         'snapshot_interval': 1,  # Every hour
         'description': 'High traffic - 100 purchases/day, 24 snapshots/day'
     },
+    'stress': {
+        'daily_purchases': 300,
+        'snapshot_interval': 0.5,  # Every 30 minutes
+        'description': 'Stress test - 300 purchases/day, 48 snapshots/day (for performance testing)'
+    },
     'extreme': {
         'daily_purchases': 200,
         'snapshot_interval': 1,
@@ -44,6 +49,58 @@ def print_progress_bar(current: int, total: int, prefix: str = '', bar_length: i
     print(f'\r{prefix} |{bar}| {percent:.1f}% ({current}/{total})', end='', flush=True)
     if current == total:
         print()  # New line on completion
+
+def check_simulation_mode(api_url: str) -> bool:
+    """Check if system is in SIMULATION mode - backfill only works in simulation"""
+    try:
+        response = requests.get(f"{api_url}/config/mode", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            mode = data.get('mode', '').upper()
+            if mode == 'PRODUCTION':
+                print("""\n❌ ERROR: Cannot generate analytics data in PRODUCTION mode!\n
+Backfill history is only available in SIMULATION mode.
+This ensures analytics data matches simulated store inventory.\n
+To switch to simulation mode:
+  1. Go to the main dashboard
+  2. Stop any running simulation
+  3. Switch mode to SIMULATION
+  4. Generate inventory items first
+  5. Then run backfill again\n""")
+                return False
+            print(f"✅ System is in {mode} mode - proceeding...")
+            return True
+        else:
+            print(f"⚠️  Could not verify system mode (status {response.status_code}), proceeding anyway...")
+            return True
+    except Exception as e:
+        print(f"⚠️  Could not check system mode: {e}, proceeding anyway...")
+        return True
+
+def check_inventory_items(api_url: str) -> int:
+    """Check if inventory items exist - required for realistic analytics"""
+    try:
+        response = requests.get(f"{api_url}/data/items", timeout=5)
+        if response.status_code == 200:
+            items = response.json()
+            item_count = len(items)
+            if item_count == 0:
+                print("""\n❌ ERROR: No inventory items found in database!\n
+You must generate inventory items before creating analytics data.
+Analytics (purchases, stock snapshots) are based on items in your store.\n
+To generate items:
+  1. Ensure you're in SIMULATION mode
+  2. Run: python -m simulation.generate_inventory --items 1000
+     (or start the simulation from the dashboard)\n""")
+                return 0
+            print(f"✅ Found {item_count} inventory items in store")
+            return item_count
+        else:
+            print(f"⚠️  Could not verify inventory items (status {response.status_code})")
+            return -1
+    except Exception as e:
+        print(f"⚠️  Could not check inventory items: {e}")
+        return -1
 
 def fetch_products_from_backend(api_url: str) -> List[Dict]:
     """Fetch all products from backend"""
@@ -62,57 +119,120 @@ def fetch_products_from_backend(api_url: str) -> List[Dict]:
 
 
 
-def generate_hourly_activity_pattern() -> List[float]:
-    """Generate realistic hourly activity multipliers (0-1) for a day"""
-    # Simulate store traffic patterns:
-    # Low: 6-9am, 1-3pm, 9pm-midnight
-    # Medium: 9-11am, 3-5pm
-    # High: 11am-1pm (lunch), 5-9pm (after work)
-    patterns = [
-        0.1, 0.1, 0.1, 0.1, 0.1, 0.1,  # 12am-6am: closed/very low
-        0.2, 0.3, 0.4,                  # 6-9am: opening
-        0.6, 0.7,                       # 9-11am: morning traffic
-        0.9, 1.0,                       # 11am-1pm: lunch peak
-        0.4, 0.5,                       # 1-3pm: afternoon dip
-        0.6, 0.7,                       # 3-5pm: pickup
-        0.9, 0.95, 1.0, 0.8,            # 5-9pm: evening peak
-        0.4, 0.3, 0.2                   # 9pm-12am: closing
-    ]
+def generate_hourly_activity_pattern(is_weekend: bool = False) -> List[float]:
+    """Generate realistic hourly activity multipliers (0-1) for a day
+    
+    Decathlon store patterns:
+    - Weekdays: Lunch peak (12-2pm) and evening peak (5-8pm)
+    - Weekends: Strong morning-afternoon traffic (10am-6pm) with 2-3x volume
+    - Sports stores see more weekend activity vs weekday
+    """
+    if is_weekend:
+        # Weekend: busy all day from 10am-7pm
+        patterns = [
+            0.05, 0.05, 0.05, 0.05, 0.05, 0.05,  # 12am-6am: closed
+            0.1, 0.15, 0.2,                      # 6-9am: opening
+            0.7, 0.85,                           # 9-11am: morning rush
+            0.95, 1.0,                           # 11am-1pm: peak shopping
+            1.0, 0.95,                           # 1-3pm: sustained high traffic
+            0.9, 0.85,                           # 3-5pm: afternoon shopping
+            0.8, 0.75, 0.6, 0.4,                 # 5-9pm: winding down
+            0.2, 0.15, 0.1                       # 9pm-12am: closing
+        ]
+    else:
+        # Weekday: lunch and after-work peaks
+        patterns = [
+            0.05, 0.05, 0.05, 0.05, 0.05, 0.05,  # 12am-6am: closed
+            0.1, 0.15, 0.2,                      # 6-9am: opening
+            0.3, 0.4,                            # 9-11am: morning shoppers
+            0.7, 0.8,                            # 11am-1pm: lunch peak
+            0.4, 0.3,                            # 1-3pm: afternoon dip
+            0.5, 0.6,                            # 3-5pm: building up
+            0.8, 0.9, 1.0, 0.7,                  # 5-9pm: after-work peak
+            0.3, 0.2, 0.1                        # 9pm-12am: closing
+        ]
     return patterns
 
 def generate_product_popularity(products: List[Dict]) -> Dict[int, Dict]:
     """Assign popularity profiles to products with trends and special events
     
+    Realistic Decathlon store patterns:
+    - Dead stock: 15-20% of products (unpopular sizes, niche items, seasonal mismatch)
+    - Fast movers: Popular items like running shoes, protein bars, water bottles
+    - Seasonal: Swimming gear slower in winter, running gear higher in spring
+    - Price-based: Expensive items (€80+) sell rarely, cheap items (<€20) sell frequently
+    
     Returns dict with:
-    - base_popularity: baseline sales rate (0-1)
+    - base_popularity: baseline sales rate (0-1), with many low values for dead stock
     - trend: gradual change over time (-0.02 to +0.02 per day)
-    - has_spike: whether product will have a sudden spike
+    - has_spike: whether product will have a sudden spike (promotions)
     - spike_day: which day the spike occurs (if has_spike)
     - has_shortage: whether product runs out of stock
     - shortage_start: day when shortage begins
-    - category_correlation: products in same category trend together
+    - is_dead_stock: product with very low/zero sales
     """
     popularity = {}
     
-    # Select 3-5 products for trending up (viral/seasonal)
-    trending_up = random.sample(products, min(5, len(products) // 10))
-    # Select 3-5 products for trending down (going out of season)
-    trending_down = random.sample([p for p in products if p not in trending_up], min(5, len(products) // 10))
-    # Select 5-8 products for sudden spikes (promotions, events)
-    spike_products = random.sample([p for p in products if p not in trending_up + trending_down], min(8, len(products) // 8))
-    # Select 3-5 products that will experience shortages
-    shortage_products = random.sample(products, min(5, len(products) // 15))
+    # Dead stock: 15-20% of products with near-zero sales
+    num_dead_stock = int(len(products) * random.uniform(0.15, 0.20))
+    dead_stock_products = random.sample(products, num_dead_stock)
+    
+    # Select 5-7 products for trending up (viral/seasonal)
+    remaining = [p for p in products if p not in dead_stock_products]
+    trending_up = random.sample(remaining, min(7, len(remaining) // 10))
+    
+    # Select 5-7 products for trending down (going out of season)
+    trending_down = random.sample(
+        [p for p in remaining if p not in trending_up], 
+        min(7, len(remaining) // 10)
+    )
+    
+    # Select 15-20 products for sudden spikes (promotions are common in Decathlon)
+    spike_products = random.sample(
+        [p for p in remaining if p not in trending_up + trending_down], 
+        min(20, len(remaining) // 6)
+    )
+    
+    # Select 5-8 products that will experience shortages
+    shortage_products = random.sample(remaining, min(8, len(remaining) // 15))
     
     for product in products:
         category = product['category']
+        unit_price = product.get('unit_price', 25.0)
         
-        # Base popularity by category
-        if category in ['Sports', 'Footwear']:
-            base = random.uniform(0.5, 1.0)
-        elif category == 'Fitness':
-            base = random.uniform(0.3, 0.8)
+        # Dead stock: very low base popularity
+        if product in dead_stock_products:
+            base = random.uniform(0.0, 0.05)  # 0-5% of average, essentially zero sales
+            is_dead_stock = True
         else:
-            base = random.uniform(0.1, 0.6)
+            is_dead_stock = False
+            
+            # Base popularity by category (Decathlon-specific)
+            if category in ['Nutrition']:  # Fast-moving consumables
+                base = random.uniform(0.7, 1.0)
+            elif category in ['Sports', 'Accessories']:  # Popular mid-range items
+                base = random.uniform(0.5, 0.9)
+            elif category in ['Footwear']:  # High variation (size dependent)
+                base = random.uniform(0.3, 0.8)
+            elif category in ['Fitness', 'Cardio', 'Weights']:  # Moderate demand
+                base = random.uniform(0.4, 0.7)
+            elif category in ['Apparel']:  # Fashion-dependent
+                base = random.uniform(0.3, 0.7)
+            elif category in ['Swimming']:  # Seasonal (low in winter)
+                base = random.uniform(0.2, 0.5)
+            elif category in ['Cycling']:  # Seasonal (higher in spring/summer)
+                base = random.uniform(0.3, 0.6)
+            elif category in ['Electronics']:  # Higher price = lower volume
+                base = random.uniform(0.2, 0.5)
+            else:
+                base = random.uniform(0.2, 0.6)
+            
+            # Price-based adjustment: expensive items sell less frequently
+            if unit_price > 80:  # Premium items (bikes, premium shoes)
+                base *= random.uniform(0.2, 0.4)  # 20-40% of base rate
+            elif unit_price > 40:  # Mid-range
+                base *= random.uniform(0.5, 0.8)
+            # Cheap items (<€40) keep full base rate or higher
         
         # Determine trend
         if product in trending_up:
@@ -141,7 +261,8 @@ def generate_product_popularity(products: List[Dict]) -> Dict[int, Dict]:
             'has_shortage': has_shortage,
             'shortage_start': shortage_start,
             'shortage_duration': shortage_duration,
-            'category': category
+            'category': category,
+            'is_dead_stock': is_dead_stock
         }
     
     return popularity
@@ -176,16 +297,20 @@ def generate_historical_purchases(
     current_date = start_date
     
     while current_date < end_date:
-        # Weekend boost (1.3x on Sat/Sun)
+        # Strong weekend boost for sports store (2-3x on Sat/Sun)
         day_of_week = current_date.weekday()
-        weekend_multiplier = 1.3 if day_of_week >= 5 else 1.0
+        is_weekend = day_of_week >= 5
+        weekend_multiplier = random.uniform(2.2, 2.8) if is_weekend else 1.0
         
         # Random daily variation
-        daily_variation = random.uniform(0.8, 1.2)
+        daily_variation = random.uniform(0.85, 1.15)
+        
+        # Get appropriate hourly pattern for day type
+        hourly_pattern_today = generate_hourly_activity_pattern(is_weekend)
         
         # Simulate each hour
         for hour in range(24):
-            hour_multiplier = hourly_pattern[hour]
+            hour_multiplier = hourly_pattern_today[hour]
             expected_purchases = (
                 base_daily_rate * 
                 (hour_multiplier / 24) * 
@@ -223,8 +348,17 @@ def generate_historical_purchases(
                     if profile['has_spike'] and abs(day_num - profile['spike_day']) <= 1:
                         weight *= profile['spike_magnitude']
                     
-                    # Category-wide boost on weekends for Sports/Fitness
-                    if profile['category'] in ['Sports', 'Fitness'] and weekend_multiplier > 1:
+                    # Category-specific patterns for Decathlon store
+                    # Weekend boost for Sports/Fitness/Cycling (people have free time)
+                    if is_weekend and profile['category'] in ['Sports', 'Fitness', 'Cycling', 'Cardio']:
+                        weight *= 1.3
+                    
+                    # Weekday lunch boost for Nutrition (office workers buying snacks)
+                    if not is_weekend and 11 <= hour <= 13 and profile['category'] == 'Nutrition':
+                        weight *= 1.4
+                    
+                    # Morning boost for Fitness equipment (people shopping before gym)
+                    if 7 <= hour <= 9 and profile['category'] in ['Fitness', 'Weights']:
                         weight *= 1.2
                     
                     adjusted_weights.append(max(0.01, weight))
@@ -433,7 +567,7 @@ Examples:
     )
     parser.add_argument("--days", type=int, default=7, help="Days of history to generate (default: 7)")
     parser.add_argument("--api", default="http://localhost:8000", help="Backend API URL")
-    parser.add_argument("--density", choices=['sparse', 'normal', 'dense', 'extreme'], 
+    parser.add_argument("--density", choices=['sparse', 'normal', 'dense', 'stress', 'extreme'], 
                        default='normal', help="Data density preset (default: normal)")
     parser.add_argument("--daily-purchases", type=float, help="Override: Average daily purchase rate")
     parser.add_argument("--snapshot-interval", type=int, help="Override: Hours between snapshots")
@@ -465,11 +599,21 @@ Configuration:
   Estimated snapshots: ~{estimated_snapshots:,} (per product)
     """)
     
-    # Fetch current products
+    # Step 1: Check system is in SIMULATION mode
+    if not check_simulation_mode(args.api):
+        return
+    
+    # Step 2: Verify inventory items exist
+    item_count = check_inventory_items(args.api)
+    if item_count == 0:
+        return
+    
+    # Step 3: Fetch current products
     products = fetch_products_from_backend(args.api)
     
     if not products:
-        print("❌ No products found. Please run the simulation first to create products.")
+        print("❌ No products found. Please sync products from simulation catalog first.")
+        print("   Run: curl -X POST http://localhost:8000/products/sync-from-catalog")
         return
     
     start_time = datetime.now()
