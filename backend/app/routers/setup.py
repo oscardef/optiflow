@@ -8,8 +8,9 @@ import sys
 from pathlib import Path
 
 from ..database import get_db
-from ..models import Product, StockLevel
+from ..models import Product, StockLevel, InventoryItem
 from ..core import logger
+from ..services.missing_detection import MissingItemDetector
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
@@ -166,4 +167,99 @@ def get_setup_status(db: Session = Depends(get_db)):
         
     except Exception as e:
         logger.error(f"Error getting setup status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/detection-health")
+def get_detection_health(db: Session = Depends(get_db)):
+    """
+    Get health statistics for the missing item detection system.
+    
+    This endpoint provides visibility into:
+    - Current detection algorithm parameters
+    - Items with pending consecutive misses (might be marked missing soon)
+    - Total present vs missing item counts
+    
+    Use this to monitor and debug the detection algorithm in production.
+    """
+    try:
+        stats = MissingItemDetector.get_detection_stats(db)
+        return {
+            "status": "healthy",
+            **stats
+        }
+    except Exception as e:
+        logger.error(f"Error getting detection health: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reset-detection-state")
+def reset_detection_state(db: Session = Depends(get_db)):
+    """
+    Reset all detection tracking state (consecutive_misses, first_miss_at).
+    
+    This does NOT change item status (present/not present), only the 
+    tracking state used to INFER missing items.
+    
+    Use this when:
+    - Starting a fresh demo
+    - After backend restart if state seems inconsistent
+    - Debugging detection issues
+    """
+    try:
+        # Reset all detection tracking fields
+        result = db.execute(text("""
+            UPDATE inventory_items 
+            SET consecutive_misses = 0,
+                first_miss_at = NULL
+            WHERE consecutive_misses > 0 OR first_miss_at IS NOT NULL
+        """))
+        
+        rows_affected = result.rowcount
+        db.commit()
+        
+        logger.info(f"Reset detection state for {rows_affected} items")
+        
+        return {
+            "status": "success",
+            "message": f"Reset detection state for {rows_affected} items",
+            "items_reset": rows_affected
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error resetting detection state: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reset-all-items-to-present")
+def reset_all_items_to_present(db: Session = Depends(get_db)):
+    """
+    Reset ALL items to 'present' status and clear detection state.
+    
+    Use this to start completely fresh for a new demo.
+    All items will need to be detected again to establish their positions.
+    """
+    try:
+        # Reset all items to present and clear detection tracking
+        result = db.execute(text("""
+            UPDATE inventory_items 
+            SET status = 'present',
+                consecutive_misses = 0,
+                first_miss_at = NULL,
+                last_detection_rssi = NULL
+        """))
+        
+        rows_affected = result.rowcount
+        db.commit()
+        
+        logger.info(f"Reset {rows_affected} items to present status")
+        
+        return {
+            "status": "success",
+            "message": f"Reset {rows_affected} items to present status",
+            "items_reset": rows_affected
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error resetting items: {e}")
         raise HTTPException(status_code=500, detail=str(e))

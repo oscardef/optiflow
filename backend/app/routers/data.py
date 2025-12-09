@@ -4,7 +4,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Dict
 
 from ..database import get_db
 from ..models import (
@@ -18,6 +18,7 @@ from ..triangulation import TriangulationService
 from ..config import config_state, ConfigMode
 from ..core import logger
 from ..websocket_manager import manager as ws_manager
+from ..services.missing_detection import MissingItemDetector
 
 router = APIRouter(tags=["data"])
 
@@ -90,10 +91,45 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
             ).first()
             
             if not inventory_item:
-                # RFID tag not found in inventory - this shouldn't happen in normal operation
-                # Log it but don't auto-create products (prevents "Item-XXXXXXXX" pollution)
-                logger.warning(f"Unknown RFID tag detected: {detection.product_id} - skipping (not in inventory)")
-                continue  # Skip this detection, don't create it
+                # RFID tag not found in inventory
+                # In PRODUCTION mode: Auto-create the item (for demo/real hardware)
+                # In SIMULATION mode: Skip (simulation should have pre-generated inventory)
+                if config_state.mode == ConfigMode.PRODUCTION:
+                    # Auto-create a product and inventory item for this new tag
+                    # First, check if we have a "Demo Products" product or create one
+                    epc_short = detection.product_id[-8:] if len(detection.product_id) > 8 else detection.product_id
+                    product_sku = f"DEMO-{epc_short}"
+                    
+                    product = db.query(Product).filter(Product.sku == product_sku).first()
+                    if not product:
+                        product = Product(
+                            sku=product_sku,
+                            name=f"Demo Item {epc_short}",
+                            category="Demo"
+                        )
+                        db.add(product)
+                        db.flush()
+                        logger.info(f"[PRODUCTION] Created new product: {product.name} (SKU: {product_sku})")
+                    
+                    # Create the inventory item
+                    inventory_item = InventoryItem(
+                        rfid_tag=detection.product_id,
+                        product_id=product.id,
+                        status='present',
+                        # Position will be set below when we have employee location
+                        x_position=None,
+                        y_position=None,
+                        last_seen_at=timestamp,
+                        consecutive_misses=0,
+                        first_miss_at=None
+                    )
+                    db.add(inventory_item)
+                    db.flush()
+                    logger.info(f"[PRODUCTION] Created new inventory item for RFID tag: {detection.product_id}")
+                else:
+                    # SIMULATION mode - skip unknown tags
+                    logger.warning(f"Unknown RFID tag detected: {detection.product_id} - skipping (not in inventory)")
+                    continue  # Skip this detection, don't create it
             else:
                 # Update existing inventory item status
                 # IMPORTANT: Once an item is marked as 'not present', it stays that way
@@ -164,13 +200,30 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         position_calculated = True
                         logger.info(f"✅ Employee position calculated: ({x:.1f}, {y:.1f}) confidence={confidence:.2f}")
                         
-                        # Update detected items' positions based on mode
+                        # Build mapping of detected tags to RSSI for the detection service
+                        detected_rfid_with_rssi: Dict[str, float] = {}
+                        for detection in packet.detections:
+                            if detection.status == 'present':
+                                # Use RSSI from packet, default to -50 if not provided
+                                rssi = detection.rssi_dbm if detection.rssi_dbm is not None else -50.0
+                                detected_rfid_with_rssi[detection.product_id] = rssi
+                        
+                        # Update detected items' positions and RSSI based on mode
                         for detection in packet.detections:
                             inventory_item = db.query(InventoryItem).filter(
                                 InventoryItem.rfid_tag == detection.product_id
                             ).first()
                             
                             if inventory_item and detection.status == 'present':
+                                rssi = detection.rssi_dbm if detection.rssi_dbm is not None else -50.0
+                                
+                                # Always update RSSI and last_seen when detected
+                                inventory_item.last_detection_rssi = rssi
+                                inventory_item.last_seen_at = timestamp
+                                # Reset miss tracking since item was detected
+                                inventory_item.consecutive_misses = 0
+                                inventory_item.first_miss_at = None
+                                
                                 # SIMULATION MODE: Items already have shelf positions in database
                                 # Just mark them as detected, don't override their positions
                                 # The simulation generated items with shelf positions
@@ -180,7 +233,7 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                                 if config_state.mode == ConfigMode.PRODUCTION:
                                     inventory_item.x_position = x
                                     inventory_item.y_position = y
-                                    logger.info(f"   [PRODUCTION] Updated item {detection.product_id} to employee position ({x:.1f}, {y:.1f})")
+                                    logger.debug(f"   [PRODUCTION] Updated item {detection.product_id} to employee position ({x:.1f}, {y:.1f}), RSSI={rssi}")
                                 elif inventory_item.x_position is None:
                                     # SIMULATION: Only set position if item has none (shouldn't happen if inventory was generated properly)
                                     inventory_item.x_position = x
@@ -191,25 +244,13 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         db.commit()
                         position_calculated = True
                         
-                        # === SMART MISSING ITEM INFERENCE ===
-                        # Infer items that should have been detected but weren't
-                        # With safety measures to prevent false positives
+                        # === SMART MISSING ITEM DETECTION ===
+                        # Uses the MissingItemDetector service with database-persisted state
                         newly_missing_items = []
                         
-                        # Safety parameters
-                        RFID_DETECTION_RANGE_CM = 60.0  # Match simulation config
-                        CLOSE_RANGE_CM = 50.0  # Only infer for items clearly in range
-                        MIN_CONSECUTIVE_MISSES = 4  # Minimum misses before considering
-                        MAX_INFERENCES_PER_PASS = 2  # Max items to mark missing per scan
-                        
-                        import random
-                        
-                        # Get the set of RFID tags that were detected as present
-                        detected_tags = {d.product_id for d in packet.detections if d.status == 'present'}
-                        # Get tags explicitly marked as missing in this packet
+                        # First, handle explicitly missing items from simulation (status="not present")
+                        # This is used by simulation mode to explicitly mark items as gone
                         explicitly_missing = {d.product_id for d in packet.detections if d.status == 'not present'}
-                        
-                        # First, handle explicitly missing items from simulation/hardware
                         for missing_tag in explicitly_missing:
                             item = db.query(InventoryItem).filter(
                                 InventoryItem.rfid_tag == missing_tag
@@ -217,65 +258,52 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                             if item and item.status == 'present':
                                 item.status = 'not present'
                                 newly_missing_items.append(item)
-                                logger.info(f"   📦❌ Explicit MISSING: {item.rfid_tag}")
+                                logger.info(f"   📦❌ Explicit MISSING (from simulation): {item.rfid_tag}")
                         
-                        # Then, use inference for items that weren't reported at all
-                        # Find items that are currently present and have known positions
-                        present_items_in_range = db.query(InventoryItem).filter(
-                            InventoryItem.status == 'present',
-                            InventoryItem.x_position.isnot(None),
-                            InventoryItem.y_position.isnot(None)
-                        ).all()
+                        if explicitly_missing:
+                            db.commit()
                         
-                        # Track detection misses and per-item thresholds (use module-level cache)
-                        if not hasattr(receive_data, '_detection_misses'):
-                            receive_data._detection_misses = {}  # {rfid_tag: miss_count}
-                        if not hasattr(receive_data, '_item_thresholds'):
-                            receive_data._item_thresholds = {}  # {rfid_tag: required_misses}
-                        
-                        inference_candidates = []  # Collect candidates instead of immediately marking
-                        
-                        for item in present_items_in_range:
-                            # Skip if this item was detected or explicitly reported as missing
-                            if item.rfid_tag in detected_tags or item.rfid_tag in explicitly_missing:
-                                # Reset miss counter when detected
-                                receive_data._detection_misses[item.rfid_tag] = 0
-                                continue
+                        # Then, use inference-based detection for production mode
+                        # This uses the MissingItemDetector which tracks consecutive misses
+                        # and requires both miss count AND time threshold to be met
+                        if config_state.mode == ConfigMode.PRODUCTION:
+                            inferred_missing = MissingItemDetector.process_detections(
+                                db=db,
+                                detected_rfid_tags=detected_rfid_with_rssi,
+                                employee_x=x,
+                                employee_y=y,
+                                timestamp=timestamp
+                            )
+                            newly_missing_items.extend(inferred_missing)
+                        else:
+                            # SIMULATION MODE: Still track misses but don't infer
+                            # Simulation uses explicit "not present" signals instead
+                            # Just update the miss counters for any items not detected
+                            present_items = db.query(InventoryItem).filter(
+                                InventoryItem.status == 'present',
+                                InventoryItem.x_position.isnot(None),
+                                InventoryItem.y_position.isnot(None)
+                            ).all()
                             
-                            # Calculate distance from scanner to item's known position
-                            dx = item.x_position - x
-                            dy = item.y_position - y
-                            distance = math.sqrt(dx * dx + dy * dy)
+                            for item in present_items:
+                                if item.rfid_tag not in detected_rfid_with_rssi and item.rfid_tag not in explicitly_missing:
+                                    # Calculate distance
+                                    dx = item.x_position - x
+                                    dy = item.y_position - y
+                                    distance = math.sqrt(dx * dx + dy * dy)
+                                    
+                                    if distance <= 60.0:  # RFID detection range
+                                        item.consecutive_misses = (item.consecutive_misses or 0) + 1
+                                        if item.first_miss_at is None:
+                                            item.first_miss_at = timestamp
+                                else:
+                                    # Item detected - already handled above with reset
+                                    pass
                             
-                            # SAFETY CHECK 1: Only infer for items CLEARLY in close range
-                            # This prevents false positives from items at edge of detection range
-                            if distance <= CLOSE_RANGE_CM:
-                                # SAFETY CHECK 2: Require multiple consecutive misses
-                                current_misses = receive_data._detection_misses.get(item.rfid_tag, 0)
-                                receive_data._detection_misses[item.rfid_tag] = current_misses + 1
-                                
-                                # SAFETY CHECK 3: Mark missing after fixed threshold is met
-                                if receive_data._detection_misses[item.rfid_tag] >= MIN_CONSECUTIVE_MISSES:
-                                    inference_candidates.append((item, distance, receive_data._detection_misses[item.rfid_tag]))
-                            else:
-                                # Item too far away, reset counter
-                                receive_data._detection_misses[item.rfid_tag] = 0
-                           
-                        
-                        # SAFETY CHECK 5: Limit number of inferences per pass to prevent mass disappearance
-                            selected = inference_candidates[:MAX_INFERENCES_PER_PASS]
-                            
-                            for item, distance, misses in selected:
-                                item.status = 'not present'
-                                newly_missing_items.append(item)
-                                logger.info(f"   📦❌ Inferred MISSING: {item.rfid_tag} (distance: {distance:.0f}cm, misses: {misses})")
-                                # Reset counter and threshold after marking missing
-                                receive_data._detection_misses[item.rfid_tag] = 0
-                                receive_data._item_thresholds.pop(item.rfid_tag, None)
+                            db.commit()
                         
                         if newly_missing_items:
-                            db.commit()
-                            logger.info(f"   🧮 Marked {len(newly_missing_items)} item(s) as 'not present' (explicit + inferred)")
+                            logger.info(f"   🧮 Total newly missing: {len(newly_missing_items)} item(s)")
                         
                         # Broadcast real-time updates to WebSocket clients
                         await ws_manager.broadcast_position_update({

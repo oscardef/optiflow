@@ -137,6 +137,12 @@ class InventoryItem(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # Detection tracking fields for production missing item detection
+    # These persist detection state across requests for reliable inference
+    consecutive_misses = Column(Integer, default=0)  # Count of times item was NOT detected when scanner was in range
+    last_detection_rssi = Column(Float, nullable=True)  # Last RSSI signal strength when detected (negative dBm)
+    first_miss_at = Column(DateTime, nullable=True)  # Timestamp when consecutive misses started
+    
     # Relationships
     product = relationship("Product", back_populates="inventory_items")
     purchase_event = relationship("PurchaseEvent", back_populates="inventory_item", uselist=False)
@@ -151,7 +157,10 @@ class InventoryItem(Base):
             "y_position": self.y_position,
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "consecutive_misses": self.consecutive_misses,
+            "last_detection_rssi": self.last_detection_rssi,
+            "first_miss_at": self.first_miss_at.isoformat() if self.first_miss_at else None
         }
 
 class StockLevel(Base):

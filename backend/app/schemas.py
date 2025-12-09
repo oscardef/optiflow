@@ -13,6 +13,7 @@ class DetectionInput(BaseModel):
     x_position: Optional[float] = None  # Item location in store
     y_position: Optional[float] = None
     status: Optional[str] = "present"  # "present", "missing", "unknown"
+    rssi_dbm: Optional[float] = None  # RFID signal strength in dBm (negative values, e.g. -45)
 
 class DataPacket(BaseModel):
     timestamp: str
