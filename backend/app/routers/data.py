@@ -599,7 +599,6 @@ def search_items(q: str, db: Session = Depends(get_db)):
             "y": item.y_position,
             "status": "present" if present_count > 0 else "not present",
             "last_seen": item.last_seen_at.isoformat() if item.last_seen_at else None,
-            "zone_id": item.zone_id,
             "count": {
                 "total": total_count,
                 "present": present_count,

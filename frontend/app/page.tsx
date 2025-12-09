@@ -4,8 +4,16 @@ import { useState, useEffect, useCallback } from 'react';
 import StoreMap from './components/StoreMap';
 import { useWebSocket } from './hooks/useWebSocket';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL!;
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL!;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
+
+// Debug: Log environment variables at module load time
+console.log('[MODULE LOAD] Environment variables:', {
+  NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+  NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
+  API_URL,
+  WS_URL,
+});
 
 interface Anchor {
   id: number;
@@ -172,6 +180,9 @@ export default function Home() {
   const fetchAnchors = async () => {
     try {
       const response = await fetch(`${API_URL}/anchors`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch anchors: ${response.status} ${response.statusText}`);
+      }
       const data = await response.json();
       setAnchors(data);
     } catch (error) {
@@ -347,6 +358,8 @@ export default function Home() {
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
+    
+    // Clear results if query is too short
     if (query.trim().length < 2) {
       setSearchResults([]);
       setHighlightedItem(null);
@@ -354,11 +367,52 @@ export default function Home() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/search/items?q=${encodeURIComponent(query)}`);
+      // Validate API_URL is set
+      if (!API_URL) {
+        console.error('API_URL is not configured. Please set NEXT_PUBLIC_API_URL environment variable.');
+        setSearchResults([]);
+        return;
+      }
+
+      const searchUrl = `${API_URL}/search/items?q=${encodeURIComponent(query)}`;
+      console.log('[DEBUG] Search request:', searchUrl);
+      
+      const response = await fetch(searchUrl);
+      
+      if (!response.ok) {
+        console.error(`Search failed with status ${response.status}: ${response.statusText}`);
+        setSearchResults([]);
+        return;
+      }
+      
       const data = await response.json();
+      console.log('[DEBUG] Search results:', data);
       setSearchResults(data.items || []);
     } catch (error) {
-      console.error('Error searching items:', error);
+      // Log error details separately to avoid serialization issues
+      console.error('=== SEARCH ERROR ===');
+      console.error('API URL:', API_URL);
+      console.error('Query:', query);
+      console.error('Error Type:', error?.constructor?.name);
+      
+      if (error instanceof Error) {
+        console.error('Error Message:', error.message);
+        console.error('Error Stack:', error.stack);
+      } else {
+        console.error('Error Value:', error);
+      }
+      
+      // Network-specific error messages
+      if (error instanceof TypeError) {
+        console.error('⚠️ NETWORK/FETCH ERROR: Cannot reach the backend API');
+        console.error('Possible causes:');
+        console.error('  • Backend not running on', API_URL);
+        console.error('  • CORS configuration issue');
+        console.error('  • Network connectivity problem');
+        console.error('  • Environment variable not loaded (check browser dev tools)');
+      }
+      console.error('===================');
+      
       setSearchResults([]);
     }
   };
@@ -366,17 +420,42 @@ export default function Home() {
   const handleItemClick = async (rfidTag: string) => {
     try {
       const response = await fetch(`${API_URL}/items/${rfidTag}`);
+      
+      if (!response.ok) {
+        console.error(`Failed to fetch item ${rfidTag}: ${response.status} ${response.statusText}`);
+        return;
+      }
+      
       const data = await response.json();
       setSelectedItem(data);
       setHighlightedItem(rfidTag);
       setActivePanel(null); // Show item detail
     } catch (error) {
-      console.error('Error fetching item details:', error);
+      console.error('Error fetching item details:', {
+        error,
+        rfidTag,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
     }
   };
 
   useEffect(() => {
     const init = async () => {
+      // Log environment configuration for debugging
+      console.log('[DEBUG] Environment configuration:', {
+        API_URL,
+        WS_URL,
+        hasApiUrl: !!API_URL,
+        hasWsUrl: !!WS_URL,
+      });
+      
+      // Validate API connectivity
+      if (!API_URL) {
+        console.error('CRITICAL: API_URL is not configured. Please set NEXT_PUBLIC_API_URL environment variable.');
+        setLoading(false);
+        return;
+      }
+      
       await fetchStoreConfig(); // Fetch config first to get max_display_items
       await fetchAnchors();
       await fetchPositions(); // Initial fetch
