@@ -22,20 +22,24 @@ class StoreLayout:
     width: int = 1000  # cm (10 meters)
     height: int = 800  # cm (8 meters)
     
-    # Aisle configuration (vertical aisles)
+    # Aisle configuration (vertical aisles) - wider aisles, almost touching
     aisles: List[dict] = None
     
-    # Cross aisle (horizontal)
+    # Cross aisle (horizontal) - open walkway connecting aisles, no walls
     cross_aisle_y: int = 400
-    cross_aisle_height: int = 80
+    cross_aisle_height: int = 120  # Wider central aisle
+    cross_aisle_x_start: int = 250  # Center of first aisle
+    cross_aisle_x_end: int = 790    # Center of last aisle
     
     def __post_init__(self):
         if self.aisles is None:
+            # All aisles same length - single unified store shape, no border crossing
+            # Aisles closer together, wider (150cm each), almost touching
             self.aisles = [
-                {'x': 200, 'y_start': 150, 'y_end': 700, 'width': 80},  # Aisle 1
-                {'x': 400, 'y_start': 120, 'y_end': 700, 'width': 80},  # Aisle 2
-                {'x': 600, 'y_start': 120, 'y_end': 700, 'width': 80},  # Aisle 3
-                {'x': 800, 'y_start': 120, 'y_end': 700, 'width': 80},  # Aisle 4
+                {'x': 250, 'y_start': 120, 'y_end': 700, 'width': 150},  # Aisle 1
+                {'x': 430, 'y_start': 120, 'y_end': 700, 'width': 150},  # Aisle 2
+                {'x': 610, 'y_start': 120, 'y_end': 700, 'width': 150},  # Aisle 3
+                {'x': 790, 'y_start': 120, 'y_end': 700, 'width': 150},  # Aisle 4
             ]
 
 

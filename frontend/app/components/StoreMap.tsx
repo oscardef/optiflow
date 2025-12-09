@@ -474,30 +474,63 @@ export default function StoreMap({
 
     // Draw aisles only in SIMULATION mode
     if (currentMode === 'SIMULATION') {
-      // Draw aisles (4 vertical aisles at x=200, 400, 600, 800)
-      const aisleX = [200, 400, 600, 800];
-      const aisleStartY = 150;
+      // Draw back cross aisle FIRST (back layer with walls)
+      const crossAisleY = 400;
+      const crossAisleHeight = 120;
+      const crossAisleXStart = 200;  // Center of first aisle
+      const crossAisleXEnd = 845;    // Center of last aisle
+      const backCrossTopEdge = toCanvasCoords(crossAisleXStart, crossAisleY - crossAisleHeight / 2, canvas);
+      const backCrossBottomEdge = toCanvasCoords(crossAisleXEnd, crossAisleY + crossAisleHeight / 2, canvas);
+      
+      // Draw back layer with walls
+      ctx.fillStyle = 'rgba(243, 244, 246, 1.0)';
+      ctx.fillRect(backCrossTopEdge.x, backCrossTopEdge.y, backCrossBottomEdge.x - backCrossTopEdge.x, backCrossBottomEdge.y - backCrossTopEdge.y);
+      ctx.strokeStyle = '#9ca3af';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(backCrossTopEdge.x, backCrossTopEdge.y, backCrossBottomEdge.x - backCrossTopEdge.x, backCrossBottomEdge.y - backCrossTopEdge.y);
+      
+      // Draw aisles (4 vertical aisles closer together, wider) - single unified shape
+      const aisleX = [200, 415, 630, 845];
+      const aisleStartY = 120;  // All aisles same length - no border crossing
       const aisleEndY = 700;
-      const aisleWidth = 80; // 80cm wide aisles
+      const aisleWidth = 180;
       
       aisleX.forEach((x, index) => {
         const leftEdge = toCanvasCoords(x - aisleWidth / 2, aisleStartY, canvas);
         const rightEdge = toCanvasCoords(x + aisleWidth / 2, aisleStartY, canvas);
+        const topEdge = toCanvasCoords(x - aisleWidth / 2, aisleStartY, canvas);
+        const bottomEdge = toCanvasCoords(x + aisleWidth / 2, aisleEndY, canvas);
         const bottomY = toCanvasCoords(x, aisleEndY, canvas).y;
         
         // Draw aisle background
-        ctx.fillStyle = 'rgba(243, 244, 246, 0.8)';
+        ctx.fillStyle = 'rgba(243, 244, 246)';
         ctx.fillRect(leftEdge.x, leftEdge.y, rightEdge.x - leftEdge.x, bottomY - leftEdge.y);
         
         // Draw aisle borders (shelving edges)
         ctx.strokeStyle = '#9ca3af';
         ctx.lineWidth = 4;
+        
+        // Left border
         ctx.beginPath();
         ctx.moveTo(leftEdge.x, leftEdge.y);
         ctx.lineTo(leftEdge.x, bottomY);
         ctx.stroke();
+        
+        // Right border
         ctx.beginPath();
         ctx.moveTo(rightEdge.x, leftEdge.y);
+        ctx.lineTo(rightEdge.x, bottomY);
+        ctx.stroke();
+        
+        // Top border
+        ctx.beginPath();
+        ctx.moveTo(leftEdge.x, topEdge.y);
+        ctx.lineTo(rightEdge.x, topEdge.y);
+        ctx.stroke();
+        
+        // Bottom border
+        ctx.beginPath();
+        ctx.moveTo(leftEdge.x, bottomY);
         ctx.lineTo(rightEdge.x, bottomY);
         ctx.stroke();
         
@@ -509,17 +542,15 @@ export default function StoreMap({
         ctx.fillText(`Aisle ${index + 1}`, labelPos.x, labelPos.y);
       });
       
-      // Draw cross aisle (horizontal at y=400)
-      const crossAisleY = 400;
-      const crossAisleHeight = 80;
-      const crossLeftEdge = toCanvasCoords(0, crossAisleY - crossAisleHeight / 2, canvas);
-      const crossRightEdge = toCanvasCoords(storeWidth, crossAisleY + crossAisleHeight / 2, canvas);
+      // Draw front cross aisle (horizontal at y=400, open walkway - no walls, covers back layer)
+      // Starts at center of first aisle, ends at center of last aisle
+      const frontCrossTopEdge = toCanvasCoords(crossAisleXStart, crossAisleY - crossAisleHeight / 2, canvas);
+      const frontCrossBottomEdge = toCanvasCoords(crossAisleXEnd, crossAisleY + crossAisleHeight / 2, canvas);
       
-      ctx.fillStyle = 'rgba(243, 244, 246, 0.6)';
-      ctx.fillRect(0, crossLeftEdge.y, canvas.width, crossRightEdge.y - crossLeftEdge.y);
-      ctx.strokeStyle = '#d1d5db';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(0, crossLeftEdge.y, canvas.width, crossRightEdge.y - crossLeftEdge.y);
+      // Draw as open walkway - full opacity, no borders
+      ctx.fillStyle = 'rgba(243, 244, 246, 1.0)';
+      ctx.fillRect(frontCrossTopEdge.x, frontCrossTopEdge.y, frontCrossBottomEdge.x - frontCrossTopEdge.x, frontCrossBottomEdge.y - frontCrossTopEdge.y);
+      // No strokeRect - no walls/borders
     }
 
     // Draw heatmap overlays for non-live modes
