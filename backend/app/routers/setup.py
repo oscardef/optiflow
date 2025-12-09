@@ -30,17 +30,17 @@ def initialize_stock_levels(db: Session = Depends(get_db)):
         
         # Initialize stock levels from current inventory_items
         query = text("""
-            INSERT INTO stock_levels (product_id, quantity, last_updated)
+            INSERT INTO stock_levels (product_id, current_count, updated_at)
             SELECT 
                 product_id,
-                COUNT(*) FILTER (WHERE status = 'present') as quantity,
-                NOW() as last_updated
+                COUNT(*) FILTER (WHERE status = 'present') as current_count,
+                NOW() as updated_at
             FROM inventory_items
             GROUP BY product_id
             ON CONFLICT (product_id) 
             DO UPDATE SET 
-                quantity = EXCLUDED.quantity,
-                last_updated = EXCLUDED.last_updated
+                current_count = EXCLUDED.current_count,
+                updated_at = EXCLUDED.updated_at
         """)
         
         result = db.execute(query)

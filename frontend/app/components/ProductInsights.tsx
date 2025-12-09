@@ -50,15 +50,15 @@ export default function ProductInsights({ data }: ProductInsightsProps) {
     const daysUntilStockout = product.days_until_stockout;
 
     // High velocity + low stock (or stockout risk) = Restock Priority
-    if (velocity > 2 && (stock < 10 || (daysUntilStockout !== null && daysUntilStockout < 7))) {
+    if (velocity > 0.5 && (stock < 10 || (daysUntilStockout !== null && daysUntilStockout < 7))) {
       restockPriority.push(product);
     }
     // Low velocity + high stock = Dead Stock Risk
-    else if (velocity < 0.5 && stock > 20) {
+    else if (velocity < 0.1 && stock > 20) {
       deadStockRisk.push(product);
     }
     // High velocity + healthy stock = Hot Movers
-    else if (velocity > 3 && stock >= 10) {
+    else if (velocity > 1 && stock >= 10) {
       hotMovers.push(product);
     }
     // Everything else = Healthy
