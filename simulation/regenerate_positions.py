@@ -55,13 +55,14 @@ def generate_positions(num_items: int) -> List[Tuple[float, float]]:
     return positions
 
 def main():
+    import os
     # Connect to database (simulation database on port 5432)
     conn = psycopg2.connect(
-        host="localhost",
-        port=5432,
-        database="optiflow_simulation",
-        user="optiflow",
-        password="optiflow_dev"
+        host=os.environ.get("POSTGRES_HOST", "localhost"),
+        port=int(os.environ.get("POSTGRES_PORT", "5432")),
+        database=os.environ.get("POSTGRES_DB", "optiflow_simulation"),
+        user=os.environ.get("POSTGRES_USER", "optiflow"),
+        password=os.environ.get("POSTGRES_PASSWORD", "")
     )
     cursor = conn.cursor()
     

@@ -62,7 +62,6 @@ OptiFlow is a full-stack inventory management solution that tracks:
     └─────────────────────────────────────────────────────────────────────────────────┘
                                           │
                                           │ HTTP/REST + WebSocket
-                                          ▼ HTTP/REST
                                           ▼
     ┌─────────────────────────────────────────────────────────────────────────────────┐
     │                               APPLICATION LAYER                                  │
@@ -111,7 +110,7 @@ OptiFlow is a full-stack inventory management solution that tracks:
     └────────┬─────────┘          └────────┬─────────┘
              │                              │
              │ MQTT                         │ MQTT
-             │ (store/aisle1)               │ (store/aisle1)
+             │ (store/production)           │ (store/simulation)
              ▼                              ▼
     ┌─────────────────────────────────────────────────┐
     │              Mosquitto MQTT Broker              │
@@ -127,6 +126,8 @@ OptiFlow is a full-stack inventory management solution that tracks:
     │   - Generates UTC timestamp for each packet    │
     │   - Forwards to backend via HTTP POST          │
     └─────────────────────┬───────────────────────────┘
+                          │
+                          ▼
     ┌─────────────────────────────────────────────────┐
     │              FastAPI Backend                    │
     │                                                 │
@@ -142,9 +143,6 @@ OptiFlow is a full-stack inventory management solution that tracks:
     └─────────────────────┬───────────────────────────┘
                           │
                           │ SQL INSERT/UPDATE + WebSocket Broadcast
-                          ▼───────────────────────────┘
-                          │
-                          │ SQL INSERT/UPDATE
                           ▼
     ┌─────────────────────────────────────────────────┐
     │              PostgreSQL Database                │
@@ -258,12 +256,6 @@ curl -X POST http://localhost:8000/config/mode \
 curl http://localhost:8000/config/mode
 ```
 
-### Documentation
-
-- **📖 [MODE_SEPARATION.md](MODE_SEPARATION.md)** - Complete architecture and troubleshooting
-- **📋 [QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick command reference
-- **📝 [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Implementation details
-
 ---
 
 ## Data Models
@@ -303,7 +295,6 @@ curl http://localhost:8000/config/mode
     │ updated_at        │  ← Auto-updated on changes
     └───────────────────┘     │
                               │
-                              │
     ┌───────────────────┐     │
     │  stock_levels     │     │  Aggregated stock counts per product
     ├───────────────────┤     │
@@ -318,7 +309,6 @@ curl http://localhost:8000/config/mode
     │ updated_at        │  ← Auto-updated on changes
     └───────────────────┘
 
-
     ┌───────────────────┐
     │   detections      │  Raw RFID detection events (append-only log)
     ├───────────────────┤
@@ -331,7 +321,6 @@ curl http://localhost:8000/config/mode
     │ status            │  "present" or "not present"
     └───────────────────┘
 
-
     ┌───────────────────┐
     │ uwb_measurements  │  Raw UWB distance measurements (append-only log)
     ├───────────────────┤
@@ -341,7 +330,6 @@ curl http://localhost:8000/config/mode
     │ distance_cm       │
     │ status            │
     └───────────────────┘
-
 
     ┌───────────────────┐
     │  tag_positions    │  Calculated employee positions (append-only log)
@@ -355,7 +343,6 @@ curl http://localhost:8000/config/mode
     │ num_anchors       │  Number of anchors used
     └───────────────────┘
 
-
     ┌───────────────────┐
     │    anchors        │  UWB anchor configuration
     ├───────────────────┤
@@ -365,10 +352,9 @@ curl http://localhost:8000/config/mode
     │ x_position        │  ← Physical location on store map
     │ y_position        │
     │ is_active         │
-    │ created_at        │  ← Timestamp when anchor created
-    │ updated_at        │  ← Auto-updated on changes
+    │ created_at        │
+    │ updated_at        │
     └───────────────────┘
-
 
     ┌───────────────────────┐
     │  purchase_events      │  Sales analytics
@@ -381,7 +367,6 @@ curl http://localhost:8000/config/mode
     │ purchased_at (IDX)    │  ← Timestamp of sale
     └───────────────────────┘
 
-
     ┌───────────────────────┐
     │  stock_snapshots      │  Periodic stock level snapshots for trends
     ├───────────────────────┤
@@ -391,7 +376,6 @@ curl http://localhost:8000/config/mode
     │ present_count         │
     │ missing_count         │
     └───────────────────────┘
-
 
     ┌───────────────────────┐
     │  stock_movements      │  Individual stock movement events
@@ -403,7 +387,6 @@ curl http://localhost:8000/config/mode
     │ timestamp (IDX)       │  ← Movement time
     │ notes                 │
     └───────────────────────┘
-
 
     ┌─────────────────────────────┐
     │ product_location_history    │  Location-based stock tracking for heatmap
@@ -427,62 +410,14 @@ curl http://localhost:8000/config/mode
 | `tag_positions` | `timestamp` | When position calculated | ✓ |
 | `inventory_items` | `last_seen_at` | Last time item was detected as present | ✗ |
 | `inventory_items` | `created_at` | When item first entered system | ✗ |
-| `inventory_items` | `updated_at` | Last modification time | ✗ |
 | `products` | `created_at` | When product added to catalog | ✗ |
-| `products` | `updated_at` | Last modification time | ✗ |
 | `anchors` | `created_at` | When anchor configured | ✗ |
-| `anchors` | `updated_at` | Last modification time | ✗ |
 | `stock_levels` | `last_restock_at` | Last restock event | ✗ |
-| `stock_levels` | `updated_at` | Last stock level update | ✗ |
 | `purchase_events` | `purchased_at` | When item was sold | ✓ |
 | `stock_snapshots` | `timestamp` | Snapshot capture time | ✓ |
 | `stock_movements` | `timestamp` | Movement event time | ✓ |
-| `product_location_history` | `last_updated` | Last location update | ✗ |
 
 **Note:** All timestamp fields store UTC datetime values. Indexed timestamps enable efficient time-range queries for analytics and historical data retrieval.
-
-### Frontend Component Architecture
-
-```
-                           FRONTEND ARCHITECTURE
-
-    ┌─────────────────────────────────────────────────────────────────┐
-    │                         page.tsx (Main)                         │
-    │  ┌──────────────────────────────────────────────────────────┐  │
-    │  │  State Management                                         │  │
-    │  │  - Mode (simulation/production)                           │  │
-    │  │  - Items, Positions, Anchors                              │  │
-    │  │  - Simulation Status                                      │  │
-    │  └──────────────────────────────────────────────────────────┘  │
-    │                              │                                  │
-    │           ┌──────────────────┼──────────────────┐              │
-    │           ▼                  ▼                  ▼              │
-    │  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐  │
-    │  │   StoreMap.tsx  │ │  Dashboard.tsx  │ │ Admin Panel     │  │
-    │  │                 │ │                 │ │                 │  │
-    │  │  - Canvas       │ │  - Stats Cards  │ │  - Mode Toggle  │  │
-    │  │  - Anchors      │ │  - Item List    │ │  - Item Count   │  │
-    │  │  - Items        │ │  - Restock Queue│ │  - Start/Stop   │  │
-    │  │  - Employee     │ │                 │ │  - Clear Data   │  │
-    │  │  - Heatmap      │ │                 │ │                 │  │
-    │  │  - Zones        │ │                 │ │                 │  │
-    │  └─────────────────┘ └─────────────────┘ └─────────────────┘  │
-    └─────────────────────────────────────────────────────────────────┘
-                                    │
-                                    │ /analytics
-                                    ▼
-    ┌─────────────────────────────────────────────────────────────────┐
-    │                    Analytics Dashboard                          │
-    │  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐  │
-    │  │ AnalyticsOver-  │ │ ProductVelocity │ │ DemandForecast  │  │
-    │  │ view.tsx        │ │ Chart.tsx       │ │ Chart.tsx       │  │
-    │  └─────────────────┘ └─────────────────┘ └─────────────────┘  │
-    │  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐  │
-    │  │ CategoryDonut   │ │ TopProducts     │ │ AIClusterView   │  │
-    │  │ .tsx            │ │ Table.tsx       │ │ .tsx            │  │
-    │  └─────────────────┘ └─────────────────┘ └─────────────────┘  │
-    └─────────────────────────────────────────────────────────────────┘
-```
 
 ---
 
@@ -542,6 +477,10 @@ pip3 install paho-mqtt requests
 git clone https://github.com/oscardef/optiflow.git
 cd optiflow
 
+# Copy environment example and configure
+cp .env.example .env
+# Edit .env with your database credentials
+
 # Start all services
 docker compose up -d
 
@@ -550,6 +489,7 @@ docker compose ps
 
 # Generate inventory (simulation mode)
 python3 -m simulation.generate_inventory --items 3000
+```
 
 ### Service Ports
 
@@ -561,10 +501,6 @@ python3 -m simulation.generate_inventory --items 3000
 | API Documentation | 8000 | http://localhost:8000/docs |
 | Simulation Database | 5432 | postgresql://localhost:5432/optiflow_simulation |
 | Production Database | 5433 | postgresql://localhost:5433/optiflow_production |
-| Backend API | 8000 | http://localhost:8000 |
-| API Documentation | 8000 | http://localhost:8000/docs |
-| Simulation Database | 5432 | postgresql://localhost:5432/optiflow_simulation |
-| Production Database | 5433 | postgresql://localhost:5433/optiflow_production |
 
 ---
 
@@ -572,20 +508,20 @@ python3 -m simulation.generate_inventory --items 3000
 
 ### Environment Variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root (see `.env.example`):
 
 ```bash
 # Database
-POSTGRES_USER=optiflow
-POSTGRES_PASSWORD=optiflow_dev
-# API
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws/live
-```T_BROKER_HOST=host.docker.internal
+POSTGRES_USER=your_username
+POSTGRES_PASSWORD=your_secure_password
+
+# MQTT Broker
+MQTT_BROKER_HOST=host.docker.internal
 MQTT_BROKER_PORT=1883
 
 # API
 NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws/live
 ```
 
 ### Anchor Configuration
@@ -595,10 +531,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 3. Click on the map to place anchors at physical locations
 4. Minimum 2 anchors required, 4 recommended for optimal accuracy
 5. Click "Finish Setup" when complete
-
-### Store Zones
-
-**Note:** The zones system has been removed from the backend and frontend. Items are now tracked solely by their (x, y) positions on the store map without zone assignment.
 
 ---
 
@@ -630,7 +562,7 @@ python3 -m simulation.main --analytics --speed 2.0
 
 **Store Map**
 - Blue circle: Employee position (UWB triangulated)
-- Dashed circle: RFID detection range (1.5m)
+- Dashed circle: RFID detection range (0.6m)
 - Green dots: Present items (displays last known position)
 - Red dots: Missing items (last position before becoming not present)
 - Orange diamonds: UWB anchors
@@ -655,14 +587,19 @@ python3 -m simulation.main --analytics --speed 2.0
 python3 -m simulation.backfill_history --days 30 --density normal
 
 # Generate high-density data for testing
-python3 -m simulation.backfill_history --days 7 --density high
-### Core Endpoints
+python3 -m simulation.backfill_history --days 7 --density dense
+```
 
-#### WebSocket Connection
+---
+
+## API Reference
+
+### WebSocket Connection
 
 ```
 WS /ws/live
 ```
+
 Real-time WebSocket endpoint for receiving live position and item updates. Clients connect to this endpoint to receive broadcasts of:
 - `position_update`: Employee position changes with confidence scores
 - `item_update`: Inventory item status and position changes
@@ -683,18 +620,13 @@ Example WebSocket message:
 }
 ```
 
-#### Data Ingestion
+### Data Ingestion
 
 ```
 POST /data
 ```
+
 Receives detection and UWB measurement data from hardware or simulation. Each data packet includes a timestamp that is stored with all readings for historical tracking. After processing, broadcasts updates to all connected WebSocket clients.
-#### Data Ingestion
-
-```
-POST /data
-```
-Receives detection and UWB measurement data from hardware or simulation. Each data packet includes a timestamp that is stored with all readings for historical tracking.
 
 Request body:
 ```json
@@ -734,114 +666,87 @@ Response:
 }
 ```
 
-#### Position Tracking
+### Position Tracking
 
 ```
 GET /positions/latest?limit=10
 ```
+
 Returns latest calculated employee positions with timestamps.
 
-Response:
-```json
-[
-  {
-    "id": 1,
-    "tag_id": "employee",
-    "x_position": 423.5,
-    "y_position": 287.2,
-    "confidence": 0.87,
-    "num_anchors": 4,
-    "timestamp": "2025-12-08T10:00:00Z"
-  }
-]
-```
-
-#### Inventory
+### Inventory
 
 ```
-GET /data/items
+GET /data/items          # All inventory items
+GET /data/missing        # Only items marked as "not present"
+DELETE /data/clear       # Clear all tracking data
+GET /items/{rfid_tag}    # Specific item details
 ```
-Returns all inventory items with current status and last seen timestamp.
-
-```
-GET /data/missing
-```
-Returns only items marked as "not present".
-
-```
-DELETE /data/clear
-```
-Clears all tracking data (detections, positions, measurements).
-
-```
-GET /items/{rfid_tag}
-```
-Get specific item details including timestamps.
 
 ### Anchor Management
 
 ```
-GET /anchors                    # List all anchors
-POST /anchors                   # Create anchor
-PUT /anchors/{id}               # Update anchor
-DELETE /anchors/{id}            # Delete anchor
+GET /anchors             # List all anchors
+POST /anchors            # Create anchor
+PUT /anchors/{id}        # Update anchor
+DELETE /anchors/{id}     # Delete anchor
 ```
 
 ### Product Management
 
 ```
-GET /products                   # List all products
-GET /products/with-stock        # Products with stock level info
-POST /products                  # Create product
-PUT /products/{id}              # Update product
-GET /products/{id}              # Get product details
-GET /products/{id}/items        # Get all items for product
+GET /products                    # List all products
+GET /products/with-stock         # Products with stock level info
+POST /products                   # Create product
+PUT /products/{id}               # Update product
+GET /products/{id}               # Get product details
+GET /products/{id}/items         # Get all items for product
 POST /products/{id}/adjust-stock # Adjust stock with timestamp
-POST /products/populate-stock   # Initialize stock_levels table
+POST /products/populate-stock    # Initialize stock_levels table
 ```
 
 ### Analytics Endpoints
 
 ```
-GET /analytics/overview                      # Summary metrics with timestamp
-GET /analytics/stock-heatmap                 # Stock depletion by location
-GET /analytics/purchase-heatmap              # Purchase locations
-GET /analytics/top-products                  # Best performing products
-GET /analytics/category-performance          # Performance by category
-GET /analytics/stock-trends/{product_id}     # Historical trends (timestamped)
-GET /analytics/slow-movers                   # Slow-moving inventory
-GET /analytics/product-velocity              # Sales velocity metrics
-GET /analytics/ai/demand-forecast            # ML-based demand prediction
-GET /analytics/ai/abc-analysis               # ABC inventory classification
-GET /analytics/ai/clustering                 # Product clustering
-GET /analytics/ai/product-affinity           # Products purchased together
-POST /analytics/snapshot                      # Create timestamped stock snapshot
-POST /analytics/purchase-event               # Record purchase with timestamp
-POST /analytics/stock-movement               # Record stock movement with timestamp
+GET /analytics/overview                   # Summary metrics
+GET /analytics/stock-heatmap              # Stock depletion by location
+GET /analytics/purchase-heatmap           # Purchase locations
+GET /analytics/top-products               # Best performing products
+GET /analytics/category-performance       # Performance by category
+GET /analytics/stock-trends/{product_id}  # Historical trends
+GET /analytics/slow-movers                # Slow-moving inventory
+GET /analytics/product-velocity           # Sales velocity metrics
+GET /analytics/ai/demand-forecast         # ML-based demand prediction
+GET /analytics/ai/abc-analysis            # ABC inventory classification
+GET /analytics/ai/clustering              # Product clustering
+GET /analytics/ai/product-affinity        # Products purchased together
+POST /analytics/snapshot                  # Create stock snapshot
+POST /analytics/purchase-event            # Record purchase
+POST /analytics/stock-movement            # Record stock movement
 ```
 
 ### Simulation Control
 
 ```
-GET /simulation/status                  # Current simulation state
-GET /simulation/connection-status       # MQTT connection status
-POST /simulation/start                  # Start simulation
-POST /simulation/stop                   # Stop simulation
-POST /simulation/generate-inventory     # Generate new inventory
-PUT /simulation/params                  # Update simulation parameters
-GET /simulation/logs                    # View simulation logs
-POST /simulation/hardware/control       # Control hardware (START/STOP MQTT messages)
+GET /simulation/status              # Current simulation state
+GET /simulation/connection-status   # MQTT connection status
+POST /simulation/start              # Start simulation
+POST /simulation/stop               # Stop simulation
+POST /simulation/generate-inventory # Generate new inventory
+PUT /simulation/params              # Update simulation parameters
+GET /simulation/logs                # View simulation logs
+POST /simulation/hardware/control   # Control hardware (START/STOP)
 ```
 
 ### Configuration
 
 ```
-GET /config/mode                        # Current mode (simulation/production)
-POST /config/mode/switch                # Switch mode
-GET /config/store                       # Store dimensions
-PUT /config/store                       # Update store config
-GET /config/layout                      # Store layout info
-GET /config/validate-anchors            # Check anchor configuration
+GET /config/mode             # Current mode (simulation/production)
+POST /config/mode/switch     # Switch mode
+GET /config/store            # Store dimensions
+PUT /config/store            # Update store config
+GET /config/layout           # Store layout info
+GET /config/validate-anchors # Check anchor configuration
 ```
 
 ---
@@ -875,19 +780,6 @@ GET /config/validate-anchors            # Check anchor configuration
     └─────────────────────────────────────────┘
 ```
 
-### Firmware Configuration
-
-Edit `firmware/code_esp32/code_esp32.ino`:
-├── backend/                    # FastAPI backend service
-│   ├── app/
-│   │   ├── main.py            # Application entry point
-│   │   ├── models.py          # SQLAlchemy models (database tables)
-│   │   ├── schemas.py         # Pydantic schemas (API validation)
-│   │   ├── database.py        # Database configuration
-│   │   ├── triangulation.py   # Position calculation algorithm
-│   │   ├── websocket_manager.py # WebSocket connection & broadcast manager
-│   │   ├── config.py          # Application settings & mode switching
-
 ### Anchor Setup
 
 For each DWM3001CDK anchor:
@@ -902,76 +794,37 @@ For each DWM3001CDK anchor:
    ```
 4. Power anchor and position in store
 
-├── frontend/                   # Next.js frontend
-│   ├── app/
-│   │   ├── page.tsx           # Main dashboard page
-│   │   ├── layout.tsx         # App layout wrapper
-│   │   ├── hooks/
-│   │   │   └── useWebSocket.ts # WebSocket connection hook
-│   │   ├── analytics/         # Analytics dashboard page
-│   │   ├── admin/             # Admin panel page
-│   │   └── components/        # Reusable React components
+---
+
+## Development
+
+### Project Structure
+
+```
 optiflow/
 ├── backend/                    # FastAPI backend service
 │   ├── app/
 │   │   ├── main.py            # Application entry point
-│   │   ├── models.py          # SQLAlchemy models (database tables)
-│   │   ├── schemas.py         # Pydantic schemas (API validation)
+│   │   ├── models.py          # SQLAlchemy models
+│   │   ├── schemas.py         # Pydantic schemas
 │   │   ├── database.py        # Database configuration
-│   │   ├── triangulation.py   # Position calculation algorithm
-│   │   ├── config.py          # Application settings & mode switching
+│   │   ├── triangulation.py   # Position calculation
+│   │   ├── websocket_manager.py # WebSocket manager
+│   │   ├── config.py          # App settings
 │   │   ├── routers/           # API route handlers
-│   │   │   ├── analytics.py   # Analytics & heatmap endpoints
-│   │   │   ├── anchors.py     # Anchor CRUD operations
-│   │   │   ├── config.py      # Configuration endpoints
-│   │   │   ├── data.py        # Data ingestion (RFID + UWB)
-│   │   │   ├── items.py       # Inventory item management
-│   │   │   ├── positions.py   # Position queries
-│   │   │   ├── products.py    # Product catalog management
-│   │   │   └── simulation.py  # Simulation control
-│   │   ├── services/
-│   │   │   └── ai_analytics.py # ML analytics (clustering, forecasting)
-│   │   └── core/
-│   │       └── logging.py     # Logging configuration
-│   ├── migrations/            # SQL database migration scripts
+│   │   └── services/          # Business logic
+│   ├── migrations/            # SQL migrations
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/                   # Next.js frontend
 │   ├── app/
-│   │   ├── page.tsx           # Main dashboard page
-│   │   ├── layout.tsx         # App layout wrapper
-│   │   ├── analytics/         # Analytics dashboard page
-│   │   ├── admin/             # Admin panel page
-│   │   └── components/        # Reusable React components
+│   │   ├── page.tsx           # Main dashboard
+│   │   ├── layout.tsx         # App layout
+│   │   ├── analytics/         # Analytics page
+│   │   ├── admin/             # Admin panel
+│   │   ├── hooks/             # React hooks
+│   │   └── components/        # UI components
 │   ├── package.json
-│   └── Dockerfile
-├── mqtt_bridge/               # MQTT to HTTP bridge service
-│   ├── mqtt_to_api.py         # Subscribes to MQTT, forwards to API
-│   ├── requirements.txt
-│   └── Dockerfile
-├── simulation/                # Python simulation scripts
-│   ├── main.py               # Simulation CLI entry point
-│   ├── config.py             # Simulation configuration
-│   ├── inventory.py          # Item generation logic
-│   ├── shopper.py            # Employee movement patterns
-│   ├── scanner.py            # RFID/UWB simulation
-│   ├── analytics_tracker.py  # Analytics data collection
-│   ├── generate_inventory.py # Inventory generator script
-│   └── backfill_history.py   # Historical data generator
-├── firmware/                  # ESP32 hardware firmware
-│   ├── FIRMWARE_ARCHITECTURE.md
-│   └── code_esp32/
-│       ├── code_esp32.ino    # Main Arduino sketch
-│       ├── UNIT_UHF_RFID.cpp # RFID reader driver
-│       └── PubSubClient.cpp  # MQTT client
-├── docs/                      # Additional documentation
-│   ├── ANALYTICS.md          # Analytics features
-│   ├── API_INTEGRATION_GUIDE.md
-│   ├── INVENTORY_GENERATION.md
-│   └── NETWORK_CONFIG.md
-├── docker-compose.yml         # Docker services orchestration
-└── README.md                  # This file
-```
 │   └── Dockerfile
 ├── mqtt_bridge/               # MQTT to HTTP bridge
 │   ├── mqtt_to_api.py
@@ -979,23 +832,21 @@ optiflow/
 │   └── Dockerfile
 ├── simulation/                # Python simulation
 │   ├── main.py               # CLI entry point
-│   ├── config.py             # Simulation settings
+│   ├── config.py             # Configuration
 │   ├── inventory.py          # Item generation
-│   ├── shopper.py            # Movement patterns
+│   ├── shopper.py            # Movement simulation
 │   ├── scanner.py            # RFID/UWB simulation
 │   ├── analytics_tracker.py  # Analytics collection
 │   ├── generate_inventory.py # Inventory generator
 │   └── backfill_history.py   # Historical data
 ├── firmware/                  # ESP32 firmware
 │   └── code_esp32/
-├── docs/                      # Documentation
+├── tests/                     # Test suite
 ├── docker-compose.yml
 └── README.md
 ```
 
 ### Database Schema
-
-The database uses the following core tables (see [Data Models](#data-models) section above for complete schema with timestamps):
 
 **Core Tracking Tables:**
 - `detections` - Timestamped RFID detection events (append-only log)
@@ -1014,10 +865,6 @@ The database uses the following core tables (see [Data Models](#data-models) sec
 - `stock_movements` - Individual movement events (sale, restock, loss)
 - `product_location_history` - Location-based stock tracking for heatmap
 
-**Note:** The zones system has been removed. Items are tracked solely by (x, y) positions.
-
-All timestamp fields are indexed for efficient time-range queries.
-
 ### Running Tests
 
 ```bash
@@ -1025,11 +872,9 @@ All timestamp fields are indexed for efficient time-range queries.
 cd backend
 pytest
 
-# System tests
-python3 test_system.py
-
-# MQTT tests
-python3 test_mqtt.py
+# Run all tests
+cd tests
+python run_tests.py
 ```
 
 ### Local Development
@@ -1102,47 +947,9 @@ mosquitto_pub -h localhost -t test -m "hello"
 docker compose ps
 
 # Restart databases
-### Real-time Updates via WebSocket
+docker compose restart postgres-simulation postgres-production
+```
 
-**Live position and item updates are broadcast to connected clients:**
-
-1. **WebSocket Connection:**
-   - Frontend establishes WebSocket connection to `ws://localhost:8000/ws/live`
-   - Connection managed by `useWebSocket` React hook with auto-reconnect
-   - Multiple clients can connect simultaneously
-
-2. **Broadcast Flow:**
-   - Backend processes incoming data (RFID + UWB)
-   - Calculates employee position via triangulation
-   - Updates inventory item status and positions in database
-   - Broadcasts `position_update` and `item_update` messages to all connected clients
-   - Frontend receives updates and re-renders map in real-time
-
-3. **Message Types:**
-   - `position_update`: Employee position with confidence and timestamp
-   - `item_update`: Batch of inventory items with current status and positions
-   - `detection_update`: Raw RFID detection events
-
-### Timestamp Tracking
-
-**All readings are stored with precise timestamps for complete historical tracking:**
-
-1. **Data Ingestion Flow:**
-   - MQTT bridge generates UTC timestamp: `datetime.utcnow().isoformat() + "Z"`
-   - Backend receives and parses timestamp from data packet
-   - Timestamp stored with every detection, UWB measurement, and calculated position
-   - Real-time updates broadcast via WebSocket to connected clients
-
-2. **Persistence Strategy:**
-   - Core tables (`detections`, `uwb_measurements`, `tag_positions`) are append-only logs
-   - Timestamp fields are indexed for efficient time-range queries
-   - `inventory_items.last_seen_at` updated only when item status is "present"
-
-3. **Analytics Usage:**
-   - Time-series queries for stock trends
-   - Historical movement tracking
-   - Purchase event analysis
-   - Demand forecasting based on timestamped data
 ### Reset System
 
 ```bash
@@ -1158,19 +965,39 @@ docker compose up -d
 
 ## Key Concepts
 
+### Real-time Updates via WebSocket
+
+Live position and item updates are broadcast to connected clients:
+
+1. **WebSocket Connection:**
+   - Frontend establishes connection to `ws://localhost:8000/ws/live`
+   - Connection managed by `useWebSocket` React hook with auto-reconnect
+   - Multiple clients can connect simultaneously
+
+2. **Broadcast Flow:**
+   - Backend processes incoming data (RFID + UWB)
+   - Calculates employee position via triangulation
+   - Updates inventory item status and positions
+   - Broadcasts updates to all connected clients
+   - Frontend re-renders map in real-time
+
+3. **Message Types:**
+   - `position_update`: Employee position with confidence and timestamp
+   - `item_update`: Batch of inventory items with current status and positions
+   - `detection_update`: Raw RFID detection events
+
 ### Timestamp Tracking
 
-**All readings are stored with precise timestamps for complete historical tracking:**
+All readings are stored with precise timestamps for complete historical tracking:
 
 1. **Data Ingestion Flow:**
-   - MQTT bridge generates UTC timestamp: `datetime.utcnow().isoformat() + "Z"`
-   - Backend receives and parses timestamp from data packet
-   - Timestamp stored with every detection, UWB measurement, and calculated position
+   - MQTT bridge generates UTC timestamp
+   - Timestamp stored with every detection, UWB measurement, and position
 
 2. **Persistence Strategy:**
-   - Core tables (`detections`, `uwb_measurements`, `tag_positions`) are append-only logs
-   - Timestamp fields are indexed for efficient time-range queries
-   - `inventory_items.last_seen_at` updated only when item status is "present"
+   - Core tables are append-only logs
+   - Timestamp fields are indexed for efficient queries
+   - `last_seen_at` updated only when item status is "present"
 
 3. **Analytics Usage:**
    - Time-series queries for stock trends
@@ -1180,7 +1007,7 @@ docker compose up -d
 
 ### Display Logic
 
-**Map displays last known positions:**
+Map displays last known positions:
 - Green dots: Items with status "present" at their last detected position
 - Red dots: Items with status "not present" showing their last position before disappearing
 - All items display their most recent (x, y) coordinates from `inventory_items` table
