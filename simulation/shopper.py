@@ -194,6 +194,7 @@ class ShopperSimulator:
         import random
         # Use disappearance_rate from config (varies from rate/2 to rate*1.5)
         rate_min = self.config.disappearance_rate * 0.5
+    
     def get_status_info(self) -> dict:
         """Get current status for display"""
         aisles = self.config.store.aisles

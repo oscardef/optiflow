@@ -836,33 +836,6 @@ export default function AdminPanel() {
                       {/* Control Buttons */}
                       <div className="border-b border-gray-200 px-4 py-4">
                         <div className="space-y-3">
-                          <div>
-                            <p className="text-xs font-medium text-gray-600 mb-2">Simulation Control</p>
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                onClick={startSimulation}
-                                disabled={simulationStatus?.running || loading || checkingConnection}
-                                className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white transition-colors hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed"
-                              >
-                                {checkingConnection ? 'Checking...' : 'Start Simulation'}
-                              </button>
-                              <button
-                                onClick={stopSimulation}
-                                disabled={!simulationStatus?.running || loading}
-                                className="px-4 py-2 text-sm font-semibold bg-gray-500 text-white transition-colors hover:bg-gray-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                              >
-                                Stop Simulation
-                              </button>
-                              <button
-                                onClick={checkConnectionStatus}
-                                disabled={loading || checkingConnection}
-                                className="px-4 py-2 text-sm font-semibold bg-gray-700 text-white transition-colors hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                              >
-                                Test Connection
-                              </button>
-                            </div>
-                          </div>
-
                           <div className="border-t border-gray-200 pt-3">
                             <p className="text-xs font-medium text-gray-600 mb-2">Data Management</p>
                             <div className="flex flex-wrap gap-2">
@@ -886,6 +859,32 @@ export default function AdminPanel() {
                                 title="Generate inventory items (must clear data first if items exist)"
                               >
                                 {regeneratingInventory ? 'Generating...' : 'Generate Inventory'}
+                              </button>
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-gray-600 mb-2">Simulation Control</p>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={startSimulation}
+                                disabled={simulationStatus?.running || loading || checkingConnection}
+                                className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white transition-colors hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed"
+                              >
+                                {checkingConnection ? 'Checking...' : 'Start Simulation'}
+                              </button>
+                              <button
+                                onClick={stopSimulation}
+                                disabled={!simulationStatus?.running || loading}
+                                className="px-4 py-2 text-sm font-semibold bg-gray-500 text-white transition-colors hover:bg-gray-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                              >
+                                Stop Simulation
+                              </button>
+                              <button
+                                onClick={checkConnectionStatus}
+                                disabled={loading || checkingConnection}
+                                className="px-4 py-2 text-sm font-semibold bg-gray-700 text-white transition-colors hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                              >
+                                Test Connection
                               </button>
                             </div>
                           </div>
