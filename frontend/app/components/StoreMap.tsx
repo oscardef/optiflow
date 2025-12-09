@@ -76,9 +76,9 @@ export default function StoreMap({
     };
   };
 
-  // Create smooth gradient heatmap based on item presence/absence
-  // Shows individual items: Green = present, Red = missing
-  // Creates density effect showing where missing items cluster
+  // True heatmap showing ONLY missing products
+  // Overlapping circles with opacity create density visualization
+  // Purple (low density) -> Yellow (high density, ~10 overlaps)
   const drawSmoothHeatmap = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, heatmapData: any[]) => {
     if (!heatmapData || heatmapData.length === 0) {
       // Show message when no data available
@@ -93,124 +93,118 @@ export default function StoreMap({
       return;
     }
     
-    // First, draw a subtle base layer showing all item positions
-    // Then overlay with color based on status
+    // Collect all missing item positions
+    // Each entry in heatmapData is an individual item with is_present/status field
+    const missingPositions: { x: number; y: number }[] = [];
     
-    // Parameters for heat effect
-    const itemRadius = 18;      // Size of each item dot
-    const glowRadius = 40;      // Glow/heat effect radius
-    
-    // Sort so missing items are drawn on top
-    const sortedData = [...heatmapData].sort((a, b) => {
-      const aDepletion = a.depletion_percentage || 0;
-      const bDepletion = b.depletion_percentage || 0;
-      return aDepletion - bDepletion; // Draw high depletion (red) on top
+    heatmapData.forEach(item => {
+      // Check if this specific item is missing (not present)
+      const isMissing = item.status === 'not present' || item.is_present === false;
+      if (isMissing && item.x !== undefined && item.y !== undefined) {
+        missingPositions.push({
+          x: item.x,
+          y: item.y
+        });
+      }
     });
     
-    // Draw glow/density layer first (creates the "heat" effect)
-    sortedData.forEach(location => {
-      const pos = toCanvasCoords(location.x, location.y, canvas);
-      const depletionPct = (location.depletion_percentage || 0) / 100; // 0 to 1
-      const itemsMissing = location.items_missing || 0;
+    if (missingPositions.length === 0) {
+      // No missing items - show success message
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.8)';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('✓ All items present', canvas.width / 2, canvas.height / 2);
+      return;
+    }
+    
+    // Heatmap parameters
+    const heatRadius = 80;  // Radius of each heat circle in pixels
+    const baseOpacity = 0.1; // Opacity per circle (10 overlaps = full intensity)
+    
+    // Use additive blending for heat effect
+    ctx.globalCompositeOperation = 'source-over';
+    
+    // Draw each missing item as an overlapping circle
+    missingPositions.forEach(missing => {
+      const pos = toCanvasCoords(missing.x, missing.y, canvas);
       
-      // Create radial gradient for heat effect
+      // Create radial gradient from center to edge
       const gradient = ctx.createRadialGradient(
         pos.x, pos.y, 0,
-        pos.x, pos.y, glowRadius
+        pos.x, pos.y, heatRadius
       );
       
-      if (depletionPct === 0) {
-        // Fully stocked - subtle green glow
-        gradient.addColorStop(0, 'rgba(34, 197, 94, 0.4)');
-        gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.15)');
-        gradient.addColorStop(1, 'rgba(34, 197, 94, 0)');
-      } else if (depletionPct < 0.5) {
-        // Some missing - yellow/orange glow
-        const intensity = 0.3 + depletionPct * 0.4;
-        gradient.addColorStop(0, `rgba(251, 191, 36, ${intensity})`);
-        gradient.addColorStop(0.5, `rgba(251, 191, 36, ${intensity * 0.4})`);
-        gradient.addColorStop(1, 'rgba(251, 191, 36, 0)');
-      } else {
-        // Many missing - red glow (more intense for worse depletion)
-        const intensity = 0.4 + (depletionPct - 0.5) * 0.6;
-        gradient.addColorStop(0, `rgba(239, 68, 68, ${intensity})`);
-        gradient.addColorStop(0.5, `rgba(239, 68, 68, ${intensity * 0.5})`);
-        gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
-      }
+      // Purple color with opacity (will blend additively)
+      // Base purple: rgb(128, 0, 128) -> blends toward yellow rgb(255, 255, 0)
+      gradient.addColorStop(0, `rgba(180, 50, 180, ${baseOpacity})`);
+      gradient.addColorStop(0.5, `rgba(160, 40, 160, ${baseOpacity * 0.6})`);
+      gradient.addColorStop(1, 'rgba(140, 30, 140, 0)');
       
       ctx.fillStyle = gradient;
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, glowRadius, 0, 2 * Math.PI);
+      ctx.arc(pos.x, pos.y, heatRadius, 0, 2 * Math.PI);
       ctx.fill();
     });
     
-    // Draw solid item indicators on top
-    sortedData.forEach(location => {
-      const pos = toCanvasCoords(location.x, location.y, canvas);
-      const depletionPct = (location.depletion_percentage || 0) / 100;
-      const currentCount = location.current_count || 0;
-      const maxItems = location.max_items_seen || 1;
-      const itemsMissing = location.items_missing || 0;
+    // Now apply color mapping based on accumulated intensity
+    // We'll create a second pass that shifts purple toward yellow in dense areas
+    // by drawing yellow circles with screen blending
+    ctx.globalCompositeOperation = 'screen';
+    
+    missingPositions.forEach(missing => {
+      const pos = toCanvasCoords(missing.x, missing.y, canvas);
       
-      // Color based on depletion - smooth gradient
-      let r, g, b;
-      if (depletionPct === 0) {
-        // Perfect - bright green
-        r = 34; g = 197; b = 94;
-      } else if (depletionPct <= 0.25) {
-        // Light depletion - green to yellow-green
-        const t = depletionPct / 0.25;
-        r = Math.floor(34 + t * (180 - 34));
-        g = Math.floor(197 + t * (200 - 197));
-        b = Math.floor(94 - t * 70);
-      } else if (depletionPct <= 0.5) {
-        // Medium depletion - yellow to orange
-        const t = (depletionPct - 0.25) / 0.25;
-        r = Math.floor(180 + t * (251 - 180));
-        g = Math.floor(200 - t * (200 - 146));
-        b = Math.floor(24 + t * (36 - 24));
-      } else if (depletionPct <= 0.75) {
-        // High depletion - orange to red-orange
-        const t = (depletionPct - 0.5) / 0.25;
-        r = Math.floor(251 - t * (251 - 245));
-        g = Math.floor(146 - t * (146 - 90));
-        b = Math.floor(36 + t * (50 - 36));
-      } else {
-        // Critical - red
-        const t = (depletionPct - 0.75) / 0.25;
-        r = Math.floor(245 - t * (245 - 220));
-        g = Math.floor(90 - t * (90 - 38));
-        b = Math.floor(50 - t * (50 - 38));
-      }
+      const gradient = ctx.createRadialGradient(
+        pos.x, pos.y, 0,
+        pos.x, pos.y, heatRadius
+      );
       
-      // Draw outer ring (shows severity)
+      // Yellow overlay that makes dense areas appear more yellow/sunny
+      gradient.addColorStop(0, `rgba(255, 220, 50, ${baseOpacity * 0.8})`);
+      gradient.addColorStop(0.5, `rgba(255, 200, 30, ${baseOpacity * 0.4})`);
+      gradient.addColorStop(1, 'rgba(255, 180, 0, 0)');
+      
+      ctx.fillStyle = gradient;
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, itemRadius + 4, 0, 2 * Math.PI);
-      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
+      ctx.arc(pos.x, pos.y, heatRadius, 0, 2 * Math.PI);
       ctx.fill();
-      ctx.strokeStyle = `rgb(${Math.max(0, r - 30)}, ${Math.max(0, g - 30)}, ${Math.max(0, b - 30)})`;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      
-      // Draw inner circle
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, itemRadius, 0, 2 * Math.PI);
-      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-      ctx.fill();
-      
-      // Draw count text only if items are missing
-      if (itemsMissing > 0) {
-        ctx.fillStyle = depletionPct > 0.5 ? '#ffffff' : '#000000';
-        ctx.font = 'bold 12px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        // Show missing count as "-X"
-        ctx.fillText(`-${itemsMissing}`, pos.x, pos.y);
-      }
-      // If all items present (itemsMissing === 0), show nothing - just the green dot
     });
     
+    // Reset composite operation
+    ctx.globalCompositeOperation = 'source-over';
     
+    // Draw legend
+    const legendX = 20;
+    const legendY = canvas.height - 80;
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(legendX, legendY, 180, 60);
+    ctx.strokeStyle = '#ccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(legendX, legendY, 180, 60);
+    
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillStyle = '#333';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Missing Products Heatmap', legendX + 10, legendY + 8);
+    
+    // Gradient bar
+    const gradientBar = ctx.createLinearGradient(legendX + 10, 0, legendX + 160, 0);
+    gradientBar.addColorStop(0, 'rgba(140, 30, 140, 0.6)');
+    gradientBar.addColorStop(0.5, 'rgba(200, 100, 150, 0.8)');
+    gradientBar.addColorStop(1, 'rgba(255, 220, 50, 1)');
+    
+    ctx.fillStyle = gradientBar;
+    ctx.fillRect(legendX + 10, legendY + 30, 150, 12);
+    
+    ctx.font = '11px sans-serif';
+    ctx.fillStyle = '#666';
+    ctx.textAlign = 'left';
+    ctx.fillText('Low', legendX + 10, legendY + 45);
+    ctx.textAlign = 'right';
+    ctx.fillText('High', legendX + 160, legendY + 45);
   };
 
   // Draw heatmap overlay using spatial clustering
