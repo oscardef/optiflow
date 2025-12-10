@@ -68,6 +68,9 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
         position_calculated = False
         
         # Store RFID detections
+        # NOTE: Items in the detections list are implicitly "present" (detected by RFID)
+        # The missing detection service will infer which items are missing based on
+        # what's NOT in this list
         for detection in packet.detections:
             det = Detection(
                 timestamp=timestamp,
@@ -75,7 +78,7 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                 product_name=detection.product_name,
                 x_position=detection.x_position,
                 y_position=detection.y_position,
-                status=status_val
+                status='present'  # Detected items are present
             )
             db.add(det)
             db.flush()

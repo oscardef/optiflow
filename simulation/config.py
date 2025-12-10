@@ -48,8 +48,8 @@ class StoreLayout:
 @dataclass
 class MQTTConfig:
     """MQTT broker configuration"""
-    broker: str = os.environ.get("MQTT_BROKER", "host.docker.internal")
-    port: int = int(os.environ.get("MQTT_PORT", "1883"))
+    broker: str = os.environ.get("MQTT_BROKER")
+    port: int = int(os.environ.get("MQTT_PORT"))
     topic_data: str = "store/simulation"  # Simulation-specific topic
     topic_status: str = "store/simulation/status"
     topic_control: str = "store/simulation/control"

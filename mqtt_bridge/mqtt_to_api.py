@@ -8,8 +8,8 @@ import paho.mqtt.client as mqtt
 from datetime import datetime
 
 # Configuration from environment variables
-MQTT_BROKER_HOST = os.environ.get("MQTT_BROKER", os.environ.get("MQTT_BROKER_HOST", "localhost"))
-MQTT_BROKER_PORT = int(os.environ.get("MQTT_PORT", os.environ.get("MQTT_BROKER_PORT", "1883")))
+MQTT_BROKER_HOST = os.environ.get("MQTT_BROKER", "localhost")
+MQTT_BROKER_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 API_URL = os.environ["API_URL"]
 
 # Mode-aware topic configuration
@@ -71,13 +71,14 @@ def transform_hardware_to_backend(hardware_data: dict) -> dict:
     for tag in tags:
         epc = tag.get("epc", "")
         rssi = tag.get("rssi_dbm", 0)
-        status = tag.get("status", "present")  # Get status from tag, default to present
         
         # Use EPC as product_id (this is the RFID tag identifier)
+        # NOTE: We don't send status - if an item is detected, it's implicitly present.
+        # The backend's missing detection logic will infer missing items based on
+        # what's NOT in this detection list.
         detections.append({
             "product_id": epc,
             "product_name": f"Item-{epc[-8:]}" if epc else "Unknown",
-            "status": status,  # Preserve status from hardware
             "x_position": None,  # Will be calculated by triangulation
             "y_position": None,
             "rssi_dbm": rssi  # Extra field for signal strength

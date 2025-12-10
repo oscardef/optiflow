@@ -514,8 +514,8 @@ POSTGRES_USER=your_username
 POSTGRES_PASSWORD=your_secure_password
 
 # MQTT Broker
-MQTT_BROKER_HOST=host.docker.internal
-MQTT_BROKER_PORT=1883
+MQTT_BROKER=host.docker.internal
+MQTT_PORT=1883
 
 # API
 NEXT_PUBLIC_API_URL=http://localhost:8000
