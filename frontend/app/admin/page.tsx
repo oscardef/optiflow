@@ -656,17 +656,20 @@ export default function AdminPanel() {
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-6 flex items-start justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">OptiFlow Admin Panel</h1>
-            <p className="text-gray-600 mt-1">System configuration and management</p>
+      <div className="w-full max-w-full mx-auto px-4">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <img src="/logo.png" alt="OptiFlow" className="h-20 w-auto" />
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">OptiFlow Admin Panel</h1>
+              <p className="text-gray-600 mt-1">System configuration and management</p>
+            </div>
           </div>
           <a
             href="/"
             className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 transition-colors flex items-center gap-2"
           >
-            ← Back to Dashboard
+            Back to Dashboard
           </a>
         </div>
 
@@ -750,9 +753,9 @@ export default function AdminPanel() {
                     <div className="flex flex-col gap-3 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                       <h3 className="text-base font-semibold text-gray-900">Simulation Control</h3>
                       {simulationStatus?.running && (
-                        <div className="flex items-center gap-2 text-xs font-semibold text-green-700">
-                          <span className="h-2.5 w-2.5 bg-green-600" aria-hidden />
-                          Running
+                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5">
+                          <span className="h-2 w-2 bg-emerald-600 rounded-full animate-pulse"></span>
+                          RUNNING
                         </div>
                       )}
                     </div>
@@ -835,20 +838,21 @@ export default function AdminPanel() {
 
                       {/* Control Buttons */}
                       <div className="border-b border-gray-200 px-4 py-4">
-                        <div className="space-y-3">
-                          <div className="border-t border-gray-200 pt-3">
-                            <p className="text-xs font-medium text-gray-600 mb-2">Data Management</p>
-                            <div className="flex flex-wrap gap-2">
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {/* Data Management Section */}
+                          <div className="space-y-3 pb-4 border-b md:border-b-0 md:border-r border-gray-200 md:pr-4">
+                            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Data Management</p>
+                            <div className="flex flex-col gap-2">
                               <button
                                 onClick={() => {
                                   if (products.length > 0) {
-                                    showMessage('error', `⚠️ You have ${products.length} existing products. Click "Clear Data" first to start fresh!`);
+                                    showMessage('error', `You have ${products.length} existing products. Click "Clear Data" first to start fresh!`);
                                     return;
                                   }
                                   regenerateInventory();
                                 }}
                                 disabled={simulationStatus?.running || loading || regeneratingInventory}
-                                className="px-4 py-2 text-sm font-semibold bg-green-600 text-white transition-colors hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                                className="w-full px-4 py-3 text-sm font-semibold bg-emerald-600 text-white transition-colors hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
                                 title="Generate inventory items (must clear data first if items exist)"
                               >
                                 {regeneratingInventory ? 'Generating...' : 'Generate Inventory'}
@@ -856,33 +860,40 @@ export default function AdminPanel() {
                               <button
                                 onClick={() => setShowClearDataModal(true)}
                                 disabled={simulationStatus?.running || loading}
-                                className="px-4 py-2 text-sm font-semibold bg-red-600 text-white transition-colors hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                                className="w-full px-4 py-3 text-sm font-semibold bg-rose-600 text-white transition-colors hover:bg-rose-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
                               >
                                 Clear All Data
                               </button>
                             </div>
                           </div>
-                          <div>
-                            <p className="text-xs font-medium text-gray-600 mb-2">Simulation Control</p>
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                onClick={startSimulation}
-                                disabled={simulationStatus?.running || loading || checkingConnection}
-                                className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white transition-colors hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed"
-                              >
-                                {checkingConnection ? 'Checking...' : 'Start Simulation'}
-                              </button>
-                              <button
-                                onClick={stopSimulation}
-                                disabled={!simulationStatus?.running || loading}
-                                className="px-4 py-2 text-sm font-semibold bg-gray-500 text-white transition-colors hover:bg-gray-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                              >
-                                Stop Simulation
-                              </button>
+
+                          {/* Simulation Control Section */}
+                          <div className="space-y-3">
+                            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Simulation Control</p>
+                            <div className="flex flex-col gap-2">
+                              {simulationStatus?.running ? (
+                                <button
+                                  onClick={stopSimulation}
+                                  disabled={loading}
+                                  className="w-full px-4 py-3 text-sm font-semibold bg-amber-600 text-white transition-colors hover:bg-amber-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                  <span className="h-2 w-2 bg-white rounded-sm"></span>
+                                  Stop Simulation
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={startSimulation}
+                                  disabled={loading || checkingConnection}
+                                  className="w-full px-4 py-3 text-sm font-semibold bg-[#0055A4] text-white transition-colors hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                  <span className="h-0 w-0 border-l-[8px] border-l-white border-y-[5px] border-y-transparent"></span>
+                                  {checkingConnection ? 'Checking...' : 'Start Simulation'}
+                                </button>
+                              )}
                               <button
                                 onClick={checkConnectionStatus}
                                 disabled={loading || checkingConnection}
-                                className="px-4 py-2 text-sm font-semibold bg-gray-700 text-white transition-colors hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                                className="w-full px-4 py-3 text-sm font-semibold bg-slate-700 text-white transition-colors hover:bg-slate-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
                               >
                                 Test Connection
                               </button>
@@ -938,8 +949,8 @@ export default function AdminPanel() {
                         <li>Position tracking data</li>
                         <li>Analytics and heatmap data</li>
                       </ul>
-                      <p className="text-sm text-orange-600 mb-6">
-                        ⚠️ This action cannot be undone.
+                      <p className="text-sm text-orange-600 font-semibold mb-6">
+                        WARNING: This action cannot be undone.
                       </p>
                       <div className="flex gap-3 justify-end">
                         <button

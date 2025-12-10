@@ -689,9 +689,12 @@ export default function Home() {
       <header className="bg-white border-b border-gray-200">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">OptiFlow</h1>
-              <p className="text-sm text-gray-600 mt-0.5">Real-time Store Tracking System</p>
+            <div className="flex items-center gap-4">
+              <img src="/logo.png" alt="OptiFlow" className="h-10 w-auto" />
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">OptiFlow</h1>
+                <p className="text-gray-600 mt-1">Real-time Store Tracking System</p>
+              </div>
             </div>
             
             <div className="flex items-center gap-4">
@@ -777,25 +780,25 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2 mt-3">
-            {/* Only show Setup Mode button when not live */}
-            {!(currentMode === 'PRODUCTION' ? hardwareActive : (receivingData && wsConnected)) && (
-              <>
-                <button
-                  onClick={() => setSetupMode(!setupMode)}
-                  className={setupMode ? 'btn-primary bg-green-600 hover:bg-green-700' : 'btn-primary'}
-                >
-                  {setupMode ? 'Finish Setup' : 'Setup Mode'}
-                </button>
-                
-                {setupMode && (
-                  <button onClick={handleResetAnchors} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
-                    Reset Anchors
+            <div className="ml-auto flex items-center gap-2">
+              {/* Only show Setup Mode button when not live */}
+              {!(currentMode === 'PRODUCTION' ? hardwareActive : (receivingData && wsConnected)) && (
+                <>
+                  <button
+                    onClick={() => setSetupMode(!setupMode)}
+                    className={setupMode ? 'btn-primary bg-green-600 hover:bg-green-700' : 'btn-primary'}
+                  >
+                    {setupMode ? 'Finish Setup' : 'Setup Mode'}
                   </button>
-                )}
-              </>
-            )}
-
-            <div className="ml-auto">
+                  
+                  {setupMode && (
+                    <button onClick={handleResetAnchors} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
+                      Reset Anchors
+                    </button>
+                  )}
+                </>
+              )}
+              
               <button
                 onClick={() => setShowSidebar(!showSidebar)}
                 className="btn-secondary"
