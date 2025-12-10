@@ -236,32 +236,35 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                             if inventory_item and detection.status == 'present':
                                 rssi = detection.rssi_dbm if detection.rssi_dbm is not None else -50.0
                                 
-                                # Mark item as present (in case it was previously marked missing)
-                                inventory_item.status = 'present'
-                                
-                                # Always update RSSI and last_seen when detected
-                                inventory_item.last_detection_rssi = rssi
-                                inventory_item.last_seen_at = timestamp
-                                # Reset miss tracking since item was detected
-                                inventory_item.consecutive_misses = 0
-                                inventory_item.first_miss_at = None
-                                
-                                # SIMULATION MODE: Items already have shelf positions in database
-                                # Just mark them as detected, don't override their positions
-                                # The simulation generated items with shelf positions
-                                
-                                # PRODUCTION MODE: Set position to where employee detected it
-                                # (real hardware - item found at employee's location)
-                                if config_state.mode == ConfigMode.PRODUCTION:
-                                    inventory_item.x_position = x
-                                    inventory_item.y_position = y
-                                    logger.debug(f"   [PRODUCTION] Updated item {detection.product_id} to employee position ({x:.1f}, {y:.1f}), RSSI={rssi}")
-                                elif inventory_item.x_position is None:
-                                    # SIMULATION: Only set position if item has none (shouldn't happen if inventory was generated properly)
-                                    inventory_item.x_position = x
-                                    inventory_item.y_position = y
-                                    logger.warning(f"   [SIMULATION] Item {detection.product_id} had no position, set to ({x:.1f}, {y:.1f})")
-                                # else: SIMULATION mode and item has position - keep the shelf position!
+                                # Only update items that are currently 'present' in database
+                                # Items marked 'not present' (missing) should stay missing until restocked
+                                # This prevents the simulation from accidentally "restocking" items
+                                if inventory_item.status == 'present':
+                                    # Always update RSSI and last_seen when detected
+                                    inventory_item.last_detection_rssi = rssi
+                                    inventory_item.last_seen_at = timestamp
+                                    # Reset miss tracking since item was detected
+                                    inventory_item.consecutive_misses = 0
+                                    inventory_item.first_miss_at = None
+                                    
+                                    # SIMULATION MODE: Items already have shelf positions in database
+                                    # Just mark them as detected, don't override their positions
+                                    # The simulation generated items with shelf positions
+                                    
+                                    # PRODUCTION MODE: Set position to where employee detected it
+                                    # (real hardware - item found at employee's location)
+                                    if config_state.mode == ConfigMode.PRODUCTION:
+                                        inventory_item.x_position = x
+                                        inventory_item.y_position = y
+                                        logger.debug(f"   [PRODUCTION] Updated item {detection.product_id} to employee position ({x:.1f}, {y:.1f}), RSSI={rssi}")
+                                    elif inventory_item.x_position is None:
+                                        # SIMULATION: Only set position if item has none (shouldn't happen if inventory was generated properly)
+                                        inventory_item.x_position = x
+                                        inventory_item.y_position = y
+                                        logger.warning(f"   [SIMULATION] Item {detection.product_id} had no position, set to ({x:.1f}, {y:.1f})")
+                                    # else: SIMULATION mode and item has position - keep the shelf position!
+                                # else: Item is 'not present' (missing) - don't change anything
+                                # Missing items can only be restored via explicit restock action
                         
                         db.commit()
                         position_calculated = True
