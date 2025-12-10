@@ -53,7 +53,6 @@ export default function Home() {
   const [items, setItems] = useState<Item[]>([]);
   const [missingItems, setMissingItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
-  const [connected, setConnected] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [activePanel, setActivePanel] = useState<'missing' | 'anchors' | 'positions' | null>('missing');
   const [expandedRestockItems, setExpandedRestockItems] = useState<Set<string>>(new Set());
@@ -78,10 +77,19 @@ export default function Home() {
   
   // WebSocket connection state
   const [wsConnected, setWsConnected] = useState(false);
+  const [lastMessageTime, setLastMessageTime] = useState<number | null>(null);
+  const [receivingData, setReceivingData] = useState(false);
+  
+  // Hardware control state (for PRODUCTION mode)
+  const [hardwareActive, setHardwareActive] = useState(false);
 
   // WebSocket message handler
   const handleWebSocketMessage = useCallback((message: any) => {
     console.log('[DEBUG] Processing WebSocket message:', message.type, message.data);
+    
+    // Track last message time for "receiving data" indicator
+    setLastMessageTime(Date.now());
+    setReceivingData(true);
     
     switch (message.type) {
       case 'position_update':
@@ -178,6 +186,7 @@ export default function Home() {
     onDisconnect: () => {
       console.log('WebSocket disconnected');
       setWsConnected(false);
+      setReceivingData(false);
     },
     onError: (error) => {
       console.warn('WebSocket connection issue (will retry)', {
@@ -186,8 +195,20 @@ export default function Home() {
         message: 'Check that the backend is running and accessible'
       });
       setWsConnected(false);
+      setReceivingData(false);
     },
   });
+
+  // Monitor WebSocket data reception - if no messages for 5 seconds, mark as not receiving
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (lastMessageTime && Date.now() - lastMessageTime > 2000) {
+        setReceivingData(false);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [lastMessageTime]);
 
   const fetchAnchors = async () => {
     try {
@@ -221,10 +242,8 @@ export default function Home() {
       console.log('[DEBUG] Setting positions:', positionsArray.length, 'unique positions', positionsArray);
       
       setPositions(positionsArray);
-      setConnected(data.length > 0);
     } catch (error) {
       console.error('Error fetching positions:', error);
-      setConnected(false);
     }
   };
 
@@ -347,24 +366,28 @@ export default function Home() {
     }
   };
 
-  const sendMQTTControl = async (command: 'START' | 'STOP') => {
+  const sendHardwareControl = async (command: 'START' | 'STOP') => {
     try {
       const response = await fetch(`${API_URL}/config/mqtt/control?command=${command}`, { 
         method: 'POST' 
       });
       const data = await response.json();
       if (data.success) {
-        setConnected(command === 'START');
+        setHardwareActive(command === 'START');
       } else {
-        alert(data.message || `Failed to ${command.toLowerCase()} MQTT signal`);
+        alert(data.message || `Failed to ${command.toLowerCase()} hardware`);
       }
     } catch (error) {
-      alert(`Failed to ${command.toLowerCase()} MQTT signal`);
+      alert(`Failed to ${command.toLowerCase()} hardware`);
     }
   };
 
-  const toggleMQTTSignal = () => {
-    sendMQTTControl(connected ? 'STOP' : 'START');
+  const toggleLiveStatus = () => {
+    if (currentMode === 'PRODUCTION') {
+      // In production mode: control ESP32 hardware
+      sendHardwareControl(hardwareActive ? 'STOP' : 'START');
+    }
+    // In simulation mode: indicator is read-only (shows WebSocket reception status)
   };
 
 
@@ -717,80 +740,57 @@ export default function Home() {
               )}
               
               <button
-                onClick={toggleMQTTSignal}
+                onClick={toggleLiveStatus}
+                disabled={currentMode === 'SIMULATION'}
                 className={`flex items-center gap-2 px-3 py-1.5 border transition-all ${
-                  connected 
-                    ? 'border-green-200 bg-green-50 hover:bg-green-100' 
-                    : 'border-red-200 bg-red-50 hover:bg-red-100'
-                } cursor-pointer`}
-                title={connected ? 'Click to stop MQTT signal' : 'Click to start MQTT signal'}
+                  currentMode === 'PRODUCTION'
+                    ? (hardwareActive 
+                      ? 'border-green-200 bg-green-50 hover:bg-green-100 cursor-pointer' 
+                      : 'border-red-200 bg-red-50 hover:bg-red-100 cursor-pointer')
+                    : (receivingData && wsConnected
+                      ? 'border-green-200 bg-green-50' 
+                      : 'border-red-200 bg-red-50')
+                } ${currentMode === 'SIMULATION' ? 'cursor-default' : ''}`}
+                title={
+                  currentMode === 'PRODUCTION'
+                    ? (hardwareActive ? 'Click to stop ESP32 hardware' : 'Click to start ESP32 hardware')
+                    : (receivingData && wsConnected ? 'Receiving live data from WebSocket' : 'No data reception')
+                }
               >
                 <div className={`w-2 h-2 rounded-full ${
-                  connected ? 'bg-green-500' : 'bg-red-500'
+                  currentMode === 'PRODUCTION'
+                    ? (hardwareActive ? 'bg-green-500' : 'bg-red-500')
+                    : (receivingData && wsConnected ? 'bg-green-500' : 'bg-red-500')
                 }`}></div>
                 <span className={`text-sm font-medium ${
-                  connected ? 'text-green-700' : 'text-red-700'
+                  currentMode === 'PRODUCTION'
+                    ? (hardwareActive ? 'text-green-700' : 'text-red-700')
+                    : (receivingData && wsConnected ? 'text-green-700' : 'text-red-700')
                 }`}>
-                  {connected ? 'LIVE' : 'OFFLINE'}
+                  {currentMode === 'PRODUCTION'
+                    ? (hardwareActive ? 'LIVE' : 'OFFLINE')
+                    : (receivingData && wsConnected ? 'LIVE' : 'OFFLINE')
+                  }
                 </span>
               </button>
-              
-              {/* WebSocket Status Indicator */}
-              <div
-                className={`flex items-center gap-2 px-3 py-1.5 border transition-all ${
-                  wsConnected 
-                    ? 'border-blue-200 bg-blue-50' 
-                    : 'border-gray-200 bg-gray-50'
-                }`}
-                title={wsConnected ? 'WebSocket connected - receiving real-time updates' : 'WebSocket disconnected'}
-              >
-                <div className={`w-2 h-2 rounded-full ${
-                  wsConnected ? 'bg-blue-500 animate-pulse' : 'bg-gray-400'
-                }`}></div>
-                <span className={`text-sm font-medium ${
-                  wsConnected ? 'text-blue-700' : 'text-gray-500'
-                }`}>
-                  {wsConnected ? 'WS' : 'WS'}
-                </span>
-              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2 mt-3">
-            <button
-              onClick={() => setSetupMode(!setupMode)}
-              className={setupMode ? 'btn-primary bg-green-600 hover:bg-green-700' : 'btn-primary'}
-            >
-              {setupMode ? 'Finish Setup' : 'Setup Mode'}
-            </button>
-            
-            {setupMode && (
-              <button onClick={handleResetAnchors} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
-                Reset Anchors
-              </button>
-            )}
-            
-            {!setupMode && (
+            {/* Only show Setup Mode button when not live */}
+            {!(currentMode === 'PRODUCTION' ? hardwareActive : (receivingData && wsConnected)) && (
               <>
-                <button onClick={handleClearData} className="btn-secondary">
-                  Clear Data
+                <button
+                  onClick={() => setSetupMode(!setupMode)}
+                  className={setupMode ? 'btn-primary bg-green-600 hover:bg-green-700' : 'btn-primary'}
+                >
+                  {setupMode ? 'Finish Setup' : 'Setup Mode'}
                 </button>
-                {currentMode === 'SIMULATION' && (
-                  simulationRunning ? (
-                    <button 
-                      onClick={stopSimulation}
-                      className="btn-primary bg-red-600 hover:bg-red-700"
-                    >
-                      Stop Simulation
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={startSimulation}
-                      className="btn-primary bg-purple-600 hover:bg-purple-700"
-                    >
-                      Start Simulation
-                    </button>
-                  )
+                
+                {setupMode && (
+                  <button onClick={handleResetAnchors} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
+                    Reset Anchors
+                  </button>
                 )}
               </>
             )}

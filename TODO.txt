@@ -80,6 +80,6 @@ PRIORITY: LOW / FUTURE IMPROVEMENTS
 2) add ml clissification for missing items
 3) translate the EPCs
 4) Logs of received message from broker on the backend
-5), wifi retries logic 
 6) with rssi : try to figure out the real location of the item over time : increasing accuracy
 7) Add image as background with a reference metric
+8) heatmap with respect to maximum quantity
