@@ -50,6 +50,11 @@ class AnalyticsTracker:
             print("⚠️  Analytics tracker already running")
             return
         
+        # Initialize last_item_states with current item states
+        # This ensures we only detect NEW transitions, not existing states
+        for item in self.items:
+            self.last_item_states[item.rfid_tag] = item.missing
+        
         self.running = True
         self.thread = threading.Thread(target=self._tracking_loop, daemon=True)
         self.thread.start()
@@ -69,6 +74,21 @@ class AnalyticsTracker:
             self._upload_purchases()
         
         print(f"📊 Analytics tracker stopped (snapshots: {self.snapshots_created}, purchases: {self.purchases_recorded})")
+    
+    def reset_state(self):
+        """
+        Reset tracking state to allow fresh purchase detection.
+        
+        Call this after clearing analytics data to ensure purchases can be 
+        detected again from the current item states. This clears the memory
+        of previous item states, so transitions from present->missing will
+        be detected as new purchases.
+        """
+        self.last_item_states.clear()
+        self.purchase_queue.clear()
+        self.snapshots_created = 0
+        self.purchases_recorded = 0
+        print("🔄 Analytics tracker state reset - ready for fresh tracking")
     
     def _tracking_loop(self):
         """Main tracking loop (runs in background thread)"""

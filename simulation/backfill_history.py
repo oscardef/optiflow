@@ -119,37 +119,44 @@ def fetch_products_from_backend(api_url: str) -> List[Dict]:
 
 
 
-def generate_hourly_activity_pattern(is_weekend: bool = False) -> List[float]:
-    """Generate realistic hourly activity multipliers (0-1) for a day
+def generate_hourly_activity_pattern(is_weekend: bool = False, is_sunday: bool = False) -> List[float]:
+    """Generate realistic hourly activity multipliers for a day
+    
+    The pattern values are weights that will be normalized so the daily
+    total matches the base_daily_rate.
     
     Decathlon store patterns:
+    - Sunday: CLOSED (no sales)
+    - Saturday: Strong all-day traffic (10am-7pm) with 2-2.5x weekday volume
     - Weekdays: Lunch peak (12-2pm) and evening peak (5-8pm)
-    - Weekends: Strong morning-afternoon traffic (10am-6pm) with 2-3x volume
-    - Sports stores see more weekend activity vs weekday
     """
-    if is_weekend:
-        # Weekend: busy all day from 10am-7pm
+    if is_sunday:
+        # Store closed on Sunday - return all zeros
+        return [0.0] * 24
+    
+    if is_weekend:  # Saturday only (Sunday handled above)
+        # Saturday: busy all day from 10am-7pm
         patterns = [
-            0.05, 0.05, 0.05, 0.05, 0.05, 0.05,  # 12am-6am: closed
-            0.1, 0.15, 0.2,                      # 6-9am: opening
-            0.7, 0.85,                           # 9-11am: morning rush
-            0.95, 1.0,                           # 11am-1pm: peak shopping
-            1.0, 0.95,                           # 1-3pm: sustained high traffic
-            0.9, 0.85,                           # 3-5pm: afternoon shopping
-            0.8, 0.75, 0.6, 0.4,                 # 5-9pm: winding down
-            0.2, 0.15, 0.1                       # 9pm-12am: closing
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,    # 12am-6am: closed
+            0.0, 0.0, 0.0,                    # 6-9am: not yet open
+            0.5, 0.8,                         # 9-11am: morning rush starts
+            1.0, 1.0,                         # 11am-1pm: peak shopping
+            1.0, 0.9,                         # 1-3pm: sustained high traffic
+            0.9, 0.8,                         # 3-5pm: afternoon shopping
+            0.7, 0.6, 0.4, 0.0,               # 5-9pm: winding down, close at 8pm
+            0.0, 0.0, 0.0                     # 9pm-12am: closed
         ]
     else:
         # Weekday: lunch and after-work peaks
         patterns = [
-            0.05, 0.05, 0.05, 0.05, 0.05, 0.05,  # 12am-6am: closed
-            0.1, 0.15, 0.2,                      # 6-9am: opening
-            0.3, 0.4,                            # 9-11am: morning shoppers
-            0.7, 0.8,                            # 11am-1pm: lunch peak
-            0.4, 0.3,                            # 1-3pm: afternoon dip
-            0.5, 0.6,                            # 3-5pm: building up
-            0.8, 0.9, 1.0, 0.7,                  # 5-9pm: after-work peak
-            0.3, 0.2, 0.1                        # 9pm-12am: closing
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,    # 12am-6am: closed
+            0.0, 0.0, 0.0,                    # 6-9am: not yet open
+            0.3, 0.4,                         # 9-11am: morning shoppers
+            0.7, 0.8,                         # 11am-1pm: lunch peak
+            0.5, 0.3,                         # 1-3pm: afternoon dip
+            0.4, 0.5,                         # 3-5pm: building up
+            0.9, 1.0, 0.8, 0.4,               # 5-9pm: after-work peak, close at 9pm
+            0.0, 0.0, 0.0                     # 9pm-12am: closed
         ]
     return patterns
 
@@ -277,8 +284,11 @@ def generate_historical_purchases(
     """Generate realistic historical purchase events
     
     Args:
+        api_url: Backend API endpoint
+        products: List of product dictionaries
+        days: Number of days of history to generate
+        base_daily_rate: Average purchases per day (on a weekday)
         fast_forward: If True, generates all data instantly in memory.
-                     If False, uses the old day-by-day approach.
     """
     print(f"\n📊 Generating {days} days of historical purchase data...")
     if fast_forward:
@@ -286,7 +296,6 @@ def generate_historical_purchases(
     
     # Assign popularity to products
     popularity = generate_product_popularity(products)
-    hourly_pattern = generate_hourly_activity_pattern()
     
     all_purchases = []
     
@@ -295,31 +304,49 @@ def generate_historical_purchases(
     start_date = end_date - timedelta(days=days)
     
     current_date = start_date
+    sundays_skipped = 0
     
     while current_date < end_date:
-        # Strong weekend boost for sports store (2-3x on Sat/Sun)
         day_of_week = current_date.weekday()
-        is_weekend = day_of_week >= 5
-        weekend_multiplier = random.uniform(2.2, 2.8) if is_weekend else 1.0
+        is_sunday = day_of_week == 6
+        is_saturday = day_of_week == 5
         
-        # Random daily variation
+        # Skip Sunday - store is closed
+        if is_sunday:
+            sundays_skipped += 1
+            current_date += timedelta(days=1)
+            continue
+        
+        # Saturday boost for sports store (1.8-2.2x weekday volume)
+        saturday_multiplier = random.uniform(1.8, 2.2) if is_saturday else 1.0
+        
+        # Random daily variation (weather, events, etc.)
         daily_variation = random.uniform(0.85, 1.15)
         
         # Get appropriate hourly pattern for day type
-        hourly_pattern_today = generate_hourly_activity_pattern(is_weekend)
+        hourly_pattern_today = generate_hourly_activity_pattern(is_saturday, is_sunday)
+        
+        # Normalize hourly pattern so it sums to 1.0
+        pattern_sum = sum(hourly_pattern_today)
+        if pattern_sum > 0:
+            hourly_pattern_normalized = [p / pattern_sum for p in hourly_pattern_today]
+        else:
+            hourly_pattern_normalized = [0.0] * 24
+        
+        # Calculate total purchases for the day
+        daily_purchases = base_daily_rate * saturday_multiplier * daily_variation
         
         # Simulate each hour
         for hour in range(24):
-            hour_multiplier = hourly_pattern_today[hour]
-            expected_purchases = (
-                base_daily_rate * 
-                (hour_multiplier / 24) * 
-                weekend_multiplier * 
-                daily_variation
-            )
+            hour_weight = hourly_pattern_normalized[hour]
+            expected_this_hour = daily_purchases * hour_weight
+            
+            # Skip hours with no activity (store closed)
+            if expected_this_hour < 0.01:
+                continue
             
             # Poisson-like distribution for purchase count
-            num_purchases = max(0, int(random.gauss(expected_purchases, expected_purchases * 0.3)))
+            num_purchases = max(0, int(random.gauss(expected_this_hour, expected_this_hour * 0.3)))
             
             for _ in range(num_purchases):
                 # Calculate day number for trend/spike calculations
@@ -350,15 +377,16 @@ def generate_historical_purchases(
                     
                     # Category-specific patterns for Decathlon store
                     # Weekend boost for Sports/Fitness/Cycling (people have free time)
-                    if is_weekend and profile['category'] in ['Sports', 'Fitness', 'Cycling', 'Cardio']:
+                    # Saturday boost for Sports/Fitness/Cycling (people have free time)
+                    if is_saturday and profile['category'] in ['Sports', 'Fitness', 'Cycling', 'Cardio']:
                         weight *= 1.3
                     
                     # Weekday lunch boost for Nutrition (office workers buying snacks)
-                    if not is_weekend and 11 <= hour <= 13 and profile['category'] == 'Nutrition':
+                    if not is_saturday and 11 <= hour <= 13 and profile['category'] == 'Nutrition':
                         weight *= 1.4
                     
                     # Morning boost for Fitness equipment (people shopping before gym)
-                    if 7 <= hour <= 9 and profile['category'] in ['Fitness', 'Weights']:
+                    if 9 <= hour <= 11 and profile['category'] in ['Fitness', 'Weights']:
                         weight *= 1.2
                     
                     adjusted_weights.append(max(0.01, weight))
@@ -393,7 +421,8 @@ def generate_historical_purchases(
     
     if not fast_forward:
         print()  # New line if not using progress bar
-    print(f"✅ Generated {len(all_purchases)} total purchase events")
+    operating_days = days - sundays_skipped
+    print(f"✅ Generated {len(all_purchases)} total purchase events ({operating_days} operating days, {sundays_skipped} Sundays skipped)")
     
     # Upload in batches
     print("\n📤 Uploading purchases to backend...")
@@ -428,7 +457,11 @@ def generate_stock_snapshots(
     snapshot_interval_hours: int = 1,
     fast_forward: bool = True
 ):
-    """Generate hourly stock snapshots for time-series analysis"""
+    """Generate hourly stock snapshots for time-series analysis
+    
+    Note: Snapshots are still generated for Sundays to track stock levels,
+    but no depletion occurs (store is closed) and no restocking happens.
+    """
     print(f"\n📸 Generating stock snapshots (every {snapshot_interval_hours}h for {days} days)...")
     if fast_forward:
         print("⚡ Fast-forward mode: Generating all snapshots instantly...")
@@ -454,45 +487,55 @@ def generate_stock_snapshots(
     
     while current_date < end_date:
         day_num = (current_date - start_date).days
+        day_of_week = current_date.weekday()
+        is_sunday = day_of_week == 6
+        is_saturday = day_of_week == 5
         
         for product in products:
             profile = popularity[product['id']]
             current_stock = product_stocks[product['id']]
             
-            # Calculate realistic depletion based on product popularity and trends
-            base_depletion_rate = profile['base_popularity'] * snapshot_interval_hours * 0.5
+            # No depletion on Sunday (store closed)
+            if not is_sunday:
+                # Calculate realistic depletion based on product popularity and trends
+                base_depletion_rate = profile['base_popularity'] * snapshot_interval_hours * 0.5
+                
+                # Saturday has higher depletion (more traffic)
+                if is_saturday:
+                    base_depletion_rate *= 1.8
+                
+                # Apply trend
+                trend_multiplier = 1 + (profile['trend'] * day_num)
+                depletion_rate = base_depletion_rate * max(0.1, trend_multiplier)
+                
+                # Spike causes faster depletion
+                if profile['has_spike'] and abs(day_num - profile['spike_day']) <= 1:
+                    depletion_rate *= profile['spike_magnitude']
+                
+                # Simulate depletion with variance
+                depletion = max(0, int(random.gauss(depletion_rate, depletion_rate * 0.3)))
+                current_stock = max(0, current_stock - depletion)
             
-            # Apply trend
-            trend_multiplier = 1 + (profile['trend'] * day_num)
-            depletion_rate = base_depletion_rate * max(0.1, trend_multiplier)
-            
-            # Spike causes faster depletion
-            if profile['has_spike'] and abs(day_num - profile['spike_day']) <= 1:
-                depletion_rate *= profile['spike_magnitude']
-            
-            # Simulate depletion with variance
-            depletion = max(0, int(random.gauss(depletion_rate, depletion_rate * 0.3)))
-            current_stock = max(0, current_stock - depletion)
-            
-            # Intelligent restocking logic
-            days_since_restock = day_num - last_restock_day[product['id']]
-            restock_threshold = 5  # Restock when below 5 items
-            
-            # Restock if low AND it's been at least 3 days since last restock
-            if current_stock <= restock_threshold and days_since_restock >= 3:
-                # Don't restock during shortage period
-                if not (profile['has_shortage'] and 
-                       profile['shortage_start'] <= day_num < profile['shortage_start'] + profile['shortage_duration']):
-                    # Restock amount based on popularity
-                    if profile['base_popularity'] > 0.7:
-                        restock_amount = random.randint(20, 35)  # Popular items get more stock
-                    elif profile['base_popularity'] > 0.4:
-                        restock_amount = random.randint(15, 25)
-                    else:
-                        restock_amount = random.randint(10, 20)  # Slow movers get less
-                    
-                    current_stock += restock_amount
-                    last_restock_day[product['id']] = day_num
+            # Intelligent restocking logic (not on Sundays)
+            if not is_sunday:
+                days_since_restock = day_num - last_restock_day[product['id']]
+                restock_threshold = 5  # Restock when below 5 items
+                
+                # Restock if low AND it's been at least 3 days since last restock
+                if current_stock <= restock_threshold and days_since_restock >= 3:
+                    # Don't restock during shortage period
+                    if not (profile['has_shortage'] and 
+                           profile['shortage_start'] <= day_num < profile['shortage_start'] + profile['shortage_duration']):
+                        # Restock amount based on popularity
+                        if profile['base_popularity'] > 0.7:
+                            restock_amount = random.randint(20, 35)  # Popular items get more stock
+                        elif profile['base_popularity'] > 0.4:
+                            restock_amount = random.randint(15, 25)
+                        else:
+                            restock_amount = random.randint(10, 20)  # Slow movers get less
+                        
+                        current_stock += restock_amount
+                        last_restock_day[product['id']] = day_num
             
             # If in shortage period, force stock to 0
             if profile['has_shortage']:

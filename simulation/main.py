@@ -81,6 +81,14 @@ def on_message(client, userdata, msg):
     elif command == "START":
         userdata['running'] = True
         print("\n▶️  Resumed by MQTT command")
+    elif command == "RESET_ANALYTICS":
+        # Reset analytics tracker state
+        analytics_tracker = userdata.get('analytics_tracker')
+        if analytics_tracker:
+            analytics_tracker.reset_state()
+            print("\n🔄 Analytics tracker state reset by MQTT command")
+        else:
+            print("\n⚠️  Analytics tracker not running - command ignored")
 
 
 def fetch_inventory_from_backend(api_url: str):
@@ -272,7 +280,7 @@ def main():
         analytics_tracker.start()
     
     # Setup MQTT client
-    userdata = {'running': True, 'config': config, 'mqtt_connected': False}
+    userdata = {'running': True, 'config': config, 'mqtt_connected': False, 'analytics_tracker': analytics_tracker}
     client = mqtt.Client(userdata=userdata)
     client.on_connect = on_connect
     client.on_message = on_message
