@@ -35,17 +35,22 @@ class MissingItemDetector:
     1. When an item is first detected, we record its position as the employee's location
     2. If the same item is detected again, we update its position
     3. If an item that was previously detected is NOT detected for multiple consecutive
-       scan cycles AND sufficient time has passed, we mark it as missing
+       scan cycles while within range, we mark it as missing
     
-    For a DEMO environment (tags on desk), the key insight is:
-    - If you're standing in roughly the same place and NOT detecting an item that
-      WAS there before, it's probably gone
-    - We need to be conservative to avoid false positives from read failures
+    Detection Flow:
+    1. Hardware packet arrives with RFID + UWB data
+    2. Calculate employee position via triangulation
+    3. Query all present items with known positions
+    4. For each item:
+       - Was it detected? → Reset miss counter
+       - Distance > 50cm? → Reset miss counter (too far to detect)
+       - Within 50cm but not detected? → Increment miss counter
+       - Consecutive misses >= threshold? → Mark as missing (max 2 per scan)
     
     Detection Parameters (tuned for demo/production reliability):
-    - MIN_CONSECUTIVE_MISSES: 6 scan cycles without detection
-    - MIN_MISS_DURATION_SECONDS: 5 seconds minimum time elapsed
-    - These values are intentionally conservative to avoid false positives
+    - MIN_CONSECUTIVE_MISSES: 4 scan cycles without detection
+    - RFID_DETECTION_RANGE_CM: 50cm max detection range
+    - MAX_MISSING_PER_SCAN: 2 items maximum per scan cycle
     """
     
     # Detection algorithm parameters - tuned for reliability
@@ -58,6 +63,10 @@ class MissingItemDetector:
     
     # RFID detection range in cm - items beyond this are not expected to be detected
     RFID_DETECTION_RANGE_CM = 50.0
+    
+    # Maximum number of items that can be marked missing in a single scan cycle
+    # This prevents mass false positives from temporary signal issues
+    MAX_MISSING_PER_SCAN = 2
     
     @classmethod
     def process_detections(
@@ -92,9 +101,14 @@ class MissingItemDetector:
             InventoryItem.y_position.isnot(None)
         ).all()
         
-        logger.debug(f"Processing {len(detected_rfid_tags)} detected tags, checking {len(present_items)} present items")
+        logger.info(f"🔍 Processing {len(detected_rfid_tags)} detected tags, checking {len(present_items)} present items")
         
-        # === STEP 2: For each item, apply 3 safety checks ===
+        # Debug: Show items with existing miss counters
+        items_with_misses = [item for item in present_items if item.consecutive_misses > 0]
+        if items_with_misses:
+            logger.info(f"   📊 {len(items_with_misses)} items already have miss counters:")
+        
+        # === STEP 2: For each item, apply safety checks ===
         for item in present_items:
             was_detected = item.rfid_tag in detected_rfid_tags
             
@@ -112,11 +126,19 @@ class MissingItemDetector:
                 # ✅ SAFETY CHECK 2: Is item within RFID detection range (50cm)?
                 if distance <= cls.RFID_DETECTION_RANGE_CM:
                     # Item is in range but wasn't detected - this is a miss
+                    logger.info(f"   ❌ Item {item.rfid_tag} within range ({distance:.1f}cm) but NOT detected")
                     should_mark_missing = cls._handle_item_missed(item, timestamp)
                     
                     # ✅ SAFETY CHECK 3: Enough consecutive misses? (>= 4 cycles)
                     # This check alone is sufficient - consecutive misses account for read failures
                     if should_mark_missing:
+                        # ✅ SAFETY CHECK 4: Max 2 items marked missing per scan
+                        if len(newly_missing) >= cls.MAX_MISSING_PER_SCAN:
+                            logger.debug(
+                                f"Item {item.rfid_tag} would be missing but max per scan reached"
+                            )
+                            continue
+                        
                         item.status = 'not present'
                         newly_missing.append(item)
                         logger.info(
@@ -131,8 +153,11 @@ class MissingItemDetector:
                     # This preserves miss count if employee walked away briefly
                     pass
         
+        # CRITICAL: Always commit changes to persist miss counters
+        # Without this, consecutive_misses would reset on every request
+        db.commit()
+        
         if newly_missing:
-            db.commit()
             logger.info(f"🧮 Marked {len(newly_missing)} item(s) as 'not present'")
         
         return newly_missing
@@ -174,11 +199,9 @@ class MissingItemDetector:
             return True
         
         # Log progress for debugging
-        if item.consecutive_misses % 2 == 0:  # Log every 2nd miss to avoid spam
-            logger.debug(
-                f"Item {item.rfid_tag}: miss #{item.consecutive_misses}, "
-                f"(need {cls.MIN_CONSECUTIVE_MISSES} consecutive misses)"
-            )
+        logger.info(
+            f"   ⏱️  Item {item.rfid_tag}: miss #{item.consecutive_misses}/{cls.MIN_CONSECUTIVE_MISSES}"
+        )
         
         return False
     
@@ -257,6 +280,7 @@ class MissingItemDetector:
             ],
             "algorithm_params": {
                 "min_consecutive_misses": cls.MIN_CONSECUTIVE_MISSES,
-                "rfid_detection_range_cm": cls.RFID_DETECTION_RANGE_CM
+                "rfid_detection_range_cm": cls.RFID_DETECTION_RANGE_CM,
+                "max_missing_per_scan": cls.MAX_MISSING_PER_SCAN
             }
         }

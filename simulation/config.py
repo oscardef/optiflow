@@ -74,7 +74,7 @@ class SimulationConfig:
     tag: TagConfig = None
     api_url: str = "http://localhost:8000"
     speed_multiplier: float = 1.0  # Speed adjustment (1.0 = normal, 2.0 = 2x speed)
-    disappearance_rate: float = 0.002  # Rate at which items go missing (default: 0.2% per pass - realistic with inference safety)
+    disappearance_rate: float = 0.15  # Rate at which items go missing (default: 15% per pass - for testing)
     
     def __post_init__(self):
         if self.store is None:

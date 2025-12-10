@@ -194,7 +194,15 @@ class ShopperSimulator:
         # Only consider items that have been detected (marked as present first)
         # AND are not already missing
         detected_items = [item for item in self.items if item.detected and not item.missing]
+        
+        print(f"\n   📦 _check_for_missing_items called:")
+        print(f"      Total items: {len(self.items)}")
+        print(f"      Detected items: {len([i for i in self.items if i.detected])}")
+        print(f"      Already missing: {len([i for i in self.items if i.missing])}")
+        print(f"      Candidates for disappearance: {len(detected_items)}")
+        
         if not detected_items:
+            print(f"      ⚠️ No detected items to make missing!")
             return
         
         import random
@@ -208,12 +216,15 @@ class ShopperSimulator:
         
         # Decide how many PRODUCT TYPES should have missing items this pass
         # Use disappearance_rate as probability that ANY items go missing this pass
-        if random.random() < self.config.disappearance_rate:
+        roll = random.random()
+        print(f"      🎲 Disappearance roll: {roll:.4f} (threshold: {self.config.disappearance_rate:.4f})")
+        if roll < self.config.disappearance_rate:
             # Pick 1-2 product types to have items go missing
             num_products_affected = random.randint(1, 2)
             products_to_affect = random.sample(list(items_by_product.keys()), 
                                               min(num_products_affected, len(items_by_product)))
             
+            print(f"      🚨 MARKING ITEMS AS MISSING! Affecting {len(products_to_affect)} product types")
             for product_key in products_to_affect:
                 product_items = items_by_product[product_key]
                 # Take only 1-2 items per product (realistic store behavior)
@@ -222,7 +233,9 @@ class ShopperSimulator:
                 
                 for item in items_to_disappear:
                     item.missing = True
-                    print(f"   📦❌ Item {item.rfid_tag} ({item.product.name}) marked as MISSING")
+                    print(f"         📦❌ Item {item.rfid_tag} ({item.product.name}) at ({item.x:.1f}, {item.y:.1f}) marked as MISSING")
+        else:
+            print(f"      ✅ No items going missing this pass")
     
     def get_status_info(self) -> dict:
         """Get current status for display"""

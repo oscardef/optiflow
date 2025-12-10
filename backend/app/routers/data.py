@@ -236,6 +236,9 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                             if inventory_item and detection.status == 'present':
                                 rssi = detection.rssi_dbm if detection.rssi_dbm is not None else -50.0
                                 
+                                # Mark item as present (in case it was previously marked missing)
+                                inventory_item.status = 'present'
+                                
                                 # Always update RSSI and last_seen when detected
                                 inventory_item.last_detection_rssi = rssi
                                 inventory_item.last_seen_at = timestamp
@@ -275,6 +278,11 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         # The consecutive miss threshold accounts for RFID read failures
                         # No time-based check needed - miss count alone is sufficient
                         
+                        logger.info(f"\n{'='*60}")
+                        logger.info(f"🔍 MISSING DETECTION CHECK")
+                        logger.info(f"   Employee at: ({x:.1f}, {y:.1f})")
+                        logger.info(f"   Detected {len(detected_rfid_with_rssi)} RFID tags in packet")
+                        
                         newly_missing_items = MissingItemDetector.process_detections(
                             db=db,
                             detected_rfid_tags=detected_rfid_with_rssi,
@@ -285,6 +293,7 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         
                         if newly_missing_items:
                             logger.info(f"   🧮 Total newly missing: {len(newly_missing_items)} item(s)")
+                        logger.info(f"{'='*60}\n")
                         
                         # Broadcast real-time updates to WebSocket clients
                         await ws_manager.broadcast_position_update({
