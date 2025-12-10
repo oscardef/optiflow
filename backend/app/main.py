@@ -9,6 +9,7 @@ from .database import init_db, SessionLocal_simulation, SessionLocal_production
 from .models import Configuration, InventoryItem, Product
 from .config import config_state, ConfigMode
 from .core import logger
+from .utils.epc_lookup import epc_lookup
 import random
 
 
@@ -171,6 +172,11 @@ def startup_event():
     """Initialize databases and create default configuration"""
     logger.info("Starting OptiFlow API server...")
     logger.info(f"Current mode: {config_state.mode.value}")
+    
+    # Load EPC translation table
+    # NOTE: At scale, this would be replaced by API calls to Decathlon's product database
+    logger.info("Loading EPC translation table...")
+    epc_lookup.load()
     
     # Initialize both databases
     init_db()

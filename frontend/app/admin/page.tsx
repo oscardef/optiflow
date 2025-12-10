@@ -1250,6 +1250,7 @@ export default function AdminPanel() {
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Present</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price (CHF)</th>
@@ -1359,6 +1360,9 @@ export default function AdminPanel() {
                                   }`}
                                 />
                               </td>
+                              <td className="px-4 py-3 text-sm">
+                                <span className="text-gray-700">{product.size || '-'}</span>
+                              </td>
                               <td className="px-4 py-3 text-sm text-center">
                                 <span className={`font-medium ${
                                   product.reorder_threshold !== null && (product.current_stock || 0) < product.reorder_threshold 
@@ -1415,7 +1419,7 @@ export default function AdminPanel() {
                             
                             {isExpanded && (
                               <tr>
-                                <td colSpan={9} className="px-4 py-2 bg-gray-50">
+                                <td colSpan={10} className="px-4 py-2 bg-gray-50">
                                   <div className="pl-8">
                                     <h4 className="text-sm font-semibold text-gray-700 mb-2">
                                       Individual Items (EPCs) - {items.length} total

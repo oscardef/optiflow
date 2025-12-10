@@ -37,6 +37,8 @@ export interface Product {
   unit_price?: number;
   reorder_threshold: number;
   optimal_stock_level: number;
+  size?: string;
+  color?: string;
   created_at: string;
   updated_at: string;
   current_stock?: number;

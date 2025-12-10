@@ -971,6 +971,44 @@ export default function Home() {
                   <h3 className="text-xl font-bold text-gray-900 mb-3">{selectedItem.name}</h3>
                   
                   <div className="space-y-3">
+                    {/* Product Details */}
+                    <div className="border border-gray-200 bg-gray-50 p-3 rounded-lg">
+                      <div className="text-xs text-gray-500 uppercase font-semibold mb-2">Product Details</div>
+                      <div className="text-sm text-gray-900 space-y-1">
+                        {selectedItem.category && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Category:</span>
+                            <span className="font-medium">{selectedItem.category}</span>
+                          </div>
+                        )}
+                        {selectedItem.sku && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">SKU:</span>
+                            <span className="font-mono text-xs">{selectedItem.sku}</span>
+                          </div>
+                        )}
+                        {selectedItem.size && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Size:</span>
+                            <span className="font-medium">{selectedItem.size}</span>
+                          </div>
+                        )}
+                        {selectedItem.color && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Color:</span>
+                            <span className="font-medium">{selectedItem.color}</span>
+                          </div>
+                        )}
+                        {selectedItem.unit_price !== null && selectedItem.unit_price !== undefined && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Price:</span>
+                            <span className="font-bold text-[#0055A4]">CHF {selectedItem.unit_price.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Stock Information */}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="border-2 border-gray-200 bg-white p-3 rounded-lg">
                         <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Currently In Stock</div>
@@ -1054,6 +1092,44 @@ export default function Home() {
                   <h3 className="text-xl font-bold text-gray-900 mb-3">{selectedItem.name}</h3>
                   
                   <div className="space-y-3">
+                    {/* Product Details */}
+                    <div className="border border-gray-200 bg-gray-50 p-3 rounded-lg">
+                      <div className="text-xs text-gray-500 uppercase font-semibold mb-2">Product Details</div>
+                      <div className="text-sm text-gray-900 space-y-1">
+                        {selectedItem.category && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Category:</span>
+                            <span className="font-medium">{selectedItem.category}</span>
+                          </div>
+                        )}
+                        {selectedItem.sku && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">SKU:</span>
+                            <span className="font-mono text-xs">{selectedItem.sku}</span>
+                          </div>
+                        )}
+                        {selectedItem.size && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Size:</span>
+                            <span className="font-medium">{selectedItem.size}</span>
+                          </div>
+                        )}
+                        {selectedItem.color && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Color:</span>
+                            <span className="font-medium">{selectedItem.color}</span>
+                          </div>
+                        )}
+                        {selectedItem.unit_price !== null && selectedItem.unit_price !== undefined && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Price:</span>
+                            <span className="font-bold text-[#0055A4]">CHF {selectedItem.unit_price.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Stock Information */}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="border-2 border-gray-200 bg-white p-3 rounded-lg">
                         <div className="text-xs text-gray-500 uppercase font-semibold mb-1">Currently In Stock</div>

@@ -19,6 +19,7 @@ from ..config import config_state, ConfigMode
 from ..core import logger
 from ..websocket_manager import manager as ws_manager
 from ..services.missing_detection import MissingItemDetector
+from ..utils.epc_lookup import epc_lookup
 
 router = APIRouter(tags=["data"])
 
@@ -96,22 +97,48 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                 # In SIMULATION mode: Skip (simulation should have pre-generated inventory)
                 if config_state.mode == ConfigMode.PRODUCTION:
                     # Auto-create a product and inventory item for this new tag
-                    # First, check if we have a "Demo Products" product or create one
-                    epc_short = detection.product_id[-8:] if len(detection.product_id) > 8 else detection.product_id
-                    product_sku = f"DEMO-{epc_short}"
+                    # Look up product metadata from epc_translation.csv
+                    # NOTE: At scale, this would be replaced by API calls to Decathlon's product database
+                    metadata = epc_lookup.lookup(detection.product_id)
                     
+                    if metadata:
+                        # Use metadata from CSV
+                        product_sku = metadata.gtin  # Use GTIN as SKU
+                        product_name = epc_lookup.get_product_name(detection.product_id, include_details=False)
+                        product_category = metadata.category
+                        product_size = metadata.size
+                        product_color = metadata.color
+                        product_price = metadata.price_chf
+                        logger.info(f"[PRODUCTION] Found metadata for EPC {detection.product_id}: {product_name}")
+                    else:
+                        # Fallback to generic demo item
+                        epc_short = detection.product_id[-8:] if len(detection.product_id) > 8 else detection.product_id
+                        product_sku = f"DEMO-{epc_short}"
+                        product_name = f"Demo Item {epc_short}"
+                        product_category = "Demo"
+                        product_size = None
+                        product_color = None
+                        product_price = None
+                        logger.warning(f"[PRODUCTION] No metadata found for EPC {detection.product_id}, using fallback")
+                    
+                    # Check if product already exists (by SKU)
                     product = db.query(Product).filter(Product.sku == product_sku).first()
                     if not product:
                         product = Product(
                             sku=product_sku,
-                            name=f"Demo Item {epc_short}",
-                            category="Demo"
+                            name=product_name,
+                            category=product_category,
+                            size=product_size,
+                            color=product_color,
+                            unit_price=product_price
                         )
                         db.add(product)
                         db.flush()
-                        logger.info(f"[PRODUCTION] Created new product: {product.name} (SKU: {product_sku})")
+                        logger.info(f"[PRODUCTION] Created new product: {product.name} (SKU: {product_sku}) - CHF {product_price}")
                     
-                    # Create the inventory item
+                    # Create the inventory item with full display name (includes size/color)
+                    display_name = epc_lookup.get_product_name(detection.product_id, include_details=True) if metadata else product_name
+                    
                     inventory_item = InventoryItem(
                         rfid_tag=detection.product_id,
                         product_id=product.id,
@@ -125,7 +152,7 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                     )
                     db.add(inventory_item)
                     db.flush()
-                    logger.info(f"[PRODUCTION] Created new inventory item for RFID tag: {detection.product_id}")
+                    logger.info(f"[PRODUCTION] Created inventory item: {display_name} (RFID: {detection.product_id})")
                 else:
                     # SIMULATION mode - skip unknown tags
                     logger.warning(f"Unknown RFID tag detected: {detection.product_id} - skipping (not in inventory)")
@@ -666,6 +693,11 @@ def get_item_detail(rfid_tag: str, db: Session = Depends(get_db)):
         "rfid_tag": item.rfid_tag,
         "product_id": product.id,
         "name": product.name,
+        "sku": product.sku,
+        "category": product.category,
+        "size": product.size,
+        "color": product.color,
+        "unit_price": product.unit_price,
         "x_position": item.x_position,
         "y_position": item.y_position,
         "status": item.status,

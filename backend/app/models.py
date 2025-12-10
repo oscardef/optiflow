@@ -100,6 +100,8 @@ class Product(Base):
     name = Column(String(255), nullable=False)
     category = Column(String(100), index=True)
     unit_price = Column(Numeric(10, 2))
+    size = Column(String(50))
+    color = Column(String(50))
     reorder_threshold = Column(Integer, nullable=True, default=None)
     optimal_stock_level = Column(Integer, nullable=True, default=None)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -117,6 +119,8 @@ class Product(Base):
             "name": self.name,
             "category": self.category,
             "unit_price": float(self.unit_price) if self.unit_price else None,
+            "size": self.size,
+            "color": self.color,
             "reorder_threshold": self.reorder_threshold,
             "optimal_stock_level": self.optimal_stock_level,
             "created_at": self.created_at.isoformat() if self.created_at else None,
