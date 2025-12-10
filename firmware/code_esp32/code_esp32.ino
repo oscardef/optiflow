@@ -32,11 +32,16 @@
 #include <HardwareSerial.h>
 #include <vector>
 #include <map>
+#include <Adafruit_NeoPixel.h>
 #include "UNIT_UHF_RFID.h"
 
 // ============================================
 // CONFIGURATION
 // ============================================
+
+// Onboard RGB LED
+#define LED_PIN 38
+#define NUM_PIXELS 1
 
 #define DEBUG_MODE 1    // Set to 1 for debugging
 
@@ -58,11 +63,6 @@ const int MQTT_PORT = 1883;
 const char* TOPIC_DATA = "store/production";   // Main data topic for production hardware
 const char* TOPIC_CONTROL = "store/production/control";   // Control signals (START/STOP)
 const char* TOPIC_STATUS = "store/production/status";     // Status updates
-
-// LED Configuration
-#define LED_PIN             48          // ESP32-S3 built-in RGB LED (typically GPIO48)
-#define LED_WIFI_SLOW_MS    1000        // WiFi disconnected - slow blink
-#define LED_MQTT_FAST_MS    200         // WiFi OK but MQTT disconnected - fast blink
 
 // RFID Configuration
 #define RFID_RX_PIN         6
@@ -153,6 +153,9 @@ SemaphoreHandle_t uwbMutex;
 
 // UWB Statistics per anchor (accumulated during polling cycle)
 std::map<String, AnchorStats> anchorStatsMap;
+
+// RGB LED
+Adafruit_NeoPixel pixels(NUM_PIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);
 SemaphoreHandle_t anchorStatsMutex;
 
 // Cycle synchronization
@@ -164,15 +167,6 @@ SemaphoreHandle_t cycleMutex;
 TaskHandle_t rfidTaskHandle;
 TaskHandle_t uwbTaskHandle;
 TaskHandle_t outputTaskHandle;
-TaskHandle_t ledTaskHandle;
-
-// Connection state for LED
-enum ConnectionState {
-    STATE_WIFI_DISCONNECTED,
-    STATE_WIFI_CONNECTED_MQTT_DISCONNECTED,
-    STATE_FULLY_CONNECTED
-};
-volatile ConnectionState currentConnectionState = STATE_WIFI_DISCONNECTED;
 
 // ============================================
 // SETUP
@@ -182,11 +176,12 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
     
-    printWelcomeBanner();
+    // Initialize and turn on LED (blue)
+    pixels.begin();
+    pixels.setPixelColor(0, pixels.Color(0, 255, 0));
+    pixels.show();
     
-    // Initialize LED
-    pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LOW);
+    printWelcomeBanner();
     
     // Initialize WiFi and MQTT
     setupWiFi();
@@ -251,16 +246,6 @@ void setup() {
         0                   // Core 0 - WiFi/Network & MQTT
     );
     
-    xTaskCreatePinnedToCore(
-        ledTask,
-        "LED_Task",
-        2048,
-        NULL,
-        1,
-        &ledTaskHandle,
-        0                   // Core 0 - LED indication
-    );
-    
     DEBUG_PRINT("Heap after tasks: ");
     DEBUG_PRINTLN(ESP.getFreeHeap());
 }
@@ -270,6 +255,15 @@ void setup() {
 // ============================================
 
 void loop() {
+    // Check WiFi/MQTT status and update LED
+    if (WiFi.status() != WL_CONNECTED || !mqttClient.connected()) {
+        // Turn LED red if WiFi or MQTT disconnected
+        if (!startSignal) {  // Only if not running (START hasn't been received)
+            pixels.setPixelColor(0, pixels.Color(0, 255, 0));
+            pixels.show();
+        }
+    }
+    
     // Handle serial commands for UWB debugging
     if (Serial.available()) {
         String cmd = Serial.readStringUntil('\n');
@@ -365,46 +359,6 @@ void uwbTask(void *parameter) {
 }
 
 /**
- * LED Task - Handles LED status indication (Core 0)
- */
-void ledTask(void *parameter) {
-    unsigned long lastToggle = 0;
-    bool ledState = false;
-    
-    while (true) {
-        unsigned long now = millis();
-        ConnectionState state = currentConnectionState;
-        
-        switch (state) {
-            case STATE_WIFI_DISCONNECTED:
-                // Slow blink - WiFi not connected
-                if (now - lastToggle >= LED_WIFI_SLOW_MS) {
-                    ledState = !ledState;
-                    digitalWrite(LED_PIN, ledState ? HIGH : LOW);
-                    lastToggle = now;
-                }
-                break;
-                
-            case STATE_WIFI_CONNECTED_MQTT_DISCONNECTED:
-                // Fast blink - WiFi OK but MQTT not connected
-                if (now - lastToggle >= LED_MQTT_FAST_MS) {
-                    ledState = !ledState;
-                    digitalWrite(LED_PIN, ledState ? HIGH : LOW);
-                    lastToggle = now;
-                }
-                break;
-                
-            case STATE_FULLY_CONNECTED:
-                // Solid on - fully connected
-                digitalWrite(LED_PIN, HIGH);
-                break;
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(50)); // Check every 50ms
-    }
-}
-
-/**
  * Output Task - Handles all heavy processing and MQTT (Core 0)
  */
 void outputTask(void *parameter) {
@@ -419,21 +373,16 @@ void outputTask(void *parameter) {
     while (true) {
         // WiFi keepalive - reconnect if disconnected
         if (WiFi.status() != WL_CONNECTED) {
-            currentConnectionState = STATE_WIFI_DISCONNECTED;
             DEBUG_PRINTLN("\n[WiFi] Connection lost! Reconnecting...");
             setupWiFi();
         }
         
-        // Update connection state based on WiFi status
+        // MQTT keepalive (runs on Core 0 with WiFi/network stack)
         if (WiFi.status() == WL_CONNECTED) {
-            // MQTT keepalive (runs on Core 0 with WiFi/network stack)
             reconnectMQTT(); // Non-blocking retry logic
             
             if (mqttClient.connected()) {
-                currentConnectionState = STATE_FULLY_CONNECTED;
                 mqttClient.loop();
-            } else {
-                currentConnectionState = STATE_WIFI_CONNECTED_MQTT_DISCONNECTED;
             }
         }
         
@@ -992,13 +941,15 @@ void setupWiFi() {
         DEBUG_PRINTLN("\n[WiFi] ✓ Connected!");
         DEBUG_PRINT("[WiFi] IP: ");
         DEBUG_PRINTLN(WiFi.localIP());
-        currentConnectionState = STATE_WIFI_CONNECTED_MQTT_DISCONNECTED;
     } else {
         DEBUG_PRINTLN("\n[WiFi] ✗ Connection timeout!");
         DEBUG_PRINT("[WiFi] Will retry in ");
         DEBUG_PRINT(WIFI_RETRY_DELAY_MS / 1000);
         DEBUG_PRINTLN(" seconds...");
-        currentConnectionState = STATE_WIFI_DISCONNECTED;
+        
+        // Turn LED red when WiFi disconnected
+        pixels.setPixelColor(0, pixels.Color(0, 255, 0));
+        pixels.show();
     }
 }
 
@@ -1014,9 +965,17 @@ void reconnectMQTT() {
                 DEBUG_PRINTLN(" ✓ Connected!");
                 mqttClient.subscribe(TOPIC_CONTROL);
                 DEBUG_PRINTLN("[MQTT] Subscribed to control topic");
+                
+                // Turn LED green when MQTT connected
+                pixels.setPixelColor(0, pixels.Color(0, 0, 255));
+                pixels.show();
             } else {
                 DEBUG_PRINT(" ✗ Failed, rc=");
                 DEBUG_PRINTLN(mqttClient.state());
+                
+                // Turn LED red when MQTT disconnected
+                pixels.setPixelColor(0, pixels.Color(0, 255, 0));
+                pixels.show();
             }
         }
     }
@@ -1031,9 +990,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     if (String(topic) == TOPIC_CONTROL) {
         if (msg == "START") {
             startSignal = true;
+            pixels.setPixelColor(0, pixels.Color(255, 0, 0));
+            pixels.show();
             DEBUG_PRINTLN("\n[CONTROL] ▶ START received - Publishing enabled");
         } else if (msg == "STOP") {
             startSignal = false;
+            pixels.setPixelColor(0, pixels.Color(0, 0, 255));
+            pixels.show();
             DEBUG_PRINTLN("\n[CONTROL] ⏸ STOP received - Publishing paused");
         }
     }
