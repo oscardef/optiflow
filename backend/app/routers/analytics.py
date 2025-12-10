@@ -1076,21 +1076,26 @@ def get_sales_time_series(
         interval: Time interval for aggregation (hour, day, week, month)
     
     Returns:
-        List of data points with date, sales count, and revenue
+        List of data points with date, sales count, and revenue (includes all intervals, even with 0 sales)
     """
-    cutoff_date, _ = get_date_range(days, start_date, end_date)
+    cutoff_date, end_date_dt = get_date_range(days, start_date, end_date)
     
     # Map interval to SQL date truncation
     if interval == "hour":
         date_trunc = func.date_trunc('hour', PurchaseEvent.purchased_at)
+        delta = timedelta(hours=1)
     elif interval == "day":
         date_trunc = func.date_trunc('day', PurchaseEvent.purchased_at)
+        delta = timedelta(days=1)
     elif interval == "week":
         date_trunc = func.date_trunc('week', PurchaseEvent.purchased_at)
+        delta = timedelta(weeks=1)
     elif interval == "month":
         date_trunc = func.date_trunc('month', PurchaseEvent.purchased_at)
+        delta = timedelta(days=30)  # Approximate for iteration
     else:
         date_trunc = func.date_trunc('day', PurchaseEvent.purchased_at)
+        delta = timedelta(days=1)
     
     # Query aggregated sales data
     results = db.query(
@@ -1107,15 +1112,57 @@ def get_sales_time_series(
         date_trunc
     ).all()
     
-    # Format results
-    time_series = [
-        {
-            'date': row.date.isoformat() if row.date else None,
-            'sales': row.sales,
-            'revenue': float(row.revenue)
-        }
+    # Create a dictionary of actual sales data
+    sales_dict = {
+        row.date: {'sales': row.sales, 'revenue': float(row.revenue)}
         for row in results
-    ]
+    }
+    
+    # Generate complete time series with all intervals (filling gaps with 0)
+    time_series = []
+    current_date = cutoff_date
+    
+    # Normalize start date to interval boundary
+    if interval == "hour":
+        current_date = current_date.replace(minute=0, second=0, microsecond=0)
+    elif interval == "day":
+        current_date = current_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif interval == "week":
+        # Align to start of week (Monday)
+        current_date = current_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        current_date = current_date - timedelta(days=current_date.weekday())
+    elif interval == "month":
+        current_date = current_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    # Fill in all time intervals
+    while current_date <= end_date_dt:
+        # Truncate current_date to match database truncation
+        if interval == "month":
+            truncated = current_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        elif interval == "week":
+            truncated = current_date - timedelta(days=current_date.weekday())
+            truncated = truncated.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            truncated = current_date
+        
+        # Get sales data or use 0
+        data = sales_dict.get(truncated, {'sales': 0, 'revenue': 0.0})
+        
+        time_series.append({
+            'date': truncated.isoformat(),
+            'sales': data['sales'],
+            'revenue': data['revenue']
+        })
+        
+        # Move to next interval
+        if interval == "month":
+            # Handle month increment properly
+            if current_date.month == 12:
+                current_date = current_date.replace(year=current_date.year + 1, month=1)
+            else:
+                current_date = current_date.replace(month=current_date.month + 1)
+        else:
+            current_date += delta
     
     return time_series
 
