@@ -54,7 +54,6 @@ class TestSystemIntegration:
                 {
                     "product_id": "30396062c38d794000282373",
                     "product_name": "Test Product",
-                    "status": "present",
                     "x_position": 500.0,
                     "y_position": 400.0
                 }
@@ -122,7 +121,7 @@ class TestSystemIntegration:
         assert len(positions.json()) == 1
     
     def test_inventory_item_lifecycle(self):
-        """Should track item from detection to missing"""
+        """Should track item from detection to present in inventory"""
         # Detect item as present
         packet = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -130,7 +129,6 @@ class TestSystemIntegration:
                 {
                     "product_id": "30396062c39adec22fe06f68",
                     "product_name": "Lifecycle Product",
-                    "status": "present",
                     "x_position": 300.0,
                     "y_position": 200.0
                 }
@@ -150,20 +148,7 @@ class TestSystemIntegration:
         # Find our test item
         test_item = next((i for i in item_list if i["product_id"] == "30396062c39adec22fe06f68"), None)
         assert test_item is not None
-        assert test_item["status"] == "present"
-        
-        # Mark item as not present
-        packet["detections"][0]["status"] = "not present"
-        response = requests.post(f"{API_BASE_URL}/data", json=packet, timeout=TIMEOUT)
-        assert response.status_code == 201
-        
-        # Verify item is now missing
-        missing_items = requests.get(f"{API_BASE_URL}/data/missing", timeout=TIMEOUT)
-        assert missing_items.status_code == 200
-        missing_list = missing_items.json()
-        test_missing = next((i for i in missing_list if i["product_id"] == "30396062c39adec22fe06f68"), None)
-        assert test_missing is not None
-        assert test_missing["status"] == "not present"
+        # Item is in inventory when detected
     
     def test_mode_switching(self):
         """Should switch between SIMULATION and PRODUCTION modes"""

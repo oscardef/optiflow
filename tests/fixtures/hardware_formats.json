@@ -61,7 +61,6 @@
         {
           "product_id": "30396062c38c0dc000388ca5",
           "product_name": "Item-00388ca5",
-          "status": "present",
           "x_position": null,
           "y_position": null,
           "rssi_dbm": -45
@@ -69,7 +68,6 @@
         {
           "product_id": "30396062c38d794000282374",
           "product_name": "Item-00282374",
-          "status": "present",
           "x_position": null,
           "y_position": null,
           "rssi_dbm": -52
@@ -77,7 +75,6 @@
         {
           "product_id": "30396062c38d790000264ad0",
           "product_name": "Item-00264ad0",
-          "status": "present",
           "x_position": null,
           "y_position": null,
           "rssi_dbm": -48
@@ -86,23 +83,19 @@
       "uwb_measurements": [
         {
           "mac_address": "0x0001",
-          "distance_cm": 150.5,
-          "status": "0x01"
+          "distance_cm": 150.5
         },
         {
           "mac_address": "0x0002",
-          "distance_cm": 200.3,
-          "status": "0x01"
+          "distance_cm": 200.3
         },
         {
           "mac_address": "0x0003",
-          "distance_cm": 180.7,
-          "status": "0x01"
+          "distance_cm": 180.7
         },
         {
           "mac_address": "0x0004",
-          "distance_cm": 220.1,
-          "status": "0x01"
+          "distance_cm": 220.1
         }
       ]
     }
@@ -212,17 +205,14 @@
         "transformation": "direct copy"
       },
       {
-        "field": "detections[].status",
+        "field": "detections[].product_name",
         "hardware": "N/A",
-        "backend": "always 'present' for detected tags",
-        "transformation": "hardcoded 'present'"
-      },
-      {
-        "field": "uwb_measurements[].status",
-        "hardware": "N/A",
-        "backend": "always '0x01' (OK)",
-        "transformation": "hardcoded '0x01'"
+        "backend": "generated from EPC translation or last 8 chars",
+        "transformation": "lookup from epc_translation.csv or 'Item-' + last 8 chars"
       }
+    ]
+  }
+}
     ]
   }
 }

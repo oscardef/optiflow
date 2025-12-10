@@ -287,10 +287,9 @@ curl http://localhost:8000/config/mode
     │ id (PK)           │
     │ rfid_tag (UNIQUE) │  ← RFID/EPC identifier
     │ product_id (FK)   │─────┐
-    │ status            │     │  "present" or "not present"
     │ x_position        │     │
     │ y_position        │     │
-    │ last_seen_at      │  ← Timestamp of last detection (present only)
+    │ last_seen_at      │  ← Timestamp of last detection
     │ created_at        │  ← Timestamp when first detected
     │ updated_at        │  ← Auto-updated on changes
     └───────────────────┘     │
@@ -318,7 +317,6 @@ curl http://localhost:8000/config/mode
     │ product_name      │
     │ x_position        │
     │ y_position        │
-    │ status            │  "present" or "not present"
     └───────────────────┘
 
     ┌───────────────────┐
@@ -636,7 +634,6 @@ Request body:
     {
       "product_id": "E200001234567890ABCD",
       "product_name": "Product Name",
-      "status": "present",
       "x_position": 400,
       "y_position": 300
     }
@@ -1008,9 +1005,9 @@ All readings are stored with precise timestamps for complete historical tracking
 ### Display Logic
 
 Map displays last known positions:
-- Green dots: Items with status "present" at their last detected position
-- Red dots: Items with status "not present" showing their last position before disappearing
+- Items are shown at their last detected position
 - All items display their most recent (x, y) coordinates from `inventory_items` table
+- Missing items are identified by the missing detection algorithm, not by a status field
 
 ### Missing Item Detection
 
@@ -1072,37 +1069,37 @@ The system uses an intelligent inference algorithm to detect missing items with 
 ```
 Packet #1 arrives (Employee at x=400, y=300)
 ├─ Item A (RFID: E200...001) at (405, 295) - Distance: 7cm
-│  └─ NOT detected → Miss count: 1/4 → Status: present
+│  └─ NOT detected → Miss count: 1/4 → Still in inventory
 ├─ Item B (RFID: E200...002) at (420, 310) - Distance: 24cm
-│  └─ Detected ✓ → Miss count: 0/4 → Status: present
+│  └─ Detected ✓ → Miss count: 0/4 → Still in inventory
 └─ Item C (RFID: E200...003) at (380, 290) - Distance: 22cm
-   └─ NOT detected → Miss count: 1/5 → Status: present
+   └─ NOT detected → Miss count: 1/5 → Still in inventory
 
 Packet #2 arrives (Employee at x=402, y=298)
 ├─ Item A at (405, 295) - Distance: 5cm
-│  └─ NOT detected → Miss count: 2/4 → Status: present
+│  └─ NOT detected → Miss count: 2/4 → Still in inventory
 ├─ Item B at (420, 310) - Distance: 26cm
-│  └─ Detected ✓ → Miss count: 0/4 → Status: present
+│  └─ Detected ✓ → Miss count: 0/4 → Still in inventory
 └─ Item C at (380, 290) - Distance: 24cm
-   └─ NOT detected → Miss count: 2/4 → Status: present
+   └─ NOT detected → Miss count: 2/4 → Still in inventory
 
 Packet #3 arrives (Employee at x=398, y=302)
 ├─ Item A at (405, 295) - Distance: 11cm
-│  └─ NOT detected → Miss count: 3/4 → Status: present
+│  └─ NOT detected → Miss count: 3/4 → Still in inventory
 ├─ Item B at (420, 310) - Distance: 24cm
-│  └─ NOT detected → Miss count: 1/4 → Status: present
+│  └─ NOT detected → Miss count: 1/4 → Still in inventory
 └─ Item C at (380, 290) - Distance: 22cm
-   └─ NOT detected → Miss count: 3/4 → Status: present
+   └─ NOT detected → Miss count: 3/4 → Still in inventory
 
 Packet #4 arrives (Employee at x=400, y=300)
 ├─ Item A at (405, 295) - Distance: 7cm
 │  └─ NOT detected → Miss count: 4/4 ❌ THRESHOLD MET
-│     └─ Marked as "not present"
+│     └─ Marked as missing (removed from inventory)
 ├─ Item B at (420, 310) - Distance: 24cm
-│  └─ NOT detected → Miss count: 2/4 → Status: present
+│  └─ NOT detected → Miss count: 2/4 → Still in inventory
 └─ Item C at (380, 290) - Distance: 22cm
    └─ NOT detected → Miss count: 4/4 ❌ THRESHOLD MET
-      └─ Marked as "not present"
+      └─ Marked as missing (removed from inventory)
 ```
 
 #### Important Notes

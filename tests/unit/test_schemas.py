@@ -33,11 +33,9 @@ class TestDetectionInput:
             product_id="30396062c38d79c000287fa1",
             product_name="Test Product",
             x_position=100.5,
-            y_position=200.7,
-            status="present"
+            y_position=200.7
         )
         assert detection.product_id == "30396062c38d79c000287fa1"
-        assert detection.status == "present"
     
     def test_detection_with_defaults(self):
         """Should use default values for optional fields"""
@@ -47,7 +45,6 @@ class TestDetectionInput:
         )
         assert detection.x_position is None
         assert detection.y_position is None
-        assert detection.status == "present"
     
     def test_detection_missing_required_fields(self):
         """Should reject detection without required fields"""
@@ -98,8 +95,7 @@ class TestDataPacket:
             detections=[
                 {
                     "product_id": "30396062c38d79c000287fa1",
-                    "product_name": "Product 1",
-                    "status": "present"
+                    "product_name": "Product 1"
                 }
             ],
             uwb_measurements=[

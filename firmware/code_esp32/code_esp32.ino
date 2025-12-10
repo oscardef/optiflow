@@ -59,6 +59,11 @@ const char* TOPIC_DATA = "store/production";   // Main data topic for production
 const char* TOPIC_CONTROL = "store/production/control";   // Control signals (START/STOP)
 const char* TOPIC_STATUS = "store/production/status";     // Status updates
 
+// LED Configuration
+#define LED_PIN             48          // ESP32-S3 built-in RGB LED (typically GPIO48)
+#define LED_WIFI_SLOW_MS    1000        // WiFi disconnected - slow blink
+#define LED_MQTT_FAST_MS    200         // WiFi OK but MQTT disconnected - fast blink
+
 // RFID Configuration
 #define RFID_RX_PIN         6
 #define RFID_TX_PIN         7
@@ -67,7 +72,11 @@ const char* TOPIC_STATUS = "store/production/status";     // Status updates
 #define RFID_POLLING_COUNT  6
 #define RFID_MAX_TAGS       200         // Maximum tags per polling cycle
 #define UWB_MAX_ANCHORS     30          // Circular buffer size
-#define UWB_FRESHNESS_MS    3000        // Data valid for 3 seconds  
+#define UWB_FRESHNESS_MS    3000        // Data valid for 3 seconds
+
+// WiFi Configuration
+#define WIFI_CONNECT_TIMEOUT_MS  20000  // 20 seconds timeout for WiFi connection
+#define WIFI_RETRY_DELAY_MS      5000   // 5 seconds between retry attempts  
 
 // UWB Configuration
 #define UWB_RX_PIN          18
@@ -155,6 +164,15 @@ SemaphoreHandle_t cycleMutex;
 TaskHandle_t rfidTaskHandle;
 TaskHandle_t uwbTaskHandle;
 TaskHandle_t outputTaskHandle;
+TaskHandle_t ledTaskHandle;
+
+// Connection state for LED
+enum ConnectionState {
+    STATE_WIFI_DISCONNECTED,
+    STATE_WIFI_CONNECTED_MQTT_DISCONNECTED,
+    STATE_FULLY_CONNECTED
+};
+volatile ConnectionState currentConnectionState = STATE_WIFI_DISCONNECTED;
 
 // ============================================
 // SETUP
@@ -165,6 +183,10 @@ void setup() {
     delay(1000);
     
     printWelcomeBanner();
+    
+    // Initialize LED
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, LOW);
     
     // Initialize WiFi and MQTT
     setupWiFi();
@@ -227,6 +249,16 @@ void setup() {
         1,
         &outputTaskHandle,
         0                   // Core 0 - WiFi/Network & MQTT
+    );
+    
+    xTaskCreatePinnedToCore(
+        ledTask,
+        "LED_Task",
+        2048,
+        NULL,
+        1,
+        &ledTaskHandle,
+        0                   // Core 0 - LED indication
     );
     
     DEBUG_PRINT("Heap after tasks: ");
@@ -333,6 +365,46 @@ void uwbTask(void *parameter) {
 }
 
 /**
+ * LED Task - Handles LED status indication (Core 0)
+ */
+void ledTask(void *parameter) {
+    unsigned long lastToggle = 0;
+    bool ledState = false;
+    
+    while (true) {
+        unsigned long now = millis();
+        ConnectionState state = currentConnectionState;
+        
+        switch (state) {
+            case STATE_WIFI_DISCONNECTED:
+                // Slow blink - WiFi not connected
+                if (now - lastToggle >= LED_WIFI_SLOW_MS) {
+                    ledState = !ledState;
+                    digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+                    lastToggle = now;
+                }
+                break;
+                
+            case STATE_WIFI_CONNECTED_MQTT_DISCONNECTED:
+                // Fast blink - WiFi OK but MQTT not connected
+                if (now - lastToggle >= LED_MQTT_FAST_MS) {
+                    ledState = !ledState;
+                    digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+                    lastToggle = now;
+                }
+                break;
+                
+            case STATE_FULLY_CONNECTED:
+                // Solid on - fully connected
+                digitalWrite(LED_PIN, HIGH);
+                break;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(50)); // Check every 50ms
+    }
+}
+
+/**
  * Output Task - Handles all heavy processing and MQTT (Core 0)
  */
 void outputTask(void *parameter) {
@@ -347,15 +419,22 @@ void outputTask(void *parameter) {
     while (true) {
         // WiFi keepalive - reconnect if disconnected
         if (WiFi.status() != WL_CONNECTED) {
+            currentConnectionState = STATE_WIFI_DISCONNECTED;
             DEBUG_PRINTLN("\n[WiFi] Connection lost! Reconnecting...");
             setupWiFi();
         }
         
-        // MQTT keepalive (runs on Core 0 with WiFi/network stack)
-        reconnectMQTT(); // Non-blocking retry logic
-        
-        if (mqttClient.connected()) {
-            mqttClient.loop();
+        // Update connection state based on WiFi status
+        if (WiFi.status() == WL_CONNECTED) {
+            // MQTT keepalive (runs on Core 0 with WiFi/network stack)
+            reconnectMQTT(); // Non-blocking retry logic
+            
+            if (mqttClient.connected()) {
+                currentConnectionState = STATE_FULLY_CONNECTED;
+                mqttClient.loop();
+            } else {
+                currentConnectionState = STATE_WIFI_CONNECTED_MQTT_DISCONNECTED;
+            }
         }
         
         uint32_t cycleToProcess = 0;
@@ -886,18 +965,41 @@ void updateAnchorStatistics() {
 // ============================================
 
 void setupWiFi() {
+    static unsigned long lastAttemptTime = 0;
+    unsigned long now = millis();
+    
+    // Rate limit reconnection attempts
+    if (now - lastAttemptTime < WIFI_RETRY_DELAY_MS) {
+        return;
+    }
+    lastAttemptTime = now;
+    
     DEBUG_PRINTLN("\n[WiFi] Connecting...");
     WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    delay(100);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     
-    while (WiFi.status() != WL_CONNECTED) {
+    // Non-blocking connection with timeout
+    unsigned long startAttempt = millis();
+    while (WiFi.status() != WL_CONNECTED && 
+           millis() - startAttempt < WIFI_CONNECT_TIMEOUT_MS) {
         delay(500);
         DEBUG_PRINT(".");
     }
     
-    DEBUG_PRINTLN("\n[WiFi] ✓ Connected!");
-    DEBUG_PRINT("[WiFi] IP: ");
-    DEBUG_PRINTLN(WiFi.localIP());
+    if (WiFi.status() == WL_CONNECTED) {
+        DEBUG_PRINTLN("\n[WiFi] ✓ Connected!");
+        DEBUG_PRINT("[WiFi] IP: ");
+        DEBUG_PRINTLN(WiFi.localIP());
+        currentConnectionState = STATE_WIFI_CONNECTED_MQTT_DISCONNECTED;
+    } else {
+        DEBUG_PRINTLN("\n[WiFi] ✗ Connection timeout!");
+        DEBUG_PRINT("[WiFi] Will retry in ");
+        DEBUG_PRINT(WIFI_RETRY_DELAY_MS / 1000);
+        DEBUG_PRINTLN(" seconds...");
+        currentConnectionState = STATE_WIFI_DISCONNECTED;
+    }
 }
 
 void reconnectMQTT() {
