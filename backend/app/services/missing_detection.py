@@ -57,11 +57,11 @@ class MissingItemDetector:
     """
     
     # === SIMULATION-SPECIFIC PARAMETERS ===
-    # RFID detection range - SMALLER than simulation's range (100cm)
-    # The simulation sends items within 100cm. We only mark items as missing
-    # if they're within 80cm (well inside simulation's range). This avoids
+    # RFID detection range - SMALLER than simulation's range (75cm)
+    # The simulation sends items within 75cm. We only mark items as missing
+    # if they're within 50cm (well inside simulation's range). This avoids
     # false positives at the boundary due to floating point differences.
-    RFID_DETECTION_RANGE_CM = 80.0  # 80cm - inner zone for reliable detection
+    RFID_DETECTION_RANGE_CM = 50.0  # 50cm - inner zone for reliable detection
     
     # === PRODUCTION-SPECIFIC PARAMETERS ===
     # Consecutive misses needed (longer - hardware can be flaky)
@@ -163,6 +163,10 @@ class MissingItemDetector:
             if distance <= cls.RFID_DETECTION_RANGE_CM:
                 # Item was seen before, is within range, but NOT in packet = MISSING
                 items_in_range += 1
+                
+                # Rate limit: only mark 1 item missing per scan cycle
+                if len(newly_missing) >= cls.MAX_MISSING_PER_SCAN:
+                    continue
                 
                 item.status = 'not present'
                 item.consecutive_misses = 0

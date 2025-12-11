@@ -61,7 +61,7 @@ class TagConfig:
     """Tag movement and detection configuration"""
     tag_id: str = "tag_0x42"
     speed: float = 100.0  # cm/s (slower for more realistic effect)
-    rfid_detection_range: float = 100.0  # cm (1 meter - RFID detection range, must match backend)
+    rfid_detection_range: float = 75.0  # cm - RFID detection range, larger than backend's 50cm
     update_interval: float = 0.15  # seconds between updates
 
 

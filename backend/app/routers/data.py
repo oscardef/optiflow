@@ -412,17 +412,18 @@ def get_latest_data(limit: int = 50, db: Session = Depends(get_db)):
 
 @router.get("/data/items", response_model=List[DetectionResponse])
 def get_all_items(db: Session = Depends(get_db)):
-    """Get all items from inventory that have positions (have been detected)
+    """Get all items from inventory that have been detected at least once.
     
-    Returns all items with valid positions - no limit applied since items
-    should persist on the map once detected.
+    Returns items that have valid positions AND have been seen (last_seen_at is not null).
+    Items that have never been scanned won't appear on the map until detected.
     """
-    # Get all items with valid positions (both present and missing)
-    # No limit - all detected items should persist on the map
+    # Only return items that have been detected at least once
+    # This prevents all items from showing as "green" before the scanner passes them
     items = db.query(InventoryItem, Product)\
         .join(Product, InventoryItem.product_id == Product.id)\
         .filter(InventoryItem.x_position.isnot(None))\
         .filter(InventoryItem.y_position.isnot(None))\
+        .filter(InventoryItem.last_seen_at.isnot(None))\
         .order_by(InventoryItem.id)\
         .all()
     

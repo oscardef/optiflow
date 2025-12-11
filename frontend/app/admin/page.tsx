@@ -20,7 +20,7 @@ export default function AdminPanel() {
   const [productItems, setProductItems] = useState<Map<number, any[]>>(new Map());
   const [simSpeedMultiplier, setSimSpeedMultiplier] = useState<number>(5.0);
   const [simMode, setSimMode] = useState<string>('REALISTIC');
-  const [simDisappearanceInterval, setSimDisappearanceInterval] = useState<number>(10);  // seconds between items going missing
+  const [simDisappearanceInterval, setSimDisappearanceInterval] = useState<number>(30);  // seconds between items going missing (at 1x speed)
   const [simItemCount, setSimItemCount] = useState<number>(1000);
   const [regeneratingInventory, setRegeneratingInventory] = useState(false);
   const [showClearDataModal, setShowClearDataModal] = useState(false);
@@ -838,11 +838,16 @@ export default function AdminPanel() {
                         </div>
 
                         <div className="space-y-2">
-                          <label className="block text-sm font-medium text-gray-700">Disappearance Interval: {simDisappearanceInterval}s</label>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Disappearance Interval: {simDisappearanceInterval}s 
+                            <span className="text-gray-400 font-normal">
+                              (effective: {(simDisappearanceInterval / simSpeedMultiplier).toFixed(1)}s real-time)
+                            </span>
+                          </label>
                           <input
                             type="range"
                             min="5"
-                            max="60"
+                            max="120"
                             step="5"
                             value={simDisappearanceInterval}
                             onChange={(e) => setSimDisappearanceInterval(parseFloat(e.target.value))}
@@ -851,7 +856,7 @@ export default function AdminPanel() {
                           />
                           <div className="flex justify-between text-xs text-gray-500">
                             <span>5s (fast)</span>
-                            <span>60s (slow)</span>
+                            <span>120s (slow)</span>
                           </div>
                         </div>
                       </div>

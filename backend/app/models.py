@@ -137,7 +137,7 @@ class InventoryItem(Base):
     status = Column(String(20), default="present", index=True)  # present, not present
     x_position = Column(Float)
     y_position = Column(Float)
-    last_seen_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, nullable=True)  # NULL until first scan - items only show on map after being detected
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

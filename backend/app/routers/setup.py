@@ -237,16 +237,18 @@ def reset_all_items_to_present(db: Session = Depends(get_db)):
     Reset ALL items to 'present' status and clear detection state.
     
     Use this to start completely fresh for a new demo.
-    All items will need to be detected again to establish their positions.
+    All items will need to be detected again to appear on the map.
     """
     try:
-        # Reset all items to present and clear detection tracking
+        # Reset all items to present and clear all detection tracking
+        # Clear last_seen_at so items don't appear on map until scanned
         result = db.execute(text("""
             UPDATE inventory_items 
             SET status = 'present',
                 consecutive_misses = 0,
                 first_miss_at = NULL,
-                last_detection_rssi = NULL
+                last_detection_rssi = NULL,
+                last_seen_at = NULL
         """))
         
         rows_affected = result.rowcount

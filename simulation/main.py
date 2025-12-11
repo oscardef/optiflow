@@ -179,6 +179,38 @@ def fetch_inventory_from_backend(api_url: str):
         return None
 
 
+def sync_positions_to_backend(api_url: str, items: list) -> bool:
+    """Sync item positions to backend database after redistribution.
+    
+    This is CRITICAL - the simulation redistributes items locally but if we don't
+    update the database, the backend's missing detection will use stale positions
+    and mark items as missing incorrectly.
+    """
+    print("   📍 Syncing redistributed positions to database...")
+    success_count = 0
+    fail_count = 0
+    
+    for item in items:
+        try:
+            # Update position via API
+            response = requests.patch(
+                f"{api_url}/items/{item.rfid_tag}/position",
+                json={"x_position": item.x, "y_position": item.y},
+                timeout=5
+            )
+            if response.status_code == 200:
+                success_count += 1
+            else:
+                fail_count += 1
+        except Exception as e:
+            fail_count += 1
+            if fail_count <= 3:  # Only log first few errors
+                print(f"   ⚠️  Failed to sync {item.rfid_tag}: {e}")
+    
+    print(f"   ✅ Synced {success_count} positions, {fail_count} failed")
+    return fail_count == 0
+
+
 def main():
     # Parse CLI arguments
     parser = argparse.ArgumentParser(description="OptiFlow Simulation System")
@@ -206,7 +238,7 @@ def main():
         mode=SimulationMode(args.mode),
         speed_multiplier=max(0.5, min(5.0, args.speed)),
         api_url=args.api,
-        disappearance_interval=max(1.0, args.disappearance)  # Minimum 1 second
+        disappearance_interval=max(0.5, args.disappearance)  # Minimum 0.5 seconds
     )
     config.mqtt.broker = args.broker
     config.tag.update_interval = args.interval
@@ -264,6 +296,9 @@ def main():
         generator = InventoryGenerator(config)
         generator.distribute_items(items)
         print(f"   ✅ Assigned shelf positions to {len(items)} items")
+        
+        # CRITICAL: Update positions in backend database so detection works correctly
+        sync_positions_to_backend(config.api_url, items)
     
     print(f"\n✅ Loaded {len(items)} items from {len(products_dict)} products")
     

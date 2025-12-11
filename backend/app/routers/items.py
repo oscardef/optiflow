@@ -39,13 +39,14 @@ def create_inventory_item(item: InventoryItemCreate, db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail=f"Item with RFID tag {item.rfid_tag} already exists")
     
     # Create item
+    # Don't set last_seen_at - items should only be "seen" when scanned
     new_item = InventoryItem(
         rfid_tag=item.rfid_tag,
         product_id=item.product_id,
         status=item.status,
         x_position=item.x_position,
         y_position=item.y_position,
-        last_seen_at=datetime.utcnow()
+        last_seen_at=None  # Will be set when first scanned
     )
     
     db.add(new_item)
@@ -98,3 +99,24 @@ def update_item_status(rfid_tag: str, status_update: dict, db: Session = Depends
         "status": item.status,
         "product_id": item.product_id
     }
+
+
+class PositionUpdate(BaseModel):
+    x_position: float
+    y_position: float
+
+
+@router.patch("/{rfid_tag}/position")
+def update_item_position(rfid_tag: str, position: PositionUpdate, db: Session = Depends(get_db)):
+    """Update the position of a specific inventory item"""
+    item = db.query(InventoryItem).filter(InventoryItem.rfid_tag == rfid_tag).first()
+    
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    item.x_position = position.x_position
+    item.y_position = position.y_position
+    db.commit()
+    db.refresh(item)
+    
+    return {"success": True, "rfid_tag": rfid_tag, "x_position": item.x_position, "y_position": item.y_position}
