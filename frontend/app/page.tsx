@@ -391,6 +391,7 @@ export default function Home() {
   };
 
 
+
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     
@@ -690,7 +691,7 @@ export default function Home() {
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <img src="/logo.png" alt="OptiFlow" className="h-10 w-auto" />
+              <img src="/logo.png" alt="OptiFlow" className="h-20 w-auto" />
               <div>
                 <h1 className="text-3xl font-bold text-gray-900">OptiFlow</h1>
                 <p className="text-gray-600 mt-1">Real-time Store Tracking System</p>
@@ -698,7 +699,7 @@ export default function Home() {
             </div>
             
             <div className="flex items-center gap-4">
-              {!setupMode && (
+              {!setupMode ? (
                 <>
                   <a
                     href="/analytics"
@@ -706,6 +707,18 @@ export default function Home() {
                   >
                     Analytics
                   </a>
+                  {!(currentMode === 'PRODUCTION' ? hardwareActive : (receivingData && wsConnected)) && (
+                    <button
+                      onClick={() => setSetupMode(true)}
+                      className="p-2 text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors"
+                      title="Setup Mode - Place Anchors"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </button>
+                  )}
                   <a
                     href="/admin"
                     className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors"
@@ -740,7 +753,44 @@ export default function Home() {
                     )}
                   </div>
                 </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setSetupMode(false)}
+                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+                  >
+                    Finish Setup
+                  </button>
+                  <button 
+                    onClick={handleResetAnchors} 
+                    className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 rounded transition-colors"
+                  >
+                    Reset Anchors
+                  </button>
+                  {currentMode === 'PRODUCTION' && (
+                    <button 
+                      onClick={handleClearData} 
+                      className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 rounded transition-colors"
+                    >
+                      Clear Data
+                    </button>
+                  )}
+                </>
               )}
+              
+              <button
+                onClick={() => setShowSidebar(!showSidebar)}
+                className="p-2 text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors"
+                title={showSidebar ? 'Hide Panels' : 'Show Panels'}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {showSidebar ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                  )}
+                </svg>
+              </button>
               
               <button
                 onClick={toggleLiveStatus}
@@ -778,44 +828,6 @@ export default function Home() {
               </button>
             </div>
           </div>
-
-          <div className="flex items-center gap-2 mt-3">
-            <div className="ml-auto flex items-center gap-2">
-              {/* Only show Setup Mode button when not live */}
-              {!(currentMode === 'PRODUCTION' ? hardwareActive : (receivingData && wsConnected)) && (
-                <>
-                  <button
-                    onClick={() => setSetupMode(!setupMode)}
-                    className={setupMode ? 'btn-primary bg-green-600 hover:bg-green-700' : 'btn-primary'}
-                  >
-                    {setupMode ? 'Finish Setup' : 'Setup Mode'}
-                  </button>
-                  
-                  {setupMode && (
-                    <>
-                      <button onClick={handleResetAnchors} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
-                        Reset Anchors
-                      </button>
-                      {currentMode === 'PRODUCTION' && (
-                        <button onClick={handleClearData} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
-                          Clear Data
-                        </button>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
-              
-              <button
-                onClick={() => setShowSidebar(!showSidebar)}
-                className="btn-secondary"
-              >
-                {showSidebar ? 'Hide' : 'Show'} Panels
-              </button>
-            </div>
-          </div>
-
-
         </div>
       </header>
 

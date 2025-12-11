@@ -12,7 +12,6 @@ export default function AdminPanel() {
   const [simulationStatus, setSimulationStatus] = useState<SimulationStatus | null>(null);
   const [anchors, setAnchors] = useState<Anchor[]>([]);
   const [products, setProducts] = useState<any[]>([]);
-  const [validation, setValidation] = useState<AnchorValidation | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -453,25 +452,6 @@ export default function AdminPanel() {
     }
   };
 
-  const validateAnchors = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/config/validate-anchors`);
-      const data = await res.json();
-      setValidation(data);
-      
-      if (data.valid) {
-        showMessage('success', data.message);
-      } else {
-        showMessage('info', data.message);
-      }
-    } catch (error) {
-      showMessage('error', 'Failed to validate anchors');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const updateStoreConfig = async (width?: number, height?: number, maxDisplayItems?: number) => {
     setLoading(true);
     try {
@@ -622,7 +602,57 @@ export default function AdminPanel() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50">
+      {/* Toast Notification */}
+      {message && (
+        <div className={`fixed top-6 right-6 z-50 max-w-md animate-slide-in-right shadow-lg border-l-4 ${
+          message.type === 'success' ? 'bg-white border-green-500' :
+          message.type === 'error' ? 'bg-white border-red-500' :
+          'bg-white border-blue-500'
+        }`}>
+          <div className="flex items-start gap-3 p-4">
+            <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
+              message.type === 'success' ? 'bg-green-100' :
+              message.type === 'error' ? 'bg-red-100' :
+              'bg-blue-100'
+            }`}>
+              {message.type === 'success' && (
+                <svg className="w-3 h-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+              {message.type === 'error' && (
+                <svg className="w-3 h-3 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              )}
+              {message.type === 'info' && (
+                <svg className="w-3 h-3 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
+            </div>
+            <div className="flex-1 pt-0.5">
+              <p className={`text-sm font-medium ${
+                message.type === 'success' ? 'text-green-900' :
+                message.type === 'error' ? 'text-red-900' :
+                'text-blue-900'
+              }`}>
+                {message.text}
+              </p>
+            </div>
+            <button
+              onClick={() => setMessage(null)}
+              className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Mode Switch Confirmation Modal */}
       {pendingModeSwitch && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -656,91 +686,81 @@ export default function AdminPanel() {
         </div>
       )}
 
-      <div className="w-full max-w-full mx-auto px-4">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <img src="/logo.png" alt="OptiFlow" className="h-20 w-auto" />
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">OptiFlow Admin Panel</h1>
-              <p className="text-gray-600 mt-1">System configuration and management</p>
+      <header className="bg-white border-b border-gray-200">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <img src="/logo.png" alt="OptiFlow" className="h-20 w-auto" />
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">OptiFlow Admin Panel</h1>
+                <p className="text-gray-600 mt-1">System configuration and management</p>
+              </div>
             </div>
+            <a
+              href="/"
+              className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 transition-colors flex items-center gap-2"
+            >
+              Back to Dashboard
+            </a>
           </div>
-          <a
-            href="/"
-            className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 transition-colors flex items-center gap-2"
-          >
-            Back to Dashboard
-          </a>
         </div>
 
-        {message && (
-          <div className={`mb-4 p-4 border ${
-            message.type === 'success' ? 'bg-green-50 text-green-800 border-green-200' :
-            message.type === 'error' ? 'bg-red-50 text-red-800 border-red-200' :
-            'bg-blue-50 text-blue-800 border-blue-200'
-          }`}>
-            {message.text}
-          </div>
-        )}
-
         {/* Tab Navigation */}
-        <div className="bg-white border border-gray-200 shadow mb-6">
-          <div className="border-b border-gray-200">
-            <nav className="flex -mb-px">
-              {[
-                { id: 'mode', label: 'Mode Control' },
-                { id: 'anchors', label: 'Anchors' },
-                { id: 'products', label: 'Products' },
-                { id: 'store', label: 'Store Config' },
-                { id: 'system', label: 'System Info' },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === tab.id
-                      ? 'border-[#0055A4] text-[#0055A4]'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-          </div>
+        <div className="border-t border-gray-200">
+          <nav className="flex -mb-px px-6">
+            {[
+              { id: 'mode', label: 'Mode Control' },
+              { id: 'anchors', label: 'Anchors' },
+              { id: 'products', label: 'Products' },
+              { id: 'store', label: 'Store Config' },
+              { id: 'system', label: 'System Info' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-[#0055A4] text-[#0055A4]'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </header>
 
-          <div className="p-6">
-            {/* Mode Control Tab */}
+      <div className="px-6 py-6">
+        {/* Tab Content */}
             {activeTab === 'mode' && (
-              <div className="space-y-4">
-                <div className="border border-gray-200 bg-white">
-                  <div className="border-b border-gray-200 px-4 py-3">
-                    <h2 className="text-base font-semibold text-gray-900">Operating Mode</h2>
-                  </div>
-                  <div className="px-4 py-4">
-                    <div className="flex items-center gap-3 mb-4">
-                      <span className="text-sm text-gray-600 font-medium">Current Mode:</span>
-                      <span className={`px-3 py-1.5 font-semibold text-xs border ${
+              <div className="space-y-6">
+                {/* Operating Mode Section */}
+                <div className="bg-white border border-gray-200">
+                  <div className="px-6 py-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-semibold text-gray-900">Operating Mode</h2>
+                      <span className={`px-4 py-1.5 font-semibold text-xs uppercase tracking-wider ${
                         mode?.mode === 'SIMULATION' 
-                          ? 'bg-blue-50 text-blue-800 border-blue-200' 
-                          : 'bg-green-50 text-green-800 border-green-200'
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-green-100 text-green-800'
                       }`}>
                         {mode?.mode || 'Loading...'}
                       </span>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex gap-3">
                       <button
                         onClick={() => switchMode('SIMULATION')}
                         disabled={mode?.mode === 'SIMULATION' || loading}
-                        className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                        className="px-6 py-2.5 text-sm font-medium bg-[#0055A4] text-white hover:bg-[#003d7a] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
                       >
                         Switch to Simulation
                       </button>
                       <button
                         onClick={() => switchMode('PRODUCTION')}
                         disabled={mode?.mode === 'PRODUCTION' || loading}
-                        className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white hover:bg-[#003d7a] disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                        className="px-6 py-2.5 text-sm font-medium bg-[#0055A4] text-white hover:bg-[#003d7a] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
                       >
                         Switch to Production
                       </button>
@@ -749,19 +769,19 @@ export default function AdminPanel() {
                 </div>
 
                 {mode?.mode === 'SIMULATION' && (
-                  <div className="border border-gray-200 bg-white">
-                    <div className="flex flex-col gap-3 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                      <h3 className="text-base font-semibold text-gray-900">Simulation Control</h3>
+                  <div className="bg-white border border-gray-200">
+                    <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+                      <h2 className="text-lg font-semibold text-gray-900">Simulation Control</h2>
                       {simulationStatus?.running && (
-                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5">
+                        <div className="flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-100 px-3 py-1.5 uppercase tracking-wider">
                           <span className="h-2 w-2 bg-emerald-600 rounded-full animate-pulse"></span>
-                          RUNNING
+                          Running
                         </div>
                       )}
                     </div>
 
                       {/* Parameters Section */}
-                      <div className="grid gap-4 border-b border-gray-200 px-4 py-4 md:grid-cols-3">
+                      <div className="grid gap-6 border-b border-gray-200 px-6 py-5 md:grid-cols-3">
                         <div className="space-y-2">
                           <label className="block text-sm font-medium text-gray-700">Number of Items</label>
                           <input
@@ -837,11 +857,11 @@ export default function AdminPanel() {
                       </div>
 
                       {/* Control Buttons */}
-                      <div className="border-b border-gray-200 px-4 py-4">
-                        <div className="grid gap-4 md:grid-cols-2">
+                      <div className="px-6 py-5">
+                        <div className="grid gap-6 md:grid-cols-2">
                           {/* Data Management Section */}
-                          <div className="space-y-3 pb-4 border-b md:border-b-0 md:border-r border-gray-200 md:pr-4">
-                            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Data Management</p>
+                          <div className="space-y-3">
+                            <p className="text-sm font-semibold text-gray-900 mb-3">Data Management</p>
                             <div className="flex flex-col gap-2">
                               <button
                                 onClick={() => {
@@ -869,7 +889,7 @@ export default function AdminPanel() {
 
                           {/* Simulation Control Section */}
                           <div className="space-y-3">
-                            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Simulation Control</p>
+                            <p className="text-sm font-semibold text-gray-900 mb-3">Simulation Control</p>
                             <div className="flex flex-col gap-2">
                               {simulationStatus?.running ? (
                                 <button
@@ -903,10 +923,10 @@ export default function AdminPanel() {
                       </div>
 
                       {connectionStatus && (
-                        <div className={`px-3 py-3 text-xs ${
+                        <div className={`px-6 py-4 text-sm border-t ${
                           connectionStatus.mqtt_connected
-                            ? 'bg-green-50 border border-green-200'
-                            : 'bg-red-50 border border-red-200'
+                            ? 'bg-green-50 border-green-200'
+                            : 'bg-red-50 border-red-200'
                         }`}>
                           <div className="flex items-center gap-2">
                             <span className={`h-2 w-2 ${connectionStatus.mqtt_connected ? 'bg-green-600' : 'bg-red-600'}`} aria-hidden />
@@ -927,8 +947,8 @@ export default function AdminPanel() {
                         </div>
                       )}
 
-                      <div className="border-t border-gray-200 bg-gray-50 px-4 py-3 text-xs leading-relaxed text-gray-700">
-                        <strong>How to use:</strong> Set parameters above, then click Start. Sliders adjust only while stopped. Connection checks run automatically on start.
+                      <div className="border-t border-gray-200 bg-gray-50 px-6 py-4 text-sm text-gray-600">
+                        <span className="font-medium text-gray-900">Quick Start:</span> Configure parameters above, then click Start Simulation. Parameters can only be adjusted when simulation is stopped.
                       </div>
                     </div>
                 )}
@@ -968,49 +988,6 @@ export default function AdminPanel() {
                       </div>
                     </div>
                   </div>
-                )}
-
-                {mode?.mode === 'PRODUCTION' && (
-                  <>
-                    <div className="border border-gray-200 bg-white">
-                      <div className="border-b border-gray-200 px-4 py-3">
-                        <h2 className="text-base font-semibold text-gray-900">Hardware Setup</h2>
-                      </div>
-                      <div className="px-4 py-4">
-                        <div className="flex gap-2 mb-3">
-                          <button
-                            onClick={validateAnchors}
-                            disabled={loading}
-                            className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white hover:bg-[#003d7a] disabled:bg-gray-300 transition-colors"
-                          >
-                            Validate Anchors
-                          </button>
-                          <button
-                            onClick={() => setShowClearDataModal(true)}
-                            disabled={loading}
-                            className="px-4 py-2 text-sm font-semibold bg-rose-600 text-white hover:bg-rose-700 disabled:bg-gray-300 transition-colors"
-                          >
-                            Clear Data
-                          </button>
-                        </div>
-
-                        {validation && (
-                          <div className={`p-3 border text-sm ${
-                            validation.valid ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
-                          }`}>
-                            <p className="font-semibold mb-2">{validation.message}</p>
-                            {validation.warnings.length > 0 && (
-                              <ul className="list-disc list-inside space-y-1 text-xs">
-                                {validation.warnings.map((warning: string, i: number) => (
-                                  <li key={i}>{warning}</li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </>
                 )}
               </div>
             )}
@@ -1659,9 +1636,7 @@ export default function AdminPanel() {
                 </div>
               </div>
             )}
-          </div>
         </div>
       </div>
-    </div>
   );
 }
