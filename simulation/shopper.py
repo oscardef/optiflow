@@ -37,6 +37,11 @@ class ShopperSimulator:
         self.first_pass_complete = False
         self.pass_count = 0
         self.aisles_visited = set()
+        
+        # Time-based disappearance tracking
+        import time
+        self.last_disappearance_time = time.time()
+        self.disappearance_enabled = False  # Only enable after first pass
     
     @property
     def speed(self) -> float:
@@ -45,6 +50,9 @@ class ShopperSimulator:
     
     def update_position(self, dt: float):
         """Update position based on time delta"""
+        # Check for time-based disappearance
+        self._check_time_based_disappearance()
+        
         # Calculate distance to target
         dx = self.target_x - self.x
         dy = self.target_y - self.y
@@ -139,10 +147,8 @@ class ShopperSimulator:
                 # Complete a pass
                 if not self.first_pass_complete:
                     self.first_pass_complete = True
-                    print(f"✅ First pass complete! Items can now go missing randomly")
-                    self._check_for_missing_items()
-                else:
-                    self._check_for_missing_items()
+                    self.disappearance_enabled = True
+                    print(f"✅ First pass complete! Time-based disappearance now enabled (every {self.config.disappearance_interval}s)")
                 
                 self.pass_count += 1
                 self.aisles_visited.clear()
@@ -182,60 +188,43 @@ class ShopperSimulator:
         self.movement_phase = 'going_up_right'
         self.target_y = aisles[self.current_aisle]['y_start'] + 20  # Small margin from top
     
-    def _check_for_missing_items(self):
-        """Randomly mark some items as missing based on disappearance_rate
+    def _check_time_based_disappearance(self):
+        """Check if it's time to make an item disappear (time-based, not per-pass)
         
-        Items must be detected as 'present' first before they can go missing.
-        This creates the realistic flow: item detected -> item goes missing -> restock needed
+        Items disappear at a configurable interval (disappearance_interval seconds).
+        The interval is SCALED by speed_multiplier so at 5x speed, items disappear 5x faster.
+        This provides predictable, controllable disappearance for demos.
         """
-        if not self.first_pass_complete:
+        import time
+        import random
+        
+        if not self.disappearance_enabled:
             return
         
-        # Only consider items that have been detected (marked as present first)
-        # AND are not already missing
+        current_time = time.time()
+        time_since_last = current_time - self.last_disappearance_time
+        
+        # Scale interval by speed multiplier (faster speed = more frequent disappearances)
+        effective_interval = self.config.disappearance_interval / self.config.speed_multiplier
+        
+        # Check if enough time has passed
+        if time_since_last < effective_interval:
+            return
+        
+        # Reset timer
+        self.last_disappearance_time = current_time
+        
+        # Only consider items that have been detected AND are not already missing
         detected_items = [item for item in self.items if item.detected and not item.missing]
         
-        print(f"\n   📦 _check_for_missing_items called:")
-        print(f"      Total items: {len(self.items)}")
-        print(f"      Detected items: {len([i for i in self.items if i.detected])}")
-        print(f"      Already missing: {len([i for i in self.items if i.missing])}")
-        print(f"      Candidates for disappearance: {len(detected_items)}")
-        
         if not detected_items:
-            print(f"      ⚠️ No detected items to make missing!")
             return
         
-        import random
-        # Group items by product to ensure we don't take entire stock at once
-        items_by_product = {}
-        for item in detected_items:
-            product_key = item.product.sku
-            if product_key not in items_by_product:
-                items_by_product[product_key] = []
-            items_by_product[product_key].append(item)
-        
-        # Decide how many PRODUCT TYPES should have missing items this pass
-        # Use disappearance_rate as probability that ANY items go missing this pass
-        roll = random.random()
-        print(f"      🎲 Disappearance roll: {roll:.4f} (threshold: {self.config.disappearance_rate:.4f})")
-        if roll < self.config.disappearance_rate:
-            # Pick 1-2 product types to have items go missing
-            num_products_affected = random.randint(1, 2)
-            products_to_affect = random.sample(list(items_by_product.keys()), 
-                                              min(num_products_affected, len(items_by_product)))
-            
-            print(f"      🚨 MARKING ITEMS AS MISSING! Affecting {len(products_to_affect)} product types")
-            for product_key in products_to_affect:
-                product_items = items_by_product[product_key]
-                # Take only 1-2 items per product (realistic store behavior)
-                num_to_take = min(random.randint(1, 2), len(product_items))
-                items_to_disappear = random.sample(product_items, num_to_take)
-                
-                for item in items_to_disappear:
-                    item.missing = True
-                    print(f"         📦❌ Item {item.rfid_tag} ({item.product.name}) at ({item.x:.1f}, {item.y:.1f}) marked as MISSING")
-        else:
-            print(f"      ✅ No items going missing this pass")
+        # Pick ONE random item to go missing
+        item = random.choice(detected_items)
+        item.missing = True
+        print(f"\n   📦❌ TIME-BASED DISAPPEARANCE: {item.rfid_tag} ({item.product.name}) at ({item.x:.1f}, {item.y:.1f})")
+        print(f"      Effective interval: {effective_interval:.1f}s (base: {self.config.disappearance_interval}s @ {self.config.speed_multiplier}x speed)")
     
     def get_status_info(self) -> dict:
         """Get current status for display"""

@@ -61,7 +61,7 @@ class TagConfig:
     """Tag movement and detection configuration"""
     tag_id: str = "tag_0x42"
     speed: float = 100.0  # cm/s (slower for more realistic effect)
-    rfid_detection_range: float = 60.0  # cm (0.6 meters - RFID detection range)
+    rfid_detection_range: float = 100.0  # cm (1 meter - RFID detection range, must match backend)
     update_interval: float = 0.15  # seconds between updates
 
 
@@ -74,7 +74,7 @@ class SimulationConfig:
     tag: TagConfig = None
     api_url: str = "http://localhost:8000"
     speed_multiplier: float = 1.0  # Speed adjustment (1.0 = normal, 2.0 = 2x speed)
-    disappearance_rate: float = 0.15  # Rate at which items go missing (default: 15% per pass - for testing)
+    disappearance_interval: float = 10.0  # Seconds between items going missing (configurable via slider)
     
     def __post_init__(self):
         if self.store is None:

@@ -36,7 +36,7 @@ class SimulationParams(BaseModel):
     speed_multiplier: Optional[float] = 1.0
     mode: Optional[str] = "DEMO"  # DEMO, REALISTIC, STRESS
     api_url: Optional[str] = None
-    disappearance_rate: Optional[float] = 0.002  # 0.2% per pass (balanced with inference safety checks)
+    disappearance_interval: Optional[float] = 10.0  # seconds between items going missing
 
 class ConnectionStatus(BaseModel):
     mqtt_connected: bool
@@ -201,8 +201,8 @@ def start_simulation(params: Optional[SimulationParams] = None):
             cmd.extend(["--mode", params.mode.lower()])
         if params.api_url:
             cmd.extend(["--api", params.api_url])
-        if params.disappearance_rate is not None:
-            cmd.extend(["--disappearance", str(params.disappearance_rate)])
+        if params.disappearance_interval is not None:
+            cmd.extend(["--disappearance", str(params.disappearance_interval)])
     
     # If no API URL specified, use localhost:8000 (works both in dev and container)
     if not params or not params.api_url:

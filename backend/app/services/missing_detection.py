@@ -5,23 +5,23 @@ Mode-aware algorithm for detecting missing RFID items.
 
 This service implements TWO different detection algorithms based on operating mode:
 
-SIMULATION MODE (distance-based):
+SIMULATION MODE (immediate):
 - Items have fixed shelf positions that don't change
-- Only items within RFID detection range (50cm) of employee can be marked missing
-- Employee walks around the store, and items near their path are checked
-- Prevents random items across the store from being marked missing
+- When an item within range is NOT in the RFID packet, it's immediately marked missing
+- No consecutive miss counting needed (simulation controls when items disappear)
+- Simple and predictable for demo purposes
 
-PRODUCTION MODE (tag-matching):
+PRODUCTION MODE (tag-matching with safety):
 - Item positions update to employee location when detected
-- Distance checking doesn't work (all detected items are at same location)
-- Uses simpler tag-matching: if item in detection list = present
+- Uses consecutive miss counting to avoid false positives from RFID read failures
+- Requires multiple consecutive misses before marking an item as missing
 - Missing items are automatically restored when detected again
 
 Key principles:
 - An item with RSSI=0 or not in detection list is considered "not detected"
 - An item with negative RSSI (e.g., -45 dBm) IS detected with that signal strength
-- Items are only marked missing after multiple misses to avoid false positives
-- State is persisted to database, not memory, for reliability
+- Production mode: Items marked missing after multiple misses (hardware reliability)
+- Simulation mode: Items marked missing immediately when not detected (simulation controls disappearance)
 """
 
 from datetime import datetime, timedelta
@@ -40,44 +40,39 @@ class MissingItemDetector:
     
     SIMULATION MODE Algorithm:
     --------------------------
-    Items have fixed shelf positions. Employee walks around the store.
-    1. Hardware packet arrives with RFID + UWB data
-    2. Calculate employee position via triangulation
-    3. Query all present items with known positions
-    4. For each item:
-       - Was it detected? → Reset miss counter
-       - Distance > RFID_DETECTION_RANGE? → Don't check (out of range)
-       - Within range but not detected? → Increment miss counter
-       - Consecutive misses >= threshold? → Mark as missing
+    The simulation controls when items go missing via a time-based mechanism.
+    Backend's job is to detect when simulation has marked an item as missing.
+    
+    Key insight: Simulation sends ALL items within range that are NOT missing.
+    So if an item that WAS being detected (has recent last_seen_at) suddenly
+    stops appearing in packets, the simulation has marked it as missing.
+    
+    We use consecutive miss counting but with a SHORT threshold since
+    simulation is deterministic (no RFID read failures to account for).
     
     PRODUCTION MODE Algorithm:
     --------------------------
-    Items positions update to employee location when detected.
-    1. Hardware packet arrives with RFID + UWB data
-    2. Check if we're "actively scanning" (detected 2+ items)
-    3. For each present item in database:
-       - If in detection list → Reset miss counter
-       - If NOT in detection list → Increment miss counter
-       - After threshold misses → Mark as missing
+    Hardware can have intermittent read failures - need consecutive miss counting.
+    Uses a LONGER threshold to avoid false positives from hardware glitches.
     """
     
-    # === SHARED PARAMETERS ===
-    # Minimum number of consecutive scan cycles where item was NOT detected
-    MIN_CONSECUTIVE_MISSES_SIMULATION = 4  # For simulation mode
-    MIN_CONSECUTIVE_MISSES_PRODUCTION = 6  # For production mode (more conservative)
-    
-    # Maximum number of items that can be marked missing in a single scan cycle
-    MAX_MISSING_PER_SCAN_SIMULATION = 2  # Simulation can handle more
-    MAX_MISSING_PER_SCAN_PRODUCTION = 1  # Production is more conservative
-    
     # === SIMULATION-SPECIFIC PARAMETERS ===
-    # RFID detection range in cm - items beyond this are not expected to be detected
-    RFID_DETECTION_RANGE_CM = 50.0
+    # RFID detection range - SMALLER than simulation's range (100cm)
+    # The simulation sends items within 100cm. We only mark items as missing
+    # if they're within 80cm (well inside simulation's range). This avoids
+    # false positives at the boundary due to floating point differences.
+    RFID_DETECTION_RANGE_CM = 80.0  # 80cm - inner zone for reliable detection
     
     # === PRODUCTION-SPECIFIC PARAMETERS ===
-    # Minimum number of items that must be detected before we check for missing items
-    # This prevents false positives when RFID reader only catches some tags
+    # Consecutive misses needed (longer - hardware can be flaky)
+    MIN_CONSECUTIVE_MISSES_PRODUCTION = 6
+    
+    # Minimum items detected before checking for missing (production only)
     MIN_DETECTED_TO_CHECK_MISSING = 2
+    
+    # === SHARED PARAMETERS ===
+    # Maximum items that can be marked missing per scan cycle
+    MAX_MISSING_PER_SCAN = 1
     
     @classmethod
     def process_detections(
@@ -113,40 +108,51 @@ class MissingItemDetector:
         timestamp: datetime
     ) -> List[InventoryItem]:
         """
-        SIMULATION MODE: Distance-based missing detection.
+        SIMULATION MODE: INSTANT missing detection for previously-seen items.
         
-        Only items within RFID_DETECTION_RANGE_CM of the employee can be 
-        marked as missing. This prevents random items across the store
-        from being flagged when the employee is nowhere near them.
+        Workflow:
+        1. Simulation pre-generates items throughout the store
+        2. Employee walks through detecting items as present (sets last_seen_at)
+        3. Simulation marks items as 'missing' internally every X seconds
+        4. Simulation EXCLUDES missing items from packets sent to backend
+        5. If a PREVIOUSLY-SEEN item is within range but NOT in packet, mark INSTANTLY missing
+        
+        Key insight: Only items with last_seen_at can be "discovered" as missing.
+        Items that have never been detected cannot be known to be missing yet.
         """
         newly_missing = []
         detected_tags_set = set(detected_rfid_tags.keys())
         
-        # Query all present items WITH positions (simulation items have fixed positions)
+        # Query present items that have been seen before (have last_seen_at)
+        # These are items we KNOW about and can detect as missing
         present_items = db.query(InventoryItem).filter(
             InventoryItem.status == 'present',
             InventoryItem.x_position.isnot(None),
-            InventoryItem.y_position.isnot(None)
+            InventoryItem.y_position.isnot(None),
+            InventoryItem.last_seen_at.isnot(None)  # Only check previously-seen items!
         ).all()
         
-        logger.info(f"🔍 [SIMULATION] Processing {len(detected_rfid_tags)} detected tags, {len(present_items)} present items")
-        logger.info(f"   📍 Employee at: ({employee_x:.1f}, {employee_y:.1f})")
+        items_in_range = 0
+        items_detected = 0
         
-        # Find items within detection range
-        items_in_range = []
-        for item in present_items:
-            distance = cls._calculate_distance(
-                item.x_position, item.y_position,
-                employee_x, employee_y
-            )
-            if distance <= cls.RFID_DETECTION_RANGE_CM:
-                items_in_range.append((item, distance))
+        # First, update any detected items (this sets last_seen_at for new detections)
+        all_present_items = db.query(InventoryItem).filter(
+            InventoryItem.status == 'present'
+        ).all()
         
-        logger.info(f"   📡 {len(items_in_range)} items within {cls.RFID_DETECTION_RANGE_CM}cm detection range")
+        for item in all_present_items:
+            if item.rfid_tag in detected_tags_set:
+                rssi = detected_rfid_tags[item.rfid_tag]
+                cls._handle_item_detected(item, rssi, timestamp)
+                items_detected += 1
         
-        # Process ALL present items
+        # Now check previously-seen items for missing status
         for item in present_items:
             tag_short = item.rfid_tag[-8:]
+            
+            # Skip if already detected above
+            if item.rfid_tag in detected_tags_set:
+                continue
             
             # Calculate distance to employee
             distance = cls._calculate_distance(
@@ -154,36 +160,23 @@ class MissingItemDetector:
                 employee_x, employee_y
             )
             
-            if item.rfid_tag in detected_tags_set:
-                # Item was detected - reset miss tracking
-                rssi = detected_rfid_tags[item.rfid_tag]
-                old_misses = item.consecutive_misses or 0
-                cls._handle_item_detected(item, rssi, timestamp)
-                if old_misses > 0:
-                    logger.info(f"   ✅ {tag_short}: DETECTED at {distance:.1f}cm (RSSI={rssi:.0f}dBm) - reset misses from {old_misses} to 0")
-            elif distance <= cls.RFID_DETECTION_RANGE_CM:
-                # Item is within range but NOT detected - this is a miss
-                old_misses = item.consecutive_misses or 0
-                should_mark_missing = cls._handle_item_missed_simulation(item, timestamp)
+            if distance <= cls.RFID_DETECTION_RANGE_CM:
+                # Item was seen before, is within range, but NOT in packet = MISSING
+                items_in_range += 1
                 
-                logger.info(f"   ❌ {tag_short}: NOT DETECTED at {distance:.1f}cm - miss count: {old_misses} → {item.consecutive_misses}/{cls.MIN_CONSECUTIVE_MISSES_SIMULATION}")
-                
-                if should_mark_missing:
-                    if len(newly_missing) >= cls.MAX_MISSING_PER_SCAN_SIMULATION:
-                        logger.info(f"   ⚠️  {tag_short}: Would be marked missing but max per scan reached")
-                        continue
-                    
-                    item.status = 'not present'
-                    newly_missing.append(item)
-                    logger.info(f"   📦❌ {tag_short}: MARKED AS MISSING after {item.consecutive_misses} consecutive misses")
-                    item.consecutive_misses = 0
-                    item.first_miss_at = None
-            else:
-                # Item is out of range - don't count as miss (employee not near it)
-                # But also don't reset miss counter (preserve state for when employee returns)
-                pass
+                item.status = 'not present'
+                item.consecutive_misses = 0
+                item.first_miss_at = None
+                newly_missing.append(item)
+                logger.info(f"   📦❌ {tag_short}: MISSING (not in packet at {distance:.1f}cm)")
         
         db.commit()
+        
+        # Periodic logging
+        import random
+        if random.random() < 0.05 or newly_missing:
+            logger.info(f"🔍 [SIMULATION] Employee at ({employee_x:.1f}, {employee_y:.1f}): "
+                       f"{len(detected_tags_set)} in packet, {items_in_range} previously-seen in range (not detected)")
         
         if newly_missing:
             logger.info(f"🧮 [SIMULATION] Marked {len(newly_missing)} item(s) as 'not present'")
@@ -254,7 +247,7 @@ class MissingItemDetector:
                 logger.info(f"   ❌ {tag_short}: NOT DETECTED - miss count: {old_misses} → {item.consecutive_misses}/{cls.MIN_CONSECUTIVE_MISSES_PRODUCTION}")
                 
                 if should_mark_missing:
-                    if len(newly_missing) >= cls.MAX_MISSING_PER_SCAN_PRODUCTION:
+                    if len(newly_missing) >= cls.MAX_MISSING_PER_SCAN:
                         logger.info(f"   ⚠️  {tag_short}: Would be marked missing but max per scan reached")
                         continue
                     
@@ -278,18 +271,6 @@ class MissingItemDetector:
         item.last_seen_at = timestamp
         item.consecutive_misses = 0
         item.first_miss_at = None
-    
-    @classmethod
-    def _handle_item_missed_simulation(cls, item: InventoryItem, timestamp: datetime) -> bool:
-        """
-        Handle missed item in SIMULATION mode.
-        Returns True if item should be marked as missing.
-        """
-        item.consecutive_misses = (item.consecutive_misses or 0) + 1
-        if item.first_miss_at is None:
-            item.first_miss_at = timestamp
-        
-        return item.consecutive_misses >= cls.MIN_CONSECUTIVE_MISSES_SIMULATION
     
     @classmethod
     def _handle_item_missed_production(cls, item: InventoryItem, timestamp: datetime) -> bool:
@@ -352,16 +333,17 @@ class MissingItemDetector:
         if current_mode == ConfigMode.SIMULATION:
             params = {
                 "mode": "SIMULATION",
-                "min_consecutive_misses": cls.MIN_CONSECUTIVE_MISSES_SIMULATION,
+                "detection_type": "immediate",
                 "rfid_detection_range_cm": cls.RFID_DETECTION_RANGE_CM,
-                "max_missing_per_scan": cls.MAX_MISSING_PER_SCAN_SIMULATION
+                "max_missing_per_scan": cls.MAX_MISSING_PER_SCAN
             }
         else:
             params = {
                 "mode": "PRODUCTION",
+                "detection_type": "consecutive_misses",
                 "min_consecutive_misses": cls.MIN_CONSECUTIVE_MISSES_PRODUCTION,
                 "min_detected_to_check_missing": cls.MIN_DETECTED_TO_CHECK_MISSING,
-                "max_missing_per_scan": cls.MAX_MISSING_PER_SCAN_PRODUCTION
+                "max_missing_per_scan": cls.MAX_MISSING_PER_SCAN
             }
         
         return {

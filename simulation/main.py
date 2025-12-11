@@ -192,8 +192,8 @@ def main():
                        help="Backend API URL")
     parser.add_argument("--interval", type=float, default=0.15, 
                        help="Update interval in seconds")
-    parser.add_argument("--disappearance", type=float, default=0.015, 
-                       help="Item disappearance rate (default: 0.015 = 1.5%%)")
+    parser.add_argument("--disappearance", type=float, default=10.0, 
+                       help="Seconds between item disappearances (default: 10.0)")
     parser.add_argument("--analytics", action="store_true", 
                        help="Enable real-time analytics tracking")
     parser.add_argument("--snapshot-interval", type=int, default=3600, 
@@ -206,7 +206,7 @@ def main():
         mode=SimulationMode(args.mode),
         speed_multiplier=max(0.5, min(5.0, args.speed)),
         api_url=args.api,
-        disappearance_rate=max(0.0, min(0.1, args.disappearance))  # Clamp between 0% and 10%
+        disappearance_interval=max(1.0, args.disappearance)  # Minimum 1 second
     )
     config.mqtt.broker = args.broker
     config.tag.update_interval = args.interval
@@ -219,7 +219,7 @@ def main():
     print(f"Target items: {config.target_item_count}")
     print(f"Duplicates per SKU: {config.duplicates_per_sku[0]}-{config.duplicates_per_sku[1]}")
     print(f"Speed: {config.speed_multiplier}x")
-    print(f"Disappearance rate: {config.disappearance_rate*100:.1f}%")
+    print(f"Disappearance interval: {config.disappearance_interval}s (one item every {config.disappearance_interval}s)")
     print(f"MQTT Broker: {config.mqtt.broker}:{config.mqtt.port}")
     print(f"Backend API: {config.api_url}")
     print(f"Update interval: {config.tag.update_interval}s")

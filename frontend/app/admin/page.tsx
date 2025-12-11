@@ -20,7 +20,7 @@ export default function AdminPanel() {
   const [productItems, setProductItems] = useState<Map<number, any[]>>(new Map());
   const [simSpeedMultiplier, setSimSpeedMultiplier] = useState<number>(5.0);
   const [simMode, setSimMode] = useState<string>('REALISTIC');
-  const [simDisappearanceRate, setSimDisappearanceRate] = useState<number>(1.5);
+  const [simDisappearanceInterval, setSimDisappearanceInterval] = useState<number>(10);  // seconds between items going missing
   const [simItemCount, setSimItemCount] = useState<number>(1000);
   const [regeneratingInventory, setRegeneratingInventory] = useState(false);
   const [showClearDataModal, setShowClearDataModal] = useState(false);
@@ -368,7 +368,7 @@ export default function AdminPanel() {
         body: JSON.stringify({
           speed_multiplier: simSpeedMultiplier,
           mode: simMode,
-          disappearance_rate: simDisappearanceRate / 100  // Convert percentage to decimal
+          disappearance_interval: simDisappearanceInterval  // seconds between items going missing
         })
       });
       const data = await res.json();
@@ -838,20 +838,20 @@ export default function AdminPanel() {
                         </div>
 
                         <div className="space-y-2">
-                          <label className="block text-sm font-medium text-gray-700">Disappearance Rate: {simDisappearanceRate}%</label>
+                          <label className="block text-sm font-medium text-gray-700">Disappearance Interval: {simDisappearanceInterval}s</label>
                           <input
                             type="range"
-                            min="0"
-                            max="10"
-                            step="0.5"
-                            value={simDisappearanceRate}
-                            onChange={(e) => setSimDisappearanceRate(parseFloat(e.target.value))}
+                            min="5"
+                            max="60"
+                            step="5"
+                            value={simDisappearanceInterval}
+                            onChange={(e) => setSimDisappearanceInterval(parseFloat(e.target.value))}
                             disabled={simulationStatus?.running || loading}
                             className="w-full h-1.5 appearance-none cursor-pointer bg-gray-300 accent-[#0055A4] disabled:cursor-not-allowed"
                           />
                           <div className="flex justify-between text-xs text-gray-500">
-                            <span>0%</span>
-                            <span>10%</span>
+                            <span>5s (fast)</span>
+                            <span>60s (slow)</span>
                           </div>
                         </div>
                       </div>
