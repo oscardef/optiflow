@@ -249,7 +249,7 @@ export default function SalesTimeSeriesChart({ data, interval, isLoading }: Prop
                   {/* Tooltip on hover */}
                   <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10 shadow-lg">
                     <div className="font-semibold text-sm">{point.sales} sales</div>
-                    <div className="text-gray-300">${point.revenue.toFixed(2)}</div>
+                    <div className="text-gray-300">{point.revenue.toFixed(2)} CHF</div>
                     <div className="text-gray-400 text-xs mt-1">{formatDate(point.date)}</div>
                     {/* Arrow */}
                     <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-px">

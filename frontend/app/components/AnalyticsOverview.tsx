@@ -39,7 +39,7 @@ export default function AnalyticsOverview({ data }: AnalyticsOverviewProps) {
     {
       title: 'Total Products',
       value: data.total_products,
-      subtitle: `$${data.total_stock_value.toLocaleString()} total value`,
+      subtitle: `${data.total_stock_value.toLocaleString()} CHF total value`,
       tooltip: 'Total number of unique product variants in your inventory, along with the combined value of all stock.',
       trend: null
     },

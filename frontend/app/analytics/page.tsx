@@ -491,6 +491,7 @@ export default function AnalyticsPage() {
               <div className="border border-gray-200 p-4">
                 <h3 className="text-base font-semibold text-gray-900 mb-1">Generate Mock Analytics Data</h3>
                 <p className="text-xs text-gray-600 mb-4">Create simulated historical data for testing and visualization</p>
+                
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -501,7 +502,7 @@ export default function AnalyticsPage() {
                         value={backfillDensity}
                         onChange={(e) => setBackfillDensity(e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
-                        disabled={isBackfilling || setupStatus?.inventory_items === 0}
+                        disabled={isBackfilling}
                       >
                         <option value="sparse">Sparse (20/day)</option>
                         <option value="normal">Normal (50/day)</option>
@@ -521,7 +522,7 @@ export default function AnalyticsPage() {
                         min="1"
                         max="90"
                         className="w-full px-3 py-2 border border-gray-300 focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
-                        disabled={isBackfilling || setupStatus?.inventory_items === 0}
+                        disabled={isBackfilling}
                       />
                       <p className="text-xs text-gray-500 mt-1">Max 90 days</p>
                     </div>
@@ -561,9 +562,9 @@ export default function AnalyticsPage() {
                       onClick={triggerBackfill}
                       disabled={isBackfilling || setupStatus?.inventory_items === 0}
                       className="flex-1 px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                      title={setupStatus?.inventory_items === 0 ? 'Generate inventory items first' : 'Generate historical analytics data'}
+                      title={setupStatus?.inventory_items === 0 ? 'Generate inventory items first in SIMULATION mode' : ''}
                     >
-                      {isBackfilling ? 'Working...' : 'Generate Data'}
+                      {isBackfilling ? 'Working...' : setupStatus?.inventory_items === 0 ? 'No Items Available' : 'Generate Data'}
                     </button>
                     <button
                       onClick={clearData}

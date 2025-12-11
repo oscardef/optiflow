@@ -63,7 +63,7 @@ export default function CategoryDonut({ data }: CategoryDonutProps) {
                   <div className="bg-white p-3 border border-gray-300 rounded shadow-lg">
                     <p className="font-semibold">{data.name}</p>
                     <p className="text-sm text-blue-600">Sales: {data.value}</p>
-                    <p className="text-sm text-green-600">Revenue: ${data.revenue.toFixed(2)}</p>
+                    <p className="text-sm text-green-600">Revenue: {data.revenue.toFixed(2)} CHF</p>
                     <p className="text-sm text-gray-600">Products: {data.products}</p>
                     <p className="text-sm text-gray-600">Stock: {data.stock}</p>
                   </div>
