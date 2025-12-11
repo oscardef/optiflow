@@ -283,188 +283,302 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
-      <div className="flex-shrink-0 px-6 pt-6 pb-4">
-        {/* Header */}
-        <div className="max-w-7xl mx-auto mb-4">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
-              <p className="text-gray-600 mt-1">AI-powered insights and performance metrics</p>
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white border-b border-gray-200">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <img src="/logo.png" alt="OptiFlow" className="h-20 w-auto" />
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
+                <p className="text-gray-600 mt-1">AI-powered insights and performance metrics</p>
+              </div>
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setShowBackfill(!showBackfill)}
-                className="px-4 py-2 text-sm font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] rounded-lg transition-colors"
+                onClick={() => setShowBackfill(true)}
+                className="px-4 py-2 text-sm font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] transition-colors"
               >
-                {showBackfill ? 'Hide' : 'Generate Data'}
+                Generate Data
               </button>
               <button
-              onClick={() => router.push('/')}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors flex items-center gap-2"
-            >
-              Back to Dashboard
-            </button>
-          </div>
+                onClick={() => router.push('/')}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 transition-colors flex items-center gap-2"
+              >
+                Back to Dashboard
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Critical Warning: No Items */}
-        {setupStatus && setupStatus.inventory_items === 0 && (
-          <div className="max-w-7xl mx-auto mb-4 bg-red-50 border-2 border-red-200 rounded-lg p-6">
-            <div className="flex items-start gap-4">
-              <div className="text-4xl">⚠️</div>
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-red-900 mb-2">No Inventory Items Found</h3>
-                <p className="text-red-800 mb-3">
-                  You must generate simulation inventory before creating analytics data. 
-                  Analytics (purchases, stock snapshots) are based on items in your store.
-                </p>
-                <div className="bg-white border border-red-200 rounded p-3 mb-3">
-                  <p className="text-sm font-semibold text-gray-900 mb-2">To generate inventory:</p>
-                  <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
-                    <li>Ensure you're in SIMULATION mode (check main dashboard)</li>
-                    <li>Run: <code className="bg-gray-100 px-2 py-0.5 rounded text-xs font-mono">python -m simulation.generate_inventory --items 1000</code></li>
-                    <li>Or start the simulation from the main dashboard</li>
-                    <li>Then return here to generate analytics data</li>
-                  </ol>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Tab Navigation */}
+        <div className="border-t border-gray-200">
+          <div className="flex items-center justify-between px-6">
+            <nav className="flex -mb-px">
+              {[
+                { id: 'kpis', label: 'KPIs' },
+                { id: 'overview', label: 'Performance' },
+                { id: 'products', label: 'Products' },
+                { id: 'ai-insights', label: 'AI Insights' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as TabType)}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === tab.id
+                      ? 'border-[#0055A4] text-[#0055A4]'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
 
-        {/* Setup Status */}
-        {showBackfill && setupStatus && setupStatus.inventory_items > 0 && (
-          <div className="max-w-7xl mx-auto mb-4 bg-white rounded-lg shadow p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-gray-700">System Status</h3>
+            {/* Date Range and Interval Controls */}
+            <div className="flex items-center gap-3">
+              {/* Quick Range Buttons */}
+              <div className="flex gap-1">
+                {(['7', '30', '90'] as const).map((days) => (
+                  <button
+                    key={days}
+                    onClick={() => {
+                      setDateRange(days);
+                      setCustomStartDate('');
+                      setCustomEndDate('');
+                    }}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      dateRange === days
+                        ? 'bg-[#0055A4] text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {days}d
+                  </button>
+                ))}
+                <button
+                  onClick={() => setDateRange('custom')}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                    dateRange === 'custom'
+                      ? 'bg-[#0055A4] text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Custom
+                </button>
+              </div>
+
+              {/* Custom Date Inputs */}
+              {dateRange === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="px-2 py-1 text-xs border border-gray-300 focus:outline-none focus:ring-1 focus:ring-[#0055A4]"
+                  />
+                  <span className="text-xs text-gray-500">to</span>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="px-2 py-1 text-xs border border-gray-300 focus:outline-none focus:ring-1 focus:ring-[#0055A4]"
+                  />
+                </div>
+              )}
+
+              {/* Interval Selector */}
+              <div className="flex gap-1 border-l border-gray-200 pl-3">
+                <span className="text-xs text-gray-500 self-center mr-2">Interval:</span>
+                {(['hour', 'day', 'week', 'month'] as const).map((interval) => (
+                  <button
+                    key={interval}
+                    onClick={() => setTimeInterval(interval)}
+                    className={`px-2 py-1.5 text-xs font-medium transition-colors ${
+                      timeInterval === interval
+                        ? 'bg-[#0055A4] text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                    title={`Aggregate by ${interval}`}
+                  >
+                    {interval.charAt(0).toUpperCase()}
+                  </button>
+                ))}
+              </div>
+
+              {/* Apply Button */}
               <button
-                onClick={() => {
-                  fetchSetupStatus();
-                  fetchAnalyticsData();
-                }}
-                className="text-xs px-3 py-1 text-gray-600 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors flex items-center gap-1"
+                onClick={fetchAnalyticsData}
+                disabled={loading}
+                className="px-4 py-1.5 text-xs font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] disabled:bg-gray-400 transition-colors"
               >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Refresh
+                {loading ? 'Loading...' : 'Apply'}
               </button>
             </div>
-            <div className="grid grid-cols-5 gap-3 text-sm">
-              <div className="flex flex-col">
-                <span className="text-gray-500">Products</span>
-                <span className="font-semibold text-gray-900">{setupStatus.products.toLocaleString()}</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-gray-500">Items</span>
-                <span className={`font-semibold ${setupStatus.inventory_items > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {setupStatus.inventory_items.toLocaleString()}
-                </span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-gray-500">Purchases</span>
-                <span className="font-semibold text-gray-900">{setupStatus.purchase_events.toLocaleString()}</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-gray-500">Snapshots</span>
-                <span className="font-semibold text-gray-900">{setupStatus.stock_snapshots.toLocaleString()}</span>
-              </div>
-              <div className="flex items-center">
-                <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                  setupStatus.setup_complete ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                }`}>
-                  {setupStatus.setup_complete ? '✓ Ready' : '⚠ Setup Needed'}
-                </div>
-              </div>
-            </div>
           </div>
-        )}
+        </div>
+      </header>
 
-        {/* Backfill Controls */}
-        {showBackfill && (
-          <div className="max-w-7xl mx-auto mb-4 bg-white rounded-lg shadow p-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Data Management</h3>
-            <div className="space-y-4">
-              <div className="grid grid-cols-5 gap-4 items-end">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Density
-                  </label>
-                  <select
-                    value={backfillDensity}
-                    onChange={(e) => setBackfillDensity(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
-                    disabled={isBackfilling || setupStatus?.inventory_items === 0}
-                  >
-                    <option value="sparse">Sparse (20/day)</option>
-                    <option value="normal">Normal (50/day)</option>
-                    <option value="dense">Dense (100/day)</option>
-                    <option value="stress">Stress (300/day)</option>
-                    <option value="extreme">Extreme (200/day)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Days
-                  </label>
-                  <input
-                    type="number"
-                    value={backfillDays}
-                    onChange={(e) => setBackfillDays(parseInt(e.target.value) || 30)}
-                    min="1"
-                    max="90"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
-                    disabled={isBackfilling || setupStatus?.inventory_items === 0}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Max 90 days</p>
-                </div>
-                <div>
-                  <button
-                    onClick={triggerBackfill}
-                    disabled={isBackfilling || setupStatus?.inventory_items === 0}
-                    className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg transition-colors"
-                    title={setupStatus?.inventory_items === 0 ? 'Generate inventory items first' : 'Generate historical analytics data'}
-                  >
-                    {isBackfilling ? 'Working...' : 'Generate Data'}
-                  </button>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={clearData}
-                    disabled={isBackfilling}
-                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 rounded-lg transition-colors"
-                  >
-                    Clear Data
-                  </button>
-                  {backfillStatus?.running && backfillStatus.total > 0 && (
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <div className="font-medium">
-                        {backfillStatus.progress.toLocaleString()} / {backfillStatus.total.toLocaleString()}
+      {/* Generate Data Modal */}
+      {showBackfill && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-6">
+          <div className="bg-white border border-gray-300 shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Generate Mock Data</h2>
+                <p className="text-xs text-gray-500 mt-1">For visualization and testing purposes</p>
+              </div>
+              <button
+                onClick={() => setShowBackfill(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Setup Status */}
+              {setupStatus && (
+                <div className="bg-gray-50 border border-gray-200 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-gray-700">System Status</h3>
+                    <button
+                      onClick={() => {
+                        fetchSetupStatus();
+                        fetchAnalyticsData();
+                      }}
+                      className="text-xs px-3 py-1 text-gray-600 hover:text-[#0055A4] hover:bg-white border border-gray-300 transition-colors flex items-center gap-1"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Refresh
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-5 gap-3 text-sm">
+                    <div className="flex flex-col">
+                      <span className="text-gray-500">Products</span>
+                      <span className="font-semibold text-gray-900">{setupStatus.products.toLocaleString()}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-gray-500">Items</span>
+                      <span className={`font-semibold ${setupStatus.inventory_items > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {setupStatus.inventory_items.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-gray-500">Purchases</span>
+                      <span className="font-semibold text-gray-900">{setupStatus.purchase_events.toLocaleString()}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-gray-500">Snapshots</span>
+                      <span className="font-semibold text-gray-900">{setupStatus.stock_snapshots.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center">
+                      <div className={`inline-flex items-center px-2 py-1 text-xs font-medium ${
+                        setupStatus.setup_complete ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {setupStatus.setup_complete ? '✓ Ready' : '⚠ Setup Needed'}
                       </div>
-                      <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Backfill Controls */}
+              <div className="border border-gray-200 p-4">
+                <h3 className="text-base font-semibold text-gray-900 mb-1">Generate Mock Analytics Data</h3>
+                <p className="text-xs text-gray-600 mb-4">Create simulated historical data for testing and visualization</p>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Density
+                      </label>
+                      <select
+                        value={backfillDensity}
+                        onChange={(e) => setBackfillDensity(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
+                        disabled={isBackfilling || setupStatus?.inventory_items === 0}
+                      >
+                        <option value="sparse">Sparse (20/day)</option>
+                        <option value="normal">Normal (50/day)</option>
+                        <option value="dense">Dense (100/day)</option>
+                        <option value="stress">Stress (300/day)</option>
+                        <option value="extreme">Extreme (200/day)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Days
+                      </label>
+                      <input
+                        type="number"
+                        value={backfillDays}
+                        onChange={(e) => setBackfillDays(parseInt(e.target.value) || 30)}
+                        min="1"
+                        max="90"
+                        className="w-full px-3 py-2 border border-gray-300 focus:ring-2 focus:ring-[#0055A4] focus:border-[#0055A4]"
+                        disabled={isBackfilling || setupStatus?.inventory_items === 0}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Max 90 days</p>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  {backfillStatus?.running && backfillStatus.total > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium text-gray-700">
+                          {backfillStatus.progress.toLocaleString()} / {backfillStatus.total.toLocaleString()}
+                        </span>
+                        <span className="text-gray-500">
+                          {Math.round((backfillStatus.progress / backfillStatus.total) * 100)}%
+                        </span>
+                      </div>
+                      <div className="w-full h-2 bg-gray-200 overflow-hidden">
                         <div 
-                          className="h-full bg-blue-600 transition-all duration-300"
+                          className="h-full bg-[#0055A4] transition-all duration-300"
                           style={{ width: `${(backfillStatus.progress / backfillStatus.total) * 100}%` }}
                         />
                       </div>
                     </div>
                   )}
-                </div>
-                <div>
+
+                  {/* Status Message */}
                   {backfillStatus && (
-                    <div className={`text-xs ${backfillStatus.running ? 'text-blue-600' : backfillStatus.records > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <div className={`text-sm ${backfillStatus.running ? 'text-blue-600' : backfillStatus.records > 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {backfillStatus.message}
                       {backfillStatus.records > 0 && !backfillStatus.running && ` (${backfillStatus.records} records)`}
                     </div>
                   )}
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={triggerBackfill}
+                      disabled={isBackfilling || setupStatus?.inventory_items === 0}
+                      className="flex-1 px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                      title={setupStatus?.inventory_items === 0 ? 'Generate inventory items first' : 'Generate historical analytics data'}
+                    >
+                      {isBackfilling ? 'Working...' : 'Generate Data'}
+                    </button>
+                    <button
+                      onClick={clearData}
+                      disabled={isBackfilling}
+                      className="px-6 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 transition-colors"
+                    >
+                      Clear Data
+                    </button>
+                  </div>
                 </div>
               </div>
-              
+
               {/* Info about generated data patterns */}
               {setupStatus && setupStatus.inventory_items > 0 && setupStatus.purchase_events === 0 && (
-                <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="bg-blue-50 border border-blue-200 p-4">
                   <div className="flex items-start gap-3">
                     <div className="text-2xl">ℹ️</div>
                     <div className="flex-1 text-sm">
@@ -488,123 +602,11 @@ export default function AnalyticsPage() {
               )}
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-      </div>
-
-      {/* Main Content Area with Tabs */}
-      <div className="flex-1 px-6 pb-6 overflow-hidden">
-        <div className="max-w-7xl mx-auto h-full flex flex-col">
-          <div className="bg-white rounded-lg shadow h-full flex flex-col overflow-hidden">
-            {/* Tab Navigation with Date Controls */}
-            <div className="flex-shrink-0 border-b border-gray-200">
-              <div className="flex justify-between items-center">
-                <nav className="flex -mb-px">
-                  {[
-                    { id: 'kpis', label: 'KPIs' },
-                    { id: 'overview', label: 'Performance' },
-                    { id: 'products', label: 'Products' },
-                    { id: 'ai-insights', label: 'AI Insights' },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id as TabType)}
-                      className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-                        activeTab === tab.id
-                          ? 'border-[#0055A4] text-[#0055A4]'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </nav>
-
-                {/* Date Range and Interval Controls */}
-                <div className="flex items-center gap-4 pr-4">
-                  {/* Quick Range Buttons */}
-                  <div className="flex gap-1">
-                    {(['7', '30', '90'] as const).map((days) => (
-                      <button
-                        key={days}
-                        onClick={() => {
-                          setDateRange(days);
-                          setCustomStartDate('');
-                          setCustomEndDate('');
-                        }}
-                        className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                          dateRange === days
-                            ? 'bg-[#0055A4] text-white'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
-                      >
-                        {days}d
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => setDateRange('custom')}
-                      className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                        dateRange === 'custom'
-                          ? 'bg-[#0055A4] text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      Custom
-                    </button>
-                  </div>
-
-                  {/* Custom Date Inputs */}
-                  {dateRange === 'custom' && (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="date"
-                        value={customStartDate}
-                        onChange={(e) => setCustomStartDate(e.target.value)}
-                        className="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#0055A4]"
-                      />
-                      <span className="text-xs text-gray-500">to</span>
-                      <input
-                        type="date"
-                        value={customEndDate}
-                        onChange={(e) => setCustomEndDate(e.target.value)}
-                        className="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#0055A4]"
-                      />
-                    </div>
-                  )}
-
-                  {/* Interval Selector */}
-                  <div className="flex gap-1 border-l border-gray-200 pl-4">
-                    <span className="text-xs text-gray-500 self-center mr-2">Interval:</span>
-                    {(['hour', 'day', 'week', 'month'] as const).map((interval) => (
-                      <button
-                        key={interval}
-                        onClick={() => setTimeInterval(interval)}
-                        className={`px-2 py-1.5 text-xs font-medium rounded transition-colors ${
-                          timeInterval === interval
-                            ? 'bg-[#0055A4] text-white'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
-                        title={`Aggregate by ${interval}`}
-                      >
-                        {interval.charAt(0).toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Apply Button */}
-                  <button
-                    onClick={fetchAnalyticsData}
-                    disabled={loading}
-                    className="px-4 py-1.5 text-xs font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] disabled:bg-gray-400 rounded-lg transition-colors"
-                  >
-                    {loading ? 'Loading...' : 'Apply'}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Tab Content */}
-            <div className="flex-1 p-6 overflow-auto">
+      {/* Tab Content */}
+      <div className="bg-white border border-gray-200 p-6 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
               {/* KPIs Tab */}
               {activeTab === 'kpis' && (
                 <div className="space-y-6">
@@ -617,7 +619,7 @@ export default function AnalyticsPage() {
                   {/* Sales Over Time Chart */}
                   <div>
                     <h2 className="text-lg font-semibold text-gray-900 mb-4">Sales Over Time</h2>
-                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    <div className="bg-white border border-gray-200 p-6">
                       <SalesTimeSeriesChart 
                         key={appliedInterval}
                         data={salesTimeSeries} 
@@ -632,14 +634,14 @@ export default function AnalyticsPage() {
               {/* Performance Overview Tab */}
               {activeTab === 'overview' && (
                 <div className="h-full grid grid-cols-2 gap-4">
-                  <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col">
+                  <div className="bg-white border border-gray-200 p-6 flex flex-col">
                     <h3 className="text-base font-semibold text-gray-900 mb-4">Product Velocity</h3>
                     <div className="flex-1">
                       <ProductVelocityChart data={productVelocity} />
                     </div>
                   </div>
 
-                  <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col">
+                  <div className="bg-white border border-gray-200 p-6 flex flex-col">
                     <h3 className="text-base font-semibold text-gray-900 mb-4">Category Distribution</h3>
                     <div className="flex-1">
                       <CategoryDonut data={categoryPerformance} />
@@ -670,17 +672,17 @@ export default function AnalyticsPage() {
                   {/* Analysis Grid */}
                   <div className="grid grid-cols-3 gap-4 min-h-0">
                     {/* Product Insights - Takes 2 columns */}
-                    <div className="col-span-2 bg-white border border-gray-200 rounded-lg p-6">
+                    <div className="col-span-2 bg-white border border-gray-200 p-6">
                       <ProductInsights data={productVelocity} />
                     </div>
 
                     {/* Demand Forecast */}
-                    <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col">
+                    <div className="bg-white border border-gray-200 p-6 flex flex-col">
                       <h3 className="text-base font-semibold text-gray-900 mb-2">Demand Forecast</h3>
                       <select
                         value={selectedProductForForecast || ''}
                         onChange={(e) => setSelectedProductForForecast(Number(e.target.value))}
-                        className="mb-4 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="mb-4 px-3 py-2 text-sm border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
                         <option value="">Select product...</option>
                         {topProducts.slice(0, 10).map(p => (
@@ -708,8 +710,5 @@ export default function AnalyticsPage() {
               )}
             </div>
           </div>
-        </div>
-      </div>
-    </div>
   );
 }

@@ -703,25 +703,13 @@ export default function Home() {
                 <>
                   <a
                     href="/analytics"
-                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors"
+                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 transition-colors"
                   >
                     Analytics
                   </a>
-                  {!(currentMode === 'PRODUCTION' ? hardwareActive : (receivingData && wsConnected)) && (
-                    <button
-                      onClick={() => setSetupMode(true)}
-                      className="p-2 text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors"
-                      title="Setup Mode - Place Anchors"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    </button>
-                  )}
                   <a
                     href="/admin"
-                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors"
+                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 transition-colors"
                   >
                     Admin Panel
                   </a>
@@ -752,25 +740,37 @@ export default function Home() {
                     </div>
                     )}
                   </div>
+                  {!(currentMode === 'PRODUCTION' ? hardwareActive : (receivingData && wsConnected)) && (
+                    <button
+                      onClick={() => setSetupMode(true)}
+                      className="p-2 text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 transition-colors"
+                      title="Setup Mode - Place Anchors"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
                   <button
                     onClick={() => setSetupMode(false)}
-                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition-colors"
                   >
                     Finish Setup
                   </button>
                   <button 
                     onClick={handleResetAnchors} 
-                    className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 rounded transition-colors"
+                    className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 transition-colors"
                   >
                     Reset Anchors
                   </button>
                   {currentMode === 'PRODUCTION' && (
                     <button 
                       onClick={handleClearData} 
-                      className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 rounded transition-colors"
+                      className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 transition-colors"
                     >
                       Clear Data
                     </button>
@@ -780,7 +780,7 @@ export default function Home() {
               
               <button
                 onClick={() => setShowSidebar(!showSidebar)}
-                className="p-2 text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 rounded transition-colors"
+                className="p-2 text-gray-700 hover:text-[#0055A4] hover:bg-gray-50 border border-gray-300 transition-colors"
                 title={showSidebar ? 'Hide Panels' : 'Show Panels'}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

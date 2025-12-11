@@ -41,11 +41,11 @@ export default function ProductAnalytics({ data, onRefresh, isLoading }: Product
   // Calculate summary metrics with more realistic thresholds
   const summary = useMemo(() => {
     const fastMovers = data.filter(p => (p.velocity_daily || 0) > 1).length;
+    const mediumMovers = data.filter(p => (p.velocity_daily || 0) >= 0.3 && (p.velocity_daily || 0) <= 1).length;
     const slowMovers = data.filter(p => (p.velocity_daily || 0) < 0.3).length;
     const stockoutAlerts = data.filter(p => p.days_until_stockout !== null && p.days_until_stockout < 7).length;
-    const deadStock = data.filter(p => (p.velocity_daily || 0) < 0.3 && (p.current_stock || 0) > 20).length;
     
-    return { fastMovers, slowMovers, stockoutAlerts, deadStock };
+    return { fastMovers, mediumMovers, slowMovers, stockoutAlerts };
   }, [data]);
 
   // Filter and sort data
@@ -140,8 +140,8 @@ export default function ProductAnalytics({ data, onRefresh, isLoading }: Product
 
   const getVelocityIndicator = (velocity: number) => {
     if (velocity > 1) return { icon: '↑', color: 'text-green-600', label: 'Fast' };
-    if (velocity >= 0.3) return { icon: '→', color: 'text-blue-600', label: 'Medium' };
-    return { icon: '↓', color: 'text-red-600', label: 'Slow' };
+    if (velocity >= 0.3) return { icon: '→', color: 'text-yellow-600', label: 'Medium' };
+    return { icon: '↓', color: 'text-gray-600', label: 'Slow' };
   };
 
   if (isLoading) {
@@ -156,25 +156,25 @@ export default function ProductAnalytics({ data, onRefresh, isLoading }: Product
     <div className="h-full flex flex-col">
       {/* Summary Cards */}
       <div className="grid grid-cols-4 gap-4 mb-4">
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+        <div className="bg-green-50 border border-green-200 p-3">
           <div className="text-2xl font-bold text-green-700">{summary.fastMovers}</div>
           <div className="text-xs text-green-600 font-medium">Fast Movers</div>
           <div className="text-xs text-gray-600">&gt; 1 unit/day</div>
         </div>
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-          <div className="text-2xl font-bold text-orange-700">{summary.slowMovers}</div>
-          <div className="text-xs text-orange-600 font-medium">Slow Movers</div>
+        <div className="bg-yellow-50 border border-yellow-200 p-3">
+          <div className="text-2xl font-bold text-yellow-700">{summary.mediumMovers}</div>
+          <div className="text-xs text-yellow-600 font-medium">Medium Movers</div>
+          <div className="text-xs text-gray-600">0.3 - 1 units/day</div>
+        </div>
+        <div className="bg-gray-50 border border-gray-300 p-3">
+          <div className="text-2xl font-bold text-gray-700">{summary.slowMovers}</div>
+          <div className="text-xs text-gray-600 font-medium">Slow Movers</div>
           <div className="text-xs text-gray-600">&lt; 0.3 units/day</div>
         </div>
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+        <div className="bg-red-50 border border-red-200 p-3">
           <div className="text-2xl font-bold text-red-700">{summary.stockoutAlerts}</div>
-          <div className="text-xs text-red-600 font-medium">Stockout Alerts</div>
+          <div className="text-xs text-red-600 font-medium">Critical Stockout</div>
           <div className="text-xs text-gray-600">&lt; 7 days remaining</div>
-        </div>
-        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-          <div className="text-2xl font-bold text-purple-700">{summary.deadStock}</div>
-          <div className="text-xs text-purple-600 font-medium">Dead Stock Risk</div>
-          <div className="text-xs text-gray-600">Low velocity, high stock</div>
         </div>
       </div>
 
@@ -185,7 +185,7 @@ export default function ProductAnalytics({ data, onRefresh, isLoading }: Product
           placeholder="Search by product name, SKU, or category..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+          className="w-full px-4 py-2 border border-gray-300 focus:ring-2 focus:ring-[#0055A4] focus:border-transparent text-sm"
         />
         
         <div className="flex items-center gap-4 flex-wrap">
@@ -197,9 +197,9 @@ export default function ProductAnalytics({ data, onRefresh, isLoading }: Product
                 <button
                   key={cat}
                   onClick={() => toggleCategory(cat)}
-                  className={`px-2 py-1 text-xs rounded-full transition-colors ${
+                  className={`px-2 py-1 text-xs transition-colors ${
                     selectedCategories.includes(cat)
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-[#0055A4] text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
@@ -216,9 +216,9 @@ export default function ProductAnalytics({ data, onRefresh, isLoading }: Product
               <button
                 key={filter}
                 onClick={() => setStockFilter(filter)}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
+                className={`px-2 py-1 text-xs transition-colors ${
                   stockFilter === filter
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-[#0055A4] text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -234,9 +234,9 @@ export default function ProductAnalytics({ data, onRefresh, isLoading }: Product
               <button
                 key={filter}
                 onClick={() => setVelocityFilter(filter)}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
+                className={`px-2 py-1 text-xs transition-colors ${
                   velocityFilter === filter
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-[#0055A4] text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -252,7 +252,7 @@ export default function ProductAnalytics({ data, onRefresh, isLoading }: Product
       </div>
 
       {/* Products Table */}
-      <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden flex flex-col min-h-0">
+      <div className="flex-1 border border-gray-200 overflow-hidden flex flex-col min-h-0">
         {/* Table Header */}
         <div className="bg-gray-50 border-b border-gray-200 px-4 py-3 grid grid-cols-11 gap-4 text-xs font-medium text-gray-600">
           <div className="col-span-3 cursor-pointer hover:text-gray-900" onClick={() => {
@@ -302,14 +302,14 @@ export default function ProductAnalytics({ data, onRefresh, isLoading }: Product
                     <div className="text-xs text-gray-500">{product.sku}</div>
                   </div>
                   <div className="col-span-2">
-                    <span className="inline-block px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                    <span className="inline-block px-2 py-1 text-xs font-medium bg-blue-100 text-[#0055A4]">
                       {product.category}
                     </span>
                   </div>
                   <div className="col-span-2">
                     <div className="flex items-center gap-2">
                       <span className="font-medium w-8 text-right">{product.current_stock}</span>
-                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="flex-1 h-2 bg-gray-200 overflow-hidden">
                         <div
                           className={`h-full ${stockStatus.color}`}
                           style={{ width: `${stockPercentage}%` }}
