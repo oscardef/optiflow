@@ -78,7 +78,7 @@ PRIORITY: LOW / FUTURE IMPROVEMENTS
 
 1) add special spatial indexing
 2) add ml clissification for missing items
-3) translate the EPCs
+3) translate the EPCs (DONE)
 4) Logs of received message from broker on the backend
 6) with rssi : try to figure out the real location of the item over time : increasing accuracy
 7) Add image as background with a reference metric
