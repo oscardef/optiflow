@@ -21,63 +21,78 @@ interface AnomalyAlertsProps {
 export default function AnomalyAlerts({ data }: AnomalyAlertsProps) {
   if (!data || !data.anomalies || data.anomalies.length === 0) {
     return (
-      <div className="bg-white border border-gray-300 p-4">
-        <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-900">
-          <h3 className="text-sm font-bold text-gray-900 uppercase">Anomaly Detection</h3>
-          <span className="text-xs text-gray-600">NO ALERTS</span>
+      <div className="bg-white border-l-4 border-green-600 p-4">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-lg font-bold text-gray-900">Sales Pattern Analysis</h2>
+          <span className="text-xs font-medium text-green-600 uppercase">All Normal</span>
         </div>
-        <p className="text-xs text-gray-600">All products operating within normal parameters</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white border border-gray-300 p-4">
-      <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-900">
-        <h3 className="text-sm font-bold text-gray-900 uppercase">Anomaly Detection</h3>
-        <span className="bg-black text-white px-2 py-1 text-xs font-bold">{data.count}</span>
+    <div className="bg-white border-l-4 border-red-600">
+      <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-lg font-bold text-gray-900">⚠ Sales Anomalies Detected</h2>
+          <span className="text-sm font-bold text-red-600">{data.count} Product{data.count > 1 ? 's' : ''}</span>
+        </div>
+        <p className="text-xs text-gray-600 mt-1">Products with unusual sales patterns requiring investigation</p>
       </div>
 
-      <div className="space-y-2 max-h-80 overflow-y-auto">
-        {data.anomalies.map((anomaly) => (
-          <div
-            key={anomaly.product_id}
-            className="border border-gray-300 bg-gray-50 p-3"
-          >
-            <div className="flex items-start justify-between mb-2 pb-2 border-b border-gray-300">
-              <div className="flex-1">
-                <div className="text-xs font-bold text-gray-900">{anomaly.name}</div>
-                <div className="text-xs text-gray-600 mt-0.5">{anomaly.sku}</div>
-              </div>
-              <div className={`text-xs font-bold uppercase px-2 py-0.5 ml-2 ${
-                anomaly.severity === 'high' ? 'bg-black text-white' : 
-                anomaly.severity === 'medium' ? 'bg-gray-400 text-white' : 
-                'bg-gray-200 text-gray-900'
-              }`}>
-                {anomaly.severity}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-4 gap-2 text-xs">
-              <div>
-                <div className="text-gray-600 mb-0.5">TYPE</div>
-                <div className="font-bold uppercase">{anomaly.anomaly_type}</div>
-              </div>
-              <div>
-                <div className="text-gray-600 mb-0.5">RECENT</div>
-                <div className="font-bold">{anomaly.recent_sales}</div>
-              </div>
-              <div>
-                <div className="text-gray-600 mb-0.5">EXPECTED</div>
-                <div className="font-bold">{anomaly.expected_sales.toFixed(1)}</div>
-              </div>
-              <div>
-                <div className="text-gray-600 mb-0.5">Z-SCORE</div>
-                <div className="font-bold">{anomaly.z_score.toFixed(2)}</div>
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-gray-100 border-b border-gray-300">
+            <tr>
+              <th className="text-left px-3 py-2 font-bold text-gray-900 uppercase tracking-wide">Product</th>
+              <th className="text-center px-2 py-2 font-bold text-gray-900 uppercase tracking-wide">Pattern</th>
+              <th className="text-right px-2 py-2 font-bold text-gray-900 uppercase tracking-wide">Recent</th>
+              <th className="text-right px-2 py-2 font-bold text-gray-900 uppercase tracking-wide">Expected</th>
+              <th className="text-right px-2 py-2 font-bold text-gray-900 uppercase tracking-wide">Deviation</th>
+              <th className="text-left px-3 py-2 font-bold text-gray-900 uppercase tracking-wide">Impact</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {data.anomalies.map((anomaly) => {
+              const difference = anomaly.recent_sales - anomaly.expected_sales;
+              const percentChange = ((difference / anomaly.expected_sales) * 100);
+              const isSpike = anomaly.anomaly_type === 'spike';
+              
+              return (
+                <tr key={anomaly.product_id} className={`hover:bg-gray-50 ${
+                  anomaly.severity === 'high' ? 'bg-red-50' : anomaly.severity === 'medium' ? 'bg-yellow-50' : ''
+                }`}>
+                  <td className="px-3 py-3">
+                    <div className="font-bold text-gray-900">{anomaly.name}</div>
+                    <div className="text-gray-500 mt-0.5">{anomaly.sku}</div>
+                  </td>
+                  <td className="px-2 py-3 text-center">
+                    <span className={`inline-block px-2 py-1 font-bold text-white ${
+                      isSpike ? 'bg-red-600' : 'bg-orange-600'
+                    }`}>
+                      {isSpike ? '↑ SURGE' : '↓ DROP'}
+                    </span>
+                  </td>
+                  <td className="px-2 py-3 text-right font-bold">{anomaly.recent_sales}</td>
+                  <td className="px-2 py-3 text-right text-gray-600">{anomaly.expected_sales.toFixed(0)}</td>
+                  <td className="px-2 py-3 text-right">
+                    <div className={`font-bold ${isSpike ? 'text-red-600' : 'text-orange-600'}`}>
+                      {difference > 0 ? '+' : ''}{difference}
+                    </div>
+                    <div className="text-gray-500">({percentChange > 0 ? '+' : ''}{percentChange.toFixed(0)}%)</div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className={`text-xs ${anomaly.severity === 'high' ? 'text-red-600' : anomaly.severity === 'medium' ? 'text-yellow-600' : 'text-blue-600'}`}>
+                      {anomaly.severity === 'high' && 'Critical - Investigate immediately'}
+                      {anomaly.severity === 'medium' && 'Monitor - Check within 24h'}
+                      {anomaly.severity === 'low' && 'Note - Minor variation'}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

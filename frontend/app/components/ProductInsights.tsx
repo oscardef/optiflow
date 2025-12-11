@@ -1,4 +1,5 @@
 import React from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell } from 'recharts';
 
 interface ProductData {
   product_id: number;
@@ -17,104 +18,143 @@ interface ProductInsightsProps {
 
 export default function ProductInsights({ data }: ProductInsightsProps) {
   if (!data || data.length === 0) {
-    return (
-      <div className="bg-white border border-gray-300 p-4 h-full">
-        <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-900">
-          <h3 className="text-sm font-bold text-gray-900 uppercase">Product Categorization</h3>
-        </div>
-        <p className="text-xs text-gray-600">No product data available</p>
-      </div>
-    );
+    return <div className="bg-white border-l-4 border-gray-400 p-4">No product data</div>;
   }
 
-  const restockPriority: ProductData[] = [];
-  const deadStockRisk: ProductData[] = [];
-  const fastMovers: ProductData[] = [];
+  // Calculate key metrics
+  const totalProducts = data.length;
+  const criticalStock = data.filter(p => p.days_until_stockout !== null && p.days_until_stockout < 7).length;
+  const deadStock = data.filter(p => p.velocity_daily < 0.1 && p.current_stock > 20).length;
+  const topPerformers = data.filter(p => p.velocity_daily > 1).length;
+  const avgVelocity = data.reduce((sum, p) => sum + (p.velocity_daily || 0), 0) / totalProducts;
+  const avgTurnover = data.reduce((sum, p) => sum + (p.turnover_rate || 0), 0) / totalProducts;
 
-  data.forEach(product => {
-    const velocity = product.velocity_daily || 0;
-    const stock = product.current_stock || 0;
-    const daysUntilStockout = product.days_until_stockout;
+  // Get top 10 by velocity
+  const topProducts = [...data].sort((a, b) => (b.velocity_daily || 0) - (a.velocity_daily || 0)).slice(0, 10);
 
-    if (velocity > 0.5 && (stock < 10 || (daysUntilStockout !== null && daysUntilStockout < 7))) {
-      restockPriority.push(product);
-    } else if (velocity < 0.1 && stock > 20) {
-      deadStockRisk.push(product);
-    } else if (velocity > 1) {
-      fastMovers.push(product);
-    }
-  });
+  // Get urgent restocks
+  const urgentRestocks = [...data]
+    .filter(p => p.days_until_stockout !== null && p.days_until_stockout < 7)
+    .sort((a, b) => (a.days_until_stockout || 999) - (b.days_until_stockout || 999))
+    .slice(0, 5);
 
-  const categories = [
-    {
-      title: 'RESTOCK PRIORITY',
-      count: restockPriority.length,
-      products: restockPriority.slice(0, 8),
-      priority: 'high'
-    },
-    {
-      title: 'DEAD STOCK RISK',
-      count: deadStockRisk.length,
-      products: deadStockRisk.slice(0, 8),
-      priority: 'medium'
-    },
-    {
-      title: 'FAST MOVERS',
-      count: fastMovers.length,
-      products: fastMovers.slice(0, 8),
-      priority: 'low'
-    }
-  ];
+  // Chart data for top products
+  const chartData = topProducts.map(p => ({
+    name: p.name.length > 20 ? p.name.substring(0, 18) + '..' : p.name,
+    velocity: p.velocity_daily,
+    stock: p.current_stock
+  }));
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-900">
-        <h3 className="text-sm font-bold text-gray-900 uppercase">Product Categorization</h3>
-        <span className="text-xs text-gray-600">VELOCITY-BASED ANALYSIS</span>
+    <div className="bg-white border-l-4 border-blue-600 h-full flex flex-col">
+      {/* Header with Key Metrics */}
+      <div className="bg-gray-50 border-b border-gray-200 p-4">
+        <h2 className="text-lg font-bold text-gray-900 mb-3">Inventory Performance Overview</h2>
+        <div className="grid grid-cols-5 gap-3 text-xs">
+          <div>
+            <div className="text-gray-600 uppercase tracking-wide mb-1">Total Products</div>
+            <div className="text-2xl font-bold text-gray-900">{totalProducts}</div>
+          </div>
+          <div>
+            <div className="text-gray-600 uppercase tracking-wide mb-1">Critical Stock</div>
+            <div className="text-2xl font-bold text-red-600">{criticalStock}</div>
+            <div className="text-xs text-gray-500">&lt;7 days left</div>
+          </div>
+          <div>
+            <div className="text-gray-600 uppercase tracking-wide mb-1">Dead Stock</div>
+            <div className="text-2xl font-bold text-orange-600">{deadStock}</div>
+            <div className="text-xs text-gray-500">slow movers</div>
+          </div>
+          <div>
+            <div className="text-gray-600 uppercase tracking-wide mb-1">Top Performers</div>
+            <div className="text-2xl font-bold text-green-600">{topPerformers}</div>
+            <div className="text-xs text-gray-500">&gt;1 unit/day</div>
+          </div>
+          <div>
+            <div className="text-gray-600 uppercase tracking-wide mb-1">Avg Velocity</div>
+            <div className="text-2xl font-bold text-blue-600">{avgVelocity.toFixed(2)}</div>
+            <div className="text-xs text-gray-500">units/day</div>
+          </div>
+        </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-3 gap-3 min-h-0">
-        {categories.map((category, idx) => (
-          <div key={idx} className="border border-gray-300 bg-white flex flex-col">
-            <div className={`p-2 flex items-center justify-between border-b border-gray-900 ${
-              category.priority === 'high' ? 'bg-black text-white' :
-              category.priority === 'medium' ? 'bg-gray-400 text-white' :
-              'bg-gray-200 text-gray-900'
-            }`}>
-              <div className="text-xs font-bold">{category.title}</div>
-              <div className="text-xs font-bold">{category.count}</div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-              {category.products.length > 0 ? (
-                category.products.map((product, i) => (
-                  <div key={i} className="border border-gray-300 bg-gray-50 p-2">
-                    <div className="text-xs font-bold text-gray-900 mb-1 truncate">
-                      {product.name}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <div className="text-gray-600">STOCK</div>
-                        <div className="font-bold">{product.current_stock}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-600">VELOCITY</div>
-                        <div className="font-bold">{product.velocity_daily.toFixed(1)}</div>
-                      </div>
-                    </div>
-                    {product.days_until_stockout !== null && product.days_until_stockout < 14 && (
-                      <div className="mt-1 pt-1 border-t border-gray-300 text-xs font-bold">
-                        {product.days_until_stockout}d TO STOCKOUT
-                      </div>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <div className="text-xs text-gray-500 text-center py-4">NO PRODUCTS</div>
-              )}
-            </div>
+      <div className="flex-1 grid grid-cols-2 gap-4 p-4 min-h-0">
+        {/* Top Velocity Chart */}
+        <div className="border border-gray-200 flex flex-col">
+          <div className="bg-gray-100 px-3 py-2 border-b border-gray-300">
+            <h3 className="text-sm font-bold text-gray-900">Top 10 Products by Sales Velocity</h3>
           </div>
-        ))}
+          <div className="flex-1 p-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} layout="horizontal" margin={{ top: 5, right: 10, left: 10, bottom: 40 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis 
+                  type="category" 
+                  dataKey="name" 
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                  tick={{ fontSize: 9 }}
+                />
+                <YAxis 
+                  type="number"
+                  label={{ value: 'Units/Day', angle: -90, position: 'insideLeft', style: { fontSize: 10 } }}
+                  tick={{ fontSize: 9 }}
+                />
+                <Bar dataKey="velocity" radius={[4, 4, 0, 0]}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={index < 3 ? '#10b981' : index < 7 ? '#3b82f6' : '#6b7280'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Urgent Restocks Table */}
+        <div className="border border-gray-200 flex flex-col overflow-hidden">
+          <div className="bg-red-600 text-white px-3 py-2 flex items-baseline justify-between">
+            <h3 className="text-sm font-bold">⚠ Urgent Restock Required</h3>
+            <span className="text-xs font-medium">{urgentRestocks.length} Product{urgentRestocks.length !== 1 ? 's' : ''}</span>
+          </div>
+          {urgentRestocks.length > 0 ? (
+            <div className="flex-1 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-100 sticky top-0">
+                  <tr className="border-b border-gray-300">
+                    <th className="text-left px-2 py-2 font-bold text-gray-900">Product</th>
+                    <th className="text-right px-2 py-2 font-bold text-gray-900">Stock</th>
+                    <th className="text-right px-2 py-2 font-bold text-gray-900">Days Left</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {urgentRestocks.map((product) => (
+                    <tr key={product.product_id} className="hover:bg-gray-50">
+                      <td className="px-2 py-2">
+                        <div className="font-medium text-gray-900">{product.name}</div>
+                        <div className="text-gray-500">{product.category}</div>
+                      </td>
+                      <td className="px-2 py-2 text-right font-bold">{product.current_stock}</td>
+                      <td className="px-2 py-2 text-right">
+                        <span className={`inline-block px-2 py-1 font-bold text-white ${
+                          (product.days_until_stockout || 999) < 3 ? 'bg-red-600' :
+                          (product.days_until_stockout || 999) < 5 ? 'bg-orange-600' :
+                          'bg-yellow-600'
+                        }`}>
+                          {product.days_until_stockout}d
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-gray-500 text-xs">
+              No urgent restocks needed
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
