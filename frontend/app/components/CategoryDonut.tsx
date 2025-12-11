@@ -18,11 +18,8 @@ const COLORS = ['#0055A4', '#00A3E0', '#FF6B35', '#4ECDC4', '#95E1D3', '#F38181'
 export default function CategoryDonut({ data }: CategoryDonutProps) {
   if (!data || data.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold mb-4">Category Performance</h3>
-        <div className="h-64 flex items-center justify-center text-gray-400">
-          No category data available
-        </div>
+      <div className="h-full flex items-center justify-center text-gray-400">
+        No category data available
       </div>
     );
   }
@@ -36,16 +33,14 @@ export default function CategoryDonut({ data }: CategoryDonutProps) {
   }));
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-lg font-semibold mb-4">Sales by Category (30 Days)</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <PieChart>
+    <ResponsiveContainer width="100%" height="100%">
+        <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
           <Pie
             data={chartData}
             cx="50%"
-            cy="50%"
-            innerRadius={60}
-            outerRadius={100}
+            cy="45%"
+            innerRadius={50}
+            outerRadius={90}
             fill="#8884d8"
             paddingAngle={2}
             dataKey="value"
@@ -74,17 +69,5 @@ export default function CategoryDonut({ data }: CategoryDonutProps) {
           />
         </PieChart>
       </ResponsiveContainer>
-      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-        {data.map((cat, index) => (
-          <div key={cat.category} className="flex items-center">
-            <div 
-              className="w-3 h-3 rounded-full mr-2" 
-              style={{ backgroundColor: COLORS[index % COLORS.length] }}
-            />
-            <span className="text-gray-700">{cat.category}: <span className="font-semibold">{cat.sales_30_days}</span></span>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }

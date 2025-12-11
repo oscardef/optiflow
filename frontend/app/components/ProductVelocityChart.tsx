@@ -14,11 +14,8 @@ interface ProductVelocityChartProps {
 export default function ProductVelocityChart({ data }: ProductVelocityChartProps) {
   if (!data || data.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold mb-4">Product Velocity</h3>
-        <div className="h-64 flex items-center justify-center text-gray-400">
-          No velocity data available
-        </div>
+      <div className="h-full flex items-center justify-center text-gray-400">
+        No velocity data available
       </div>
     );
   }
@@ -35,15 +32,10 @@ export default function ProductVelocityChart({ data }: ProductVelocityChartProps
   }));
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Top 10 Products by Velocity</h3>
-        <span className="text-sm text-gray-500">Units sold per day</span>
-      </div>
-      <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={chartData}>
+    <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={chartData} margin={{ top: 20, right: 30, left: 60, bottom: 20 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="index" label={{ value: 'Product Rank', position: 'insideBottom', offset: -5 }} />
+          <XAxis dataKey="index" label={{ value: '', position: 'insideBottom', offset: -5 }} />
           <YAxis label={{ value: 'Velocity (units/day)', angle: -90, position: 'insideLeft' }} />
           <Tooltip 
             content={({ active, payload }) => {
@@ -63,6 +55,5 @@ export default function ProductVelocityChart({ data }: ProductVelocityChartProps
           <Line type="monotone" dataKey="velocity" stroke="#0055A4" strokeWidth={2} dot={{ r: 4 }} />
         </LineChart>
       </ResponsiveContainer>
-    </div>
   );
 }

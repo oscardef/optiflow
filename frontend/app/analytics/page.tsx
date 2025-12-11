@@ -11,6 +11,9 @@ import ProductAnalytics from '../components/ProductAnalytics';
 import DemandForecastChart from '../components/DemandForecastChart';
 import AnomalyAlerts from '../components/AnomalyAlerts';
 import SalesTimeSeriesChart from '../components/SalesTimeSeriesChart';
+import CategoryStockValue from '../components/CategoryStockValue';
+import StockHealthIndicators from '../components/StockHealthIndicators';
+import TurnoverRateChart from '../components/TurnoverRateChart';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
@@ -607,7 +610,7 @@ export default function AnalyticsPage() {
       )}
 
       {/* Tab Content */}
-      <div className="bg-white border border-gray-200 p-6 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+      <div className="bg-white border border-gray-200 p-6" style={{ height: 'calc(100vh - 220px)', overflowY: 'auto' }}>
               {/* KPIs Tab */}
               {activeTab === 'kpis' && (
                 <div className="space-y-6">
@@ -634,18 +637,38 @@ export default function AnalyticsPage() {
 
               {/* Performance Overview Tab */}
               {activeTab === 'overview' && (
-                <div className="h-full grid grid-cols-2 gap-4">
-                  <div className="bg-white border border-gray-200 p-6 flex flex-col">
-                    <h3 className="text-base font-semibold text-gray-900 mb-4">Product Velocity</h3>
-                    <div className="flex-1">
-                      <ProductVelocityChart data={productVelocity} />
+                <div className="space-y-6">
+                  {/* Row 1 */}
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="bg-white border border-gray-200 p-6 flex flex-col" style={{ height: '500px' }}>
+                      <h3 className="text-base font-semibold text-gray-900 mb-4">Top 10 Sold Products</h3>
+                      <div className="flex-1 min-h-0">
+                        <ProductVelocityChart data={productVelocity} />
+                      </div>
+                    </div>
+
+                    <div className="bg-white border border-gray-200 p-6 flex flex-col" style={{ height: '500px' }}>
+                      <h3 className="text-base font-semibold text-gray-900 mb-4">Category Distribution</h3>
+                      <div className="flex-1 min-h-0">
+                        <CategoryDonut data={categoryPerformance} />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="bg-white border border-gray-200 p-6 flex flex-col">
-                    <h3 className="text-base font-semibold text-gray-900 mb-4">Category Distribution</h3>
-                    <div className="flex-1">
-                      <CategoryDonut data={categoryPerformance} />
+                  {/* Row 2 */}
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="bg-white border border-gray-200 p-6 flex flex-col" style={{ height: '450px' }}>
+                      <h3 className="text-base font-semibold text-gray-900 mb-4">Revenue by Category</h3>
+                      <div className="flex-1 min-h-0">
+                        <CategoryStockValue data={categoryPerformance} />
+                      </div>
+                    </div>
+
+                    <div className="bg-white border border-gray-200 p-6 flex flex-col" style={{ height: '450px' }}>
+                      <h3 className="text-base font-semibold text-gray-900 mb-4">Stock Health</h3>
+                      <div className="flex-1 min-h-0">
+                        <StockHealthIndicators overview={analyticsOverview} />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -664,52 +687,50 @@ export default function AnalyticsPage() {
 
               {/* AI Insights Tab */}
               {activeTab === 'ai-insights' && (
-                <div className="h-full grid grid-rows-[auto_1fr] gap-4">
-                  {/* Anomaly Alerts */}
+                <div className="space-y-4">
+                  {/* Anomaly Alerts - Full Width */}
                   <div>
                     <AnomalyAlerts data={anomalies} />
                   </div>
 
-                  {/* Analysis Grid */}
-                  <div className="grid grid-cols-3 gap-4 min-h-0">
-                    {/* Product Insights - Takes 2 columns */}
-                    <div className="col-span-2 bg-white border border-gray-200 p-6">
+                  {/* Main Content Grid */}
+                  <div className="grid grid-cols-4 gap-4" style={{ height: '600px' }}>
+                    {/* Product Insights - Takes 3 columns */}
+                    <div className="col-span-3">
                       <ProductInsights data={productVelocity} />
                     </div>
 
-                    {/* Demand Forecast */}
-                    <div className="bg-white border border-gray-200 p-6 flex flex-col">
-                      <h3 className="text-base font-semibold text-gray-900 mb-2">Demand Forecast</h3>
-                      <select
-                        value={selectedProductForForecast || ''}
-                        onChange={(e) => setSelectedProductForForecast(Number(e.target.value))}
-                        className="mb-4 px-3 py-2 text-sm border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="">Select product...</option>
-                        {topProducts.slice(0, 10).map(p => (
-                          <option key={p.product_id} value={p.product_id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
+                    {/* Demand Forecast - 1 column */}
+                    <div className="bg-white border border-gray-300 p-3 flex flex-col">
+                      <div className="mb-3">
+                        <label className="text-xs font-bold text-gray-900 uppercase block mb-2">
+                          SELECT PRODUCT
+                        </label>
+                        <select
+                          value={selectedProductForForecast || ''}
+                          onChange={(e) => setSelectedProductForForecast(Number(e.target.value))}
+                          className="w-full px-2 py-1.5 text-xs border border-gray-300 bg-white font-mono"
+                        >
+                          <option value="">--</option>
+                          {topProducts.slice(0, 10).map(p => (
+                            <option key={p.product_id} value={p.product_id}>
+                              {p.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       <div className="flex-1 min-h-0">
-                        {demandForecast && selectedProductForForecast ? (
-                          <DemandForecastChart
-                            productId={selectedProductForForecast}
-                            productName={topProducts.find(p => p.product_id === selectedProductForForecast)?.name || ''}
-                            data={demandForecast}
-                          />
-                        ) : (
-                          <div className="h-full flex items-center justify-center text-gray-400 text-sm">
-                            Select a product to view forecast
-                          </div>
-                        )}
+                        <DemandForecastChart
+                          productId={selectedProductForForecast || 0}
+                          productName={topProducts.find(p => p.product_id === selectedProductForForecast)?.name || ''}
+                          data={demandForecast}
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
               )}
             </div>
-          </div>
+    </div>
   );
 }

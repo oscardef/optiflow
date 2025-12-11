@@ -83,3 +83,4 @@ PRIORITY: LOW / FUTURE IMPROVEMENTS
 6) with rssi : try to figure out the real location of the item over time : increasing accuracy
 7) Add image as background with a reference metric
 8) heatmap with respect to maximum quantity
+9) Restock by groups : new
