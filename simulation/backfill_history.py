@@ -80,7 +80,8 @@ To switch to simulation mode:
 def check_inventory_items(api_url: str) -> int:
     """Check if inventory items exist - required for realistic analytics"""
     try:
-        response = requests.get(f"{api_url}/data/items", timeout=5)
+        # Use the items endpoint to check total count (regardless of positions)
+        response = requests.get(f"{api_url}/items", timeout=5)
         if response.status_code == 200:
             items = response.json()
             item_count = len(items)

@@ -318,10 +318,14 @@ export default function ProductAnalytics({ data, onRefresh, isLoading }: Product
                     </div>
                   </div>
                   <div className="col-span-2">
-                    <div className="flex items-center gap-1">
-                      <span className={`text-lg ${velocityInd.color}`}>{velocityInd.icon}</span>
-                      <span className="font-medium">{product.velocity_daily.toFixed(1)}</span>
-                      <span className="text-xs text-gray-500">/day</span>
+                    <div className={`flex items-center gap-1 px-2 py-1 rounded ${
+                      velocityInd.label === 'Fast' ? 'bg-green-50 border border-green-200' :
+                      velocityInd.label === 'Medium' ? 'bg-yellow-50 border border-yellow-200' :
+                      'bg-gray-50 border border-gray-200'
+                    }`}>
+                      <span className={`text-lg font-bold ${velocityInd.color}`}>{velocityInd.icon}</span>
+                      <span className={`font-medium ${velocityInd.color}`}>{product.velocity_daily.toFixed(1)}</span>
+                      <span className={`text-xs ${velocityInd.color}`}>/day</span>
                     </div>
                   </div>
                   <div className="col-span-2">

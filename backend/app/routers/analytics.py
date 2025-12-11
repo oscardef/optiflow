@@ -991,22 +991,35 @@ def trigger_backfill(params: BackfillParams, background_tasks: BackgroundTasks, 
         if result.returncode == 0:
             # Parse output for record counts
             output = result.stdout
+            stderr_output = result.stderr
             purchases = 0
             snapshots = 0
             
-            # Look for "Purchases uploaded: X" and "Snapshots uploaded: X" lines
+            # Log full output for debugging
+            logger.info(f"Backfill stdout: {output}")
+            if stderr_output:
+                logger.warning(f"Backfill stderr: {stderr_output}")
+            
+            # Look for "Uploaded X purchase events" and "Uploaded X stock snapshots" lines
             import re
             for line in output.split('\n'):
-                if 'purchases uploaded' in line.lower():
-                    match = re.search(r'uploaded:\s*(\d+)', line.lower())
+                if 'purchase' in line.lower() and 'uploaded' in line.lower():
+                    match = re.search(r'uploaded\s+(\d+)', line.lower())
                     if match:
                         purchases = int(match.group(1))
-                elif 'snapshots uploaded' in line.lower():
-                    match = re.search(r'uploaded:\s*(\d+)', line.lower())
+                        logger.info(f"Parsed purchases: {purchases}")
+                elif 'snapshot' in line.lower() and 'uploaded' in line.lower():
+                    match = re.search(r'uploaded\s+(\d+)', line.lower())
                     if match:
                         snapshots = int(match.group(1))
+                        logger.info(f"Parsed snapshots: {snapshots}")
             
             records = purchases + snapshots
+            
+            # If we didn't parse any records but script succeeded, there might be an issue
+            if records == 0 and len(output) > 0:
+                logger.warning(f"Backfill script succeeded but no records parsed from output. Output length: {len(output)}")
+                logger.warning(f"First 500 chars of output: {output[:500]}")
             
             _backfill_status["running"] = False
             _backfill_status["message"] = f"Successfully generated {params.days} days of data ({purchases:,} purchases, {snapshots:,} snapshots)"
@@ -1022,7 +1035,8 @@ def trigger_backfill(params: BackfillParams, background_tasks: BackgroundTasks, 
                 "purchases": purchases,
                 "snapshots": snapshots,
                 "density": params.density,
-                "days": params.days
+                "days": params.days,
+                "debug_output": output[-1000:] if len(output) > 1000 else output  # Last 1000 chars for debugging
             }
         else:
             _backfill_status = {

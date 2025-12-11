@@ -299,7 +299,7 @@ export default function AnalyticsPage() {
                 onClick={() => setShowBackfill(true)}
                 className="px-4 py-2 text-sm font-medium text-white bg-[#0055A4] hover:bg-[#003d7a] transition-colors"
               >
-                Generate Data
+                Generate
               </button>
               <button
                 onClick={() => router.push('/')}
@@ -564,14 +564,14 @@ export default function AnalyticsPage() {
                       className="flex-1 px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                       title={setupStatus?.inventory_items === 0 ? 'Generate inventory items first in SIMULATION mode' : ''}
                     >
-                      {isBackfilling ? 'Working...' : setupStatus?.inventory_items === 0 ? 'No Items Available' : 'Generate Data'}
+                      {isBackfilling ? 'Working...' : setupStatus?.inventory_items === 0 ? 'No Items Available' : 'Generate Analytics Data'}
                     </button>
                     <button
                       onClick={clearData}
                       disabled={isBackfilling}
                       className="px-6 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 transition-colors"
                     >
-                      Clear Data
+                      Clear Analytics Data
                     </button>
                   </div>
                 </div>
