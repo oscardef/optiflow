@@ -109,15 +109,9 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         product_price = metadata.price_chf
                         logger.info(f"[PRODUCTION] Found metadata for EPC {detection.product_id}: {product_name}")
                     else:
-                        # Fallback to generic demo item
-                        epc_short = detection.product_id[-8:] if len(detection.product_id) > 8 else detection.product_id
-                        product_sku = f"DEMO-{epc_short}"
-                        product_name = f"Demo Item {epc_short}"
-                        product_category = "Demo"
-                        product_size = None
-                        product_color = None
-                        product_price = None
-                        logger.warning(f"[PRODUCTION] No metadata found for EPC {detection.product_id}, using fallback")
+                        # Skip items that can't be translated (demo items)
+                        logger.warning(f"[PRODUCTION] No metadata found for EPC {detection.product_id} - skipping demo item")
+                        continue  # Skip this detection, don't create demo items
                     
                     # Check if product already exists (by SKU)
                     product = db.query(Product).filter(Product.sku == product_sku).first()
@@ -236,9 +230,16 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                             if inventory_item and detection.status == 'present':
                                 rssi = detection.rssi_dbm if detection.rssi_dbm is not None else -50.0
                                 
-                                # Only update items that are currently 'present' in database
-                                # Items marked 'not present' (missing) should stay missing until restocked
-                                # This prevents the simulation from accidentally "restocking" items
+                                # PRODUCTION MODE: Restore missing items when detected again
+                                # In production, if you physically place a tag back and scan it, it should become present
+                                # SIMULATION MODE: Keep missing items as missing (they need explicit restock)
+                                was_restored = False
+                                if inventory_item.status == 'not present' and config_state.mode == ConfigMode.PRODUCTION:
+                                    logger.info(f"   🔄 [PRODUCTION] Item {detection.product_id[-8:]} was MISSING, now detected - restoring to PRESENT")
+                                    inventory_item.status = 'present'
+                                    was_restored = True
+                                
+                                # Update items that are 'present' or were just restored
                                 if inventory_item.status == 'present':
                                     # Always update RSSI and last_seen when detected
                                     inventory_item.last_detection_rssi = rssi
@@ -256,15 +257,18 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                                     if config_state.mode == ConfigMode.PRODUCTION:
                                         inventory_item.x_position = x
                                         inventory_item.y_position = y
-                                        logger.debug(f"   [PRODUCTION] Updated item {detection.product_id} to employee position ({x:.1f}, {y:.1f}), RSSI={rssi}")
+                                        if was_restored:
+                                            logger.info(f"   ✅ [PRODUCTION] Item {detection.product_id[-8:]} restored at position ({x:.1f}, {y:.1f}), RSSI={rssi}")
+                                        else:
+                                            logger.debug(f"   [PRODUCTION] Updated item {detection.product_id[-8:]} to employee position ({x:.1f}, {y:.1f}), RSSI={rssi}")
                                     elif inventory_item.x_position is None:
                                         # SIMULATION: Only set position if item has none (shouldn't happen if inventory was generated properly)
                                         inventory_item.x_position = x
                                         inventory_item.y_position = y
                                         logger.warning(f"   [SIMULATION] Item {detection.product_id} had no position, set to ({x:.1f}, {y:.1f})")
                                     # else: SIMULATION mode and item has position - keep the shelf position!
-                                # else: Item is 'not present' (missing) - don't change anything
-                                # Missing items can only be restored via explicit restock action
+                                # else: Item is 'not present' in SIMULATION mode - don't change anything
+                                # Simulation missing items can only be restored via explicit restock action
                         
                         db.commit()
                         position_calculated = True
@@ -338,23 +342,27 @@ async def receive_data(packet: DataPacket, db: Session = Depends(get_db)):
                         if updated_items:
                             await ws_manager.broadcast_item_update(updated_items)
                         
-                        # Broadcast updated missing items count for the sidebar
-                        if newly_missing_items:
-                            missing_items_list = db.query(InventoryItem, Product)\
-                                .join(Product, InventoryItem.product_id == Product.id)\
-                                .filter(InventoryItem.status == 'not present')\
-                                .filter(InventoryItem.last_seen_at.isnot(None))\
-                                .all()
-                            
-                            missing_data = [{
-                                "rfid_tag": item.rfid_tag,
-                                "product_name": product.name,
-                                "x": item.x_position,
-                                "y": item.y_position,
-                                "status": item.status
-                            } for item, product in missing_items_list]
-                            
-                            await ws_manager.broadcast_missing_update(missing_data)
+                        # Broadcast updated missing items list for the sidebar
+                        # This needs to happen when:
+                        # 1. Items are newly marked missing
+                        # 2. Items are restored from missing to present
+                        # Always broadcast the current missing list to keep UI in sync
+                        missing_items_list = db.query(InventoryItem, Product)\
+                            .join(Product, InventoryItem.product_id == Product.id)\
+                            .filter(InventoryItem.status == 'not present')\
+                            .filter(InventoryItem.last_seen_at.isnot(None))\
+                            .all()
+                        
+                        missing_data = [{
+                            "rfid_tag": item.rfid_tag,
+                            "product_name": product.name,
+                            "x": item.x_position,
+                            "y": item.y_position,
+                            "status": item.status
+                        } for item, product in missing_items_list]
+                        
+                        # Always broadcast the missing list to keep it in sync
+                        await ws_manager.broadcast_missing_update(missing_data)
                         
         except Exception as pos_error:
             logger.warning(f"Position calculation failed: {pos_error}")

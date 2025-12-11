@@ -971,35 +971,46 @@ export default function AdminPanel() {
                 )}
 
                 {mode?.mode === 'PRODUCTION' && (
-                  <div className="border border-gray-200 bg-white">
-                    <div className="border-b border-gray-200 px-4 py-3">
-                      <h2 className="text-base font-semibold text-gray-900">Anchor Validation</h2>
-                    </div>
-                    <div className="px-4 py-4">
-                      <button
-                        onClick={validateAnchors}
-                        disabled={loading}
-                        className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white hover:bg-[#003d7a] disabled:bg-gray-300 transition-colors mb-3"
-                      >
-                        Validate Anchors
-                      </button>
-
-                      {validation && (
-                        <div className={`p-3 border text-sm ${
-                          validation.valid ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
-                        }`}>
-                          <p className="font-semibold mb-2">{validation.message}</p>
-                          {validation.warnings.length > 0 && (
-                            <ul className="list-disc list-inside space-y-1 text-xs">
-                              {validation.warnings.map((warning: string, i: number) => (
-                                <li key={i}>{warning}</li>
-                              ))}
-                            </ul>
-                          )}
+                  <>
+                    <div className="border border-gray-200 bg-white">
+                      <div className="border-b border-gray-200 px-4 py-3">
+                        <h2 className="text-base font-semibold text-gray-900">Hardware Setup</h2>
+                      </div>
+                      <div className="px-4 py-4">
+                        <div className="flex gap-2 mb-3">
+                          <button
+                            onClick={validateAnchors}
+                            disabled={loading}
+                            className="px-4 py-2 text-sm font-semibold bg-[#0055A4] text-white hover:bg-[#003d7a] disabled:bg-gray-300 transition-colors"
+                          >
+                            Validate Anchors
+                          </button>
+                          <button
+                            onClick={() => setShowClearDataModal(true)}
+                            disabled={loading}
+                            className="px-4 py-2 text-sm font-semibold bg-rose-600 text-white hover:bg-rose-700 disabled:bg-gray-300 transition-colors"
+                          >
+                            Clear Data
+                          </button>
                         </div>
-                      )}
+
+                        {validation && (
+                          <div className={`p-3 border text-sm ${
+                            validation.valid ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
+                          }`}>
+                            <p className="font-semibold mb-2">{validation.message}</p>
+                            {validation.warnings.length > 0 && (
+                              <ul className="list-disc list-inside space-y-1 text-xs">
+                                {validation.warnings.map((warning: string, i: number) => (
+                                  <li key={i}>{warning}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
             )}

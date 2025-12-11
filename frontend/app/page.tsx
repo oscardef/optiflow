@@ -792,9 +792,16 @@ export default function Home() {
                   </button>
                   
                   {setupMode && (
-                    <button onClick={handleResetAnchors} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
-                      Reset Anchors
-                    </button>
+                    <>
+                      <button onClick={handleResetAnchors} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
+                        Reset Anchors
+                      </button>
+                      {currentMode === 'PRODUCTION' && (
+                        <button onClick={handleClearData} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
+                          Clear Data
+                        </button>
+                      )}
+                    </>
                   )}
                 </>
               )}

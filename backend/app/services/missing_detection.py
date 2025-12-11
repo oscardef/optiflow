@@ -48,9 +48,16 @@ class MissingItemDetector:
        - Consecutive misses >= threshold? → Mark as missing (max 2 per scan)
     
     Detection Parameters (tuned for demo/production reliability):
-    - MIN_CONSECUTIVE_MISSES: 4 scan cycles without detection
-    - RFID_DETECTION_RANGE_CM: 50cm max detection range
-    - MAX_MISSING_PER_SCAN: 2 items maximum per scan cycle
+    - MIN_CONSECUTIVE_MISSES: 6 scan cycles without detection
+    - MIN_DETECTED_TO_CHECK_MISSING: 2 items must be detected to check for missing
+    - MAX_MISSING_PER_SCAN: 1 item maximum per scan cycle
+    
+    IMPORTANT: In production mode, we do NOT use distance-based detection.
+    The position of items changes every time they're detected (set to employee location),
+    so distance checking is unreliable. Instead we use a simpler approach:
+    - If we detect 2+ items in the same scan, we're "actively scanning"
+    - Any item NOT in the detection list accumulates a miss count
+    - After 6 consecutive misses while actively scanning, mark as missing
     """
     
     # Detection algorithm parameters - tuned for reliability
@@ -58,15 +65,16 @@ class MissingItemDetector:
     
     # Minimum number of consecutive scan cycles where item was NOT detected
     # before marking as missing. This accounts for RFID read failures.
-    # 4 cycles provides enough buffer for normal read variations
-    MIN_CONSECUTIVE_MISSES = 4
+    # 6 cycles provides a strong buffer for normal read variations
+    MIN_CONSECUTIVE_MISSES = 3
     
-    # RFID detection range in cm - items beyond this are not expected to be detected
-    RFID_DETECTION_RANGE_CM = 50.0
+    # Minimum number of items that must be detected before we check for missing items
+    # This prevents false positives when RFID reader only catches some tags
+    MIN_DETECTED_TO_CHECK_MISSING = 2
     
     # Maximum number of items that can be marked missing in a single scan cycle
-    # This prevents mass false positives from temporary signal issues
-    MAX_MISSING_PER_SCAN = 2
+    # Reduced to 1 to be very conservative - only 1 item can go missing at a time
+    MAX_MISSING_PER_SCAN = 1
     
     @classmethod
     def process_detections(
@@ -80,81 +88,87 @@ class MissingItemDetector:
         """
         Process RFID detections and infer missing items.
         
+        SIMPLIFIED ALGORITHM (no distance checking):
+        1. If we detect 0 or 1 items → not actively scanning, skip
+        2. If we detect 2+ items → we're actively scanning
+        3. For each PRESENT item in the database:
+           - If it's in the detected list → reset miss counter
+           - If it's NOT in the detected list → increment miss counter
+        4. After 6 consecutive misses → mark as missing
+        
         Args:
             db: Database session
             detected_rfid_tags: Dict mapping RFID tag to RSSI (negative dBm value means detected)
-            employee_x: Current employee X position
-            employee_y: Current employee Y position
+            employee_x: Current employee X position (for logging only)
+            employee_y: Current employee Y position (for logging only)
             timestamp: Current scan timestamp
             
         Returns:
             List of InventoryItem objects that were newly marked as missing
         """
         newly_missing = []
+        detected_tags_set = set(detected_rfid_tags.keys())
         
         # === STEP 1: Query ALL present items from database ===
-        # Get all items that have been seen before (have position and are present)
-        # In production mode, position is set when item is first detected
         present_items = db.query(InventoryItem).filter(
-            InventoryItem.status == 'present',
-            InventoryItem.x_position.isnot(None),
-            InventoryItem.y_position.isnot(None)
+            InventoryItem.status == 'present'
         ).all()
         
-        logger.info(f"🔍 Processing {len(detected_rfid_tags)} detected tags, checking {len(present_items)} present items")
+        present_rfid_tags = {item.rfid_tag for item in present_items}
         
-        # Debug: Show items with existing miss counters
-        items_with_misses = [item for item in present_items if item.consecutive_misses > 0]
-        if items_with_misses:
-            logger.info(f"   📊 {len(items_with_misses)} items already have miss counters:")
+        # Log the state
+        logger.info(f"🔍 Processing {len(detected_rfid_tags)} detected tags, {len(present_items)} present items in DB")
+        logger.info(f"   📋 Detected RFIDs: {[tag[-8:] for tag in detected_tags_set]}")
+        logger.info(f"   📦 Present in DB: {[tag[-8:] for tag in present_rfid_tags]}")
         
-        # === STEP 2: For each item, apply safety checks ===
+        # === SAFETY CHECK 1: Must detect at least MIN_DETECTED_TO_CHECK_MISSING items ===
+        # If we detect fewer than 2 items, we can't be confident the reader is working well
+        if len(detected_rfid_tags) < cls.MIN_DETECTED_TO_CHECK_MISSING:
+            logger.info(f"   ⏸️  Only {len(detected_rfid_tags)} item(s) detected (need {cls.MIN_DETECTED_TO_CHECK_MISSING}+) - NOT checking for missing")
+            # Still update detected items to reset their miss counters
+            for item in present_items:
+                if item.rfid_tag in detected_tags_set:
+                    rssi = detected_rfid_tags[item.rfid_tag]
+                    cls._handle_item_detected(item, rssi, timestamp)
+            db.commit()
+            return newly_missing
+        
+        logger.info(f"   ✅ {len(detected_rfid_tags)} items detected - actively scanning, will check for missing")
+        
+        # === STEP 2: Process each present item ===
         for item in present_items:
-            was_detected = item.rfid_tag in detected_rfid_tags
+            tag_short = item.rfid_tag[-8:]  # Short version for logging
             
-            if was_detected:
-                # ✅ SAFETY CHECK 1: Item was detected - reset miss tracking
+            if item.rfid_tag in detected_tags_set:
+                # Item was detected - reset miss tracking
                 rssi = detected_rfid_tags[item.rfid_tag]
+                old_misses = item.consecutive_misses
                 cls._handle_item_detected(item, rssi, timestamp)
-            else:
-                # Item NOT detected - calculate distance to employee
-                distance = cls._calculate_distance(
-                    item.x_position, item.y_position,
-                    employee_x, employee_y
-                )
-                
-                # ✅ SAFETY CHECK 2: Is item within RFID detection range (50cm)?
-                if distance <= cls.RFID_DETECTION_RANGE_CM:
-                    # Item is in range but wasn't detected - this is a miss
-                    logger.info(f"   ❌ Item {item.rfid_tag} within range ({distance:.1f}cm) but NOT detected")
-                    should_mark_missing = cls._handle_item_missed(item, timestamp)
-                    
-                    # ✅ SAFETY CHECK 3: Enough consecutive misses? (>= 4 cycles)
-                    # This check alone is sufficient - consecutive misses account for read failures
-                    if should_mark_missing:
-                        # ✅ SAFETY CHECK 4: Max 2 items marked missing per scan
-                        if len(newly_missing) >= cls.MAX_MISSING_PER_SCAN:
-                            logger.debug(
-                                f"Item {item.rfid_tag} would be missing but max per scan reached"
-                            )
-                            continue
-                        
-                        item.status = 'not present'
-                        newly_missing.append(item)
-                        logger.info(
-                            f"📦❌ MISSING: {item.rfid_tag} "
-                            f"(misses: {item.consecutive_misses})"
-                        )
-                        # Reset tracking after marking missing
-                        item.consecutive_misses = 0
-                        item.first_miss_at = None
+                if old_misses > 0:
+                    logger.info(f"   ✅ {tag_short}: DETECTED (RSSI={rssi:.0f}dBm) - reset misses from {old_misses} to 0")
                 else:
-                    # Item out of range - don't count as miss, but also don't reset
-                    # This preserves miss count if employee walked away briefly
-                    pass
+                    logger.debug(f"   ✅ {tag_short}: detected (RSSI={rssi:.0f}dBm)")
+            else:
+                # Item NOT detected - increment miss counter
+                old_misses = item.consecutive_misses or 0
+                should_mark_missing = cls._handle_item_missed(item, timestamp)
+                
+                logger.info(f"   ❌ {tag_short}: NOT DETECTED - miss count: {old_misses} → {item.consecutive_misses}/{cls.MIN_CONSECUTIVE_MISSES}")
+                
+                if should_mark_missing:
+                    # Check max per scan limit
+                    if len(newly_missing) >= cls.MAX_MISSING_PER_SCAN:
+                        logger.info(f"   ⚠️  {tag_short}: Would be marked missing but max per scan ({cls.MAX_MISSING_PER_SCAN}) reached")
+                        continue
+                    
+                    item.status = 'not present'
+                    newly_missing.append(item)
+                    logger.info(f"   📦❌ {tag_short}: MARKED AS MISSING after {item.consecutive_misses} consecutive misses")
+                    # Reset tracking after marking missing
+                    item.consecutive_misses = 0
+                    item.first_miss_at = None
         
         # CRITICAL: Always commit changes to persist miss counters
-        # Without this, consecutive_misses would reset on every request
         db.commit()
         
         if newly_missing:
@@ -280,7 +294,7 @@ class MissingItemDetector:
             ],
             "algorithm_params": {
                 "min_consecutive_misses": cls.MIN_CONSECUTIVE_MISSES,
-                "rfid_detection_range_cm": cls.RFID_DETECTION_RANGE_CM,
+                "min_detected_to_check_missing": cls.MIN_DETECTED_TO_CHECK_MISSING,
                 "max_missing_per_scan": cls.MAX_MISSING_PER_SCAN
             }
         }
