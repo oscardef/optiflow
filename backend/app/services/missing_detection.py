@@ -65,7 +65,7 @@ class MissingItemDetector:
     
     # === PRODUCTION-SPECIFIC PARAMETERS ===
     # Consecutive misses needed (longer - hardware can be flaky)
-    MIN_CONSECUTIVE_MISSES_PRODUCTION = 6
+    MIN_CONSECUTIVE_MISSES_PRODUCTION = 3
     
     # Minimum items detected before checking for missing (production only)
     MIN_DETECTED_TO_CHECK_MISSING = 2
